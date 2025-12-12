@@ -1,6 +1,6 @@
 # app_final_simple.py
-# Chan Foui et Fils — OCR Facture PRO
-# Mode Facture et Mode BDC avec design original
+# Chan Foui et Fils — AI Vision
+# Mode Facture et Mode BDC avec extraction simplifiée
 
 import streamlit as st
 import numpy as np
@@ -33,7 +33,7 @@ st.set_page_config(
 # ---------------------------
 LOGO_FILENAME = "CF_LOGOS.png"
 BRAND_TITLE = "Chan Foui et Fils"
-BRAND_SUB = "Google Vision — Edition Premium"
+BRAND_SUB = "Google Vision AI — Édition Ultra-Précise"
 
 # ---------------------------
 # AUTH (updated)
@@ -215,13 +215,31 @@ st.markdown(
         font-size: 0.8em;
         margin-left: 8px;
     }}
+    .simple-table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin: 15px 0;
+    }}
+    .simple-table th {{
+        background-color: var(--petrol);
+        color: white;
+        padding: 10px;
+        text-align: left;
+    }}
+    .simple-table td {{
+        padding: 8px 10px;
+        border-bottom: 1px solid #eee;
+    }}
+    .simple-table tr:nth-child(even) {{
+        background-color: #f9f9f9;
+    }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
 # ---------------------------
-# OCR Functions AMÉLIORÉES
+# OCR Functions avec Google Vision AI
 # ---------------------------
 def advanced_preprocess_image(image_bytes: bytes) -> bytes:
     """Prétraitement avancé pour optimiser l'OCR des tableaux"""
@@ -268,38 +286,28 @@ def get_vision_client():
     client = vision.ImageAnnotatorClient(credentials=creds)
     return client
 
-def google_vision_ocr_with_hints(img_bytes: bytes, client_type: str = "auto"):
-    """OCR avec des hints pour améliorer la reconnaissance"""
+def google_vision_ai_ocr(img_bytes: bytes, language_hints=["fr", "en"]):
+    """OCR avec Google Vision AI (document_text_detection) pour une meilleure précision"""
     
     client = get_vision_client()
     image = vision.Image(content=img_bytes)
     
-    # Configuration spécifique
+    # Configuration pour documents avec hints de langue
     context = vision.ImageContext(
-        language_hints=["fr", "en"],
+        language_hints=language_hints,
     )
     
-    # Feature spécifique pour les documents
-    feature = vision.Feature(
-        type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION
-    )
-    
-    request = vision.AnnotateImageRequest(
-        image=image,
-        features=[feature],
-        image_context=context
-    )
-    
-    response = client.annotate_image(request=request)
+    # Utiliser document_text_detection (spécifique pour les documents)
+    response = client.document_text_detection(image=image, image_context=context)
     
     if response.error and response.error.message:
-        raise Exception(f"Google Vision Error: {response.error.message}")
+        raise Exception(f"Google Vision AI Error: {response.error.message}")
     
-    raw = ""
+    raw_text = ""
     if response.full_text_annotation:
-        raw = response.full_text_annotation.text
+        raw_text = response.full_text_annotation.text
     
-    # Extraire les informations de mise en page
+    # Extraire la structure de mise en page pour les tableaux
     blocks_info = []
     if response.full_text_annotation:
         for page in response.full_text_annotation.pages:
@@ -317,7 +325,7 @@ def google_vision_ocr_with_hints(img_bytes: bytes, client_type: str = "auto"):
                 })
     
     return {
-        "raw_text": raw,
+        "raw_text": raw_text,
         "blocks": blocks_info,
         "full_response": response
     }
@@ -329,18 +337,18 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 # ---------------------------
-# FONCTIONS D'EXTRACTION ULTRA-PRÉCISES POUR LES 3 TYPES DE BDC
+# NOUVELLES FONCTIONS D'EXTRACTION SIMPLIFIÉES POUR LES 3 TYPES
 # ---------------------------
 
 # ==================== SUPERMAKI ====================
-def extract_bdc_supermaki_precise(text: str):
-    """Extraction ULTRA-PRÉCISE pour SUPERMAKI basée sur l'OCR exact"""
+def extract_bdc_supermaki_simple(text: str):
+    """Extraction SIMPLIFIÉE pour SUPERMAKI - 2 colonnes seulement"""
     result = {
         "client": "SUPERMAKI",
         "numero": "",
         "date": "",
         "adresse_livraison": "",
-        "articles": []
+        "articles": []  # Liste de dictionnaires: {"Désignation": "", "Qté": ""}
     }
     
     # 1. Extraire numéro BDC
@@ -361,7 +369,7 @@ def extract_bdc_supermaki_precise(text: str):
                 result["adresse_livraison"] = lines[i + 1].strip()
                 break
     
-    # 4. EXTRACTION DES ARTICLES - BASÉE SUR LE FORMAT EXACT
+    # 4. EXTRACTION SIMPLIFIÉE DES ARTICLES - 2 COLONNES
     articles = []
     
     # Chercher le tableau (après les en-têtes)
@@ -369,8 +377,8 @@ def extract_bdc_supermaki_precise(text: str):
     for i, line in enumerate(lines):
         line_clean = line.strip()
         
-        # Détecter le début du tableau
-        if 'REF' in line_clean and 'EAN' in line_clean and 'Désignation' in line_clean:
+        # Détecter le début du tableau (en-tête)
+        if 'REF' in line_clean and ('EAN' in line_clean or 'Désignation' in line_clean):
             table_started = True
             continue
         
@@ -381,54 +389,29 @@ def extract_bdc_supermaki_precise(text: str):
             
             # Ligne d'article: commence par 6 chiffres (REF)
             if re.match(r'^\d{6}', line_clean):
-                # Essayer plusieurs patterns d'extraction
-                patterns = [
-                    # Pattern 1: Format complet avec toutes les colonnes
-                    r'(\d{6})\s+(\d{13})[\.]?\s+(.+?)\s+(\d+)\s+(\d+)\s+(\d+)',
-                    # Pattern 2: Format simplifié
-                    r'(\d{6})\s+(\d{13})[\.]?\s+(.+?)\s+(\d{2,3})\b',
-                    # Pattern 3: Juste REF + EAN + texte + quantité
-                    r'(\d{6})\s+(\d{13})[\.]?\s+(.+?)\s+\d+\s+\d+\s+(\d{2,3})',
-                ]
+                # Pattern pour extraire Désignation et Quantité
+                pattern = r'\d{6}\s+\d{13}[\.]?\s+(.+?)\s+\d+\s+\d+\s+(\d+)'
+                match = re.search(pattern, line_clean)
                 
-                for pattern in patterns:
-                    match = re.search(pattern, line_clean)
-                    if match:
-                        ref = match.group(1)
-                        ean = match.group(2).replace('.', '')
-                        
-                        if len(match.groups()) >= 6:
-                            designation_raw = match.group(3).strip()
-                            qte = match.group(6)
-                        elif len(match.groups()) >= 4:
-                            designation_raw = match.group(3).strip()
-                            qte = match.group(4)
-                        else:
-                            continue
-                        
-                        # Normaliser la désignation
-                        designation = normalize_supermaki_designation(designation_raw)
-                        
-                        article_data = {
-                            "Désignation": designation,
-                            "Qté": qte,
-                            "Type": "consigne" if "CONS" in designation.upper() else "article"
-                        }
-                        
-                        if ref:
-                            article_data["REF"] = ref
-                        if ean:
-                            article_data["EAN"] = ean
-                        
-                        articles.append(article_data)
-                        break
+                if match:
+                    designation_raw = match.group(1).strip()
+                    qte = match.group(2)
+                    
+                    # Normaliser la désignation
+                    designation = normalize_designation_simple(designation_raw, "SUPERMAKI")
+                    
+                    articles.append({
+                        "Désignation": designation,
+                        "Qté": qte
+                    })
     
-    # Méthode de secours: extraction par recherche de motifs
+    # Méthode de secours si aucune ligne n'a été trouvée
     if not articles:
-        # Chercher les lignes avec "COTE DE FIANAR" ou "CONS"
+        # Chercher les lignes avec des noms de produits et des quantités
         for line in lines:
             line_clean = line.strip()
             
+            # Chercher des motifs avec "COTE DE FIANAR" ou "CONS" suivis de nombres
             if ('COTE DE FIANAR' in line_clean.upper() or 
                 'CONS' in line_clean.upper() or
                 'MAROPARASY' in line_clean.upper()):
@@ -438,340 +421,35 @@ def extract_bdc_supermaki_precise(text: str):
                 if qty_match:
                     qte = qty_match.group(1)
                     
-                    # Extraire la désignation
+                    # Extraire la désignation (enlever les nombres qui ne font pas partie du nom)
                     words = line_clean.split()
                     desig_parts = []
                     for word in words:
-                        # Ignorer les nombres purs (sauf ceux qui font partie du nom)
+                        # Garder les mots qui ne sont pas juste des nombres (sauf "75", "CL", etc.)
                         if not re.match(r'^\d+$', word) or word in ['75', '37', 'CL', 'COTE', 'DE']:
                             desig_parts.append(word)
                     
                     if desig_parts:
                         designation_raw = ' '.join(desig_parts)
-                        designation = normalize_supermaki_designation(designation_raw)
+                        designation = normalize_designation_simple(designation_raw, "SUPERMAKI")
                         
                         articles.append({
                             "Désignation": designation,
-                            "Qté": qte,
-                            "Type": "consigne" if "CONS" in designation.upper() else "article"
+                            "Qté": qte
                         })
     
     result["articles"] = articles
     return result
-
-def normalize_supermaki_designation(designation_raw: str) -> str:
-    """Normalise les désignations Supermaki"""
-    designation = designation_raw.upper().strip()
-    
-    # Correspondances exactes
-    exact_matches = {
-        "COTE DE FIANAR ROUGE 75 CL": "Côte de Fianar Rouge 75 cl",
-        "COTE DE FIANAR ROUGE 75CL": "Côte de Fianar Rouge 75 cl",
-        "CONS 2000 CHANFOUI": "CONS 2000 CHANFOUI",
-        "CONS 2000 CHAN FOUI": "CONS 2000 CHANFOUI",
-    }
-    
-    for key, value in exact_matches.items():
-        if key in designation:
-            return value
-    
-    # Correspondances partielles
-    if "COTE DE FIANAR" in designation:
-        if "ROUGE" in designation:
-            if "75" in designation:
-                return "Côte de Fianar Rouge 75 cl"
-            elif "37" in designation:
-                return "Côte de Fianar Rouge 37 cl"
-            elif "3" in designation and "L" in designation:
-                return "Côte de Fianar Rouge 3L"
-        elif "BLANC" in designation:
-            if "75" in designation:
-                return "Côte de Fianar Blanc 75 cl"
-            elif "37" in designation:
-                return "Côte de Fianar Blanc 37 cl"
-            elif "3" in designation and "L" in designation:
-                return "Côte de Fianar Blanc 3L"
-        elif "ROSE" in designation or "ROSÉ" in designation:
-            if "75" in designation:
-                return "Côte de Fianar Rosé 75 cl"
-            elif "37" in designation:
-                return "Côte de Fianar Rosé 37 cl"
-            elif "3" in designation and "L" in designation:
-                return "Côte de Fianar Rosé 3L"
-        elif "GRIS" in designation:
-            if "75" in designation:
-                return "Côte de Fianar Gris 75 cl"
-            elif "37" in designation:
-                return "Côte de Fianar Gris 37 cl"
-    
-    elif "MAROPARASY" in designation:
-        if "APERITIF" in designation or "ROUGE" in designation:
-            if "75" in designation:
-                return "Maroparasy Rouge 75 cl"
-            elif "37" in designation:
-                return "Maroparasy Rouge 37 cl"
-        elif "BLANC" in designation and "DOUX" in designation:
-            if "75" in designation:
-                return "Blanc doux Maroparasy 75 cl"
-            elif "37" in designation:
-                return "Blanc doux Maroparasy 37 cl"
-            elif "3" in designation and "L" in designation:
-                return "Blanc doux Maroparasy 3L"
-    
-    elif "COTEAU D'AMBALAVAO" in designation or "COTEAU D'AMB/VAO" in designation:
-        if "SPECIAL" in designation or "SPÉCIAL" in designation:
-            return "Côteau d'Ambalavao Spécial 75 cl"
-        elif "BLANC" in designation:
-            return "Côteau d'Ambalavao Blanc 75 cl"
-        elif "ROSE" in designation or "ROSÉ" in designation:
-            return "Côteau d'Ambalavao Rosé 75 cl"
-        else:
-            return "Côteau d'Ambalavao Rouge 75 cl"
-    
-    elif "APERAO" in designation:
-        if "ORANGE" in designation:
-            return "Aperao Orange 75 cl"
-        elif "PECHE" in designation or "PÊCHE" in designation:
-            return "Aperao Pêche 75 cl"
-        elif "ANANAS" in designation:
-            return "Aperao Ananas 75 cl"
-        elif "EPICES" in designation or "ÉPICES" in designation:
-            return "Aperao Epices 75 cl"
-        elif "RATAFIA" in designation:
-            return "Aperao Ratafia 75 cl"
-        elif "EAU DE VIE" in designation:
-            if "37" in designation:
-                return "Aperao Eau de vie 37 cl"
-            else:
-                return "Aperao Eau de vie 75 cl"
-    
-    elif "VIN DE CHAMPETRE" in designation:
-        if "100" in designation:
-            return "Vin de Champêtre 100 cl"
-        elif "50" in designation:
-            return "Vin de Champêtre 50 cl"
-    
-    elif "JUS DE RAISIN" in designation:
-        if "ROUGE" in designation:
-            if "70" in designation:
-                return "Jus de raisin Rouge 70 cl"
-            elif "20" in designation:
-                return "Jus de raisin Rouge 20 cl"
-        elif "BLANC" in designation:
-            if "70" in designation:
-                return "Jus de raisin Blanc 70 cl"
-            elif "20" in designation:
-                return "Jus de raisin Blanc 20 cl"
-    
-    elif "SAMBATRA" in designation:
-        return "Sambatra 20 cl"
-    
-    elif "CONS" in designation and "CHAN" in designation:
-        return "CONS 2000 CHANFOUI"
-    
-    # Fallback: retourner l'original nettoyé
-    return designation_raw.strip()
-
-# ==================== LEADER PRICE ====================
-def extract_bdc_leader_price_precise(text: str):
-    """Extraction ULTRA-PRÉCISE pour LEADER PRICE basée sur l'OCR exact"""
-    result = {
-        "client": "LEADER PRICE",
-        "numero": "",
-        "date": "",
-        "adresse_livraison": "",
-        "articles": []
-    }
-    
-    # 1. Extraire numéro BDC
-    bdc_match = re.search(r'N[°o]\s+de\s+Commande\s+(BCD\d+)', text, re.IGNORECASE)
-    if bdc_match:
-        result["numero"] = bdc_match.group(1)
-    else:
-        bdc_match = re.search(r'BCD(\d+)', text, re.IGNORECASE)
-        if bdc_match:
-            result["numero"] = f"BCD{bdc_match.group(1)}"
-    
-    # 2. Extraire date
-    date_match = re.search(r'Date\s+(\d{2}/\d{2}/\d{2})', text, re.IGNORECASE)
-    if date_match:
-        date_str = date_match.group(1)
-        day, month, year = date_str.split('/')
-        year = "20" + year if len(year) == 2 else year
-        result["date"] = f"{day}/{month}/{year}"
-    
-    # 3. Extraire adresse livraison
-    lines = text.split('\n')
-    for i, line in enumerate(lines):
-        if 'A livrer à' in line or 'a livrer a' in line.lower():
-            if i + 1 < len(lines):
-                result["adresse_livraison"] = lines[i + 1].strip()
-                break
-    
-    # 4. EXTRACTION DES ARTICLES - BASÉE SUR LE FORMAT EXACT
-    articles = []
-    
-    # Chercher les lignes de tableau
-    for line in lines:
-        line_clean = line.strip()
-        
-        # Ignorer les lignes d'en-tête
-        if not line_clean or 'Réf' in line_clean or 'Désignation' in line_clean:
-            continue
-        
-        # Détecter une ligne d'article: contient "Pièces" et des nombres avec .000
-        if 'Pièces' in line_clean and re.search(r'\d+\.\d{3}', line_clean):
-            
-            # Pattern 1: Format standard avec référence
-            pattern1 = r'(\d{4,5})\s+(.+?)\s+(\d+)\.(\d{3})[-\s]'
-            match1 = re.search(pattern1, line_clean)
-            
-            if match1:
-                ref = match1.group(1)
-                designation_raw = match1.group(2).strip()
-                qte_main = match1.group(3)  # Partie avant le point
-                
-                # La quantité est le nombre avant le point
-                qte = qte_main
-                
-                # Normaliser la désignation
-                designation = normalize_leader_price_designation(designation_raw)
-                
-                articles.append({
-                    "Réf": ref,
-                    "Désignation": designation,
-                    "Qté": qte,
-                    "Type": "consigne" if "CONSIGNE" in designation.upper() else "article"
-                })
-            
-            else:
-                # Pattern 2: Format sans référence claire
-                # Chercher directement la quantité.000
-                qty_match = re.search(r'(\d+)\.(\d{3})[-\s]', line_clean)
-                if qty_match:
-                    qte = qty_match.group(1)
-                    
-                    # Extraire la désignation: tout avant la quantité
-                    qty_pos = line_clean.find(qty_match.group(0))
-                    if qty_pos > 0:
-                        designation_raw = line_clean[:qty_pos].strip()
-                        
-                        # Chercher une référence au début
-                        ref_match = re.match(r'^(\d{4,5})\s+', designation_raw)
-                        if ref_match:
-                            ref = ref_match.group(1)
-                            designation_raw = designation_raw[len(ref):].strip()
-                        else:
-                            ref = ""
-                        
-                        designation = normalize_leader_price_designation(designation_raw)
-                        
-                        articles.append({
-                            "Réf": ref,
-                            "Désignation": designation,
-                            "Qté": qte,
-                            "Type": "consigne" if "CONSIGNE" in designation.upper() else "article"
-                        })
-    
-    # Recherche supplémentaire pour les lignes manquées
-    if not articles:
-        # Chercher par mots-clés spécifiques
-        for line in lines:
-            line_clean = line.strip()
-            
-            if any(keyword in line_clean.upper() for keyword in 
-                   ['VIN', 'CONSIGNE', 'MAROPARASY', 'COTE DE', 'AMBALAVAO']):
-                
-                # Chercher un motif nombre.000
-                qty_match = re.search(r'(\d+)\.(\d{3})', line_clean)
-                if qty_match:
-                    qte = qty_match.group(1)
-                    
-                    # Chercher une référence (4-5 chiffres)
-                    ref_match = re.search(r'\b(\d{4,5})\b', line_clean)
-                    ref = ref_match.group(1) if ref_match else ""
-                    
-                    # Extraire la désignation
-                    words = line_clean.split()
-                    desig_parts = []
-                    for word in words:
-                        if not re.match(r'^\d+\.?\d*$', word) or word in ['75', 'CL', 'COTE', 'DE']:
-                            desig_parts.append(word)
-                    
-                    if desig_parts:
-                        designation_raw = ' '.join(desig_parts)
-                        designation = normalize_leader_price_designation(designation_raw)
-                        
-                        article_data = {
-                            "Désignation": designation,
-                            "Qté": qte,
-                            "Type": "consigne" if "CONSIGNE" in designation.upper() else "article"
-                        }
-                        
-                        if ref:
-                            article_data["Réf"] = ref
-                        
-                        articles.append(article_data)
-    
-    result["articles"] = articles
-    return result
-
-def normalize_leader_price_designation(designation_raw: str) -> str:
-    """Normalise les désignations Leader Price"""
-    designation = designation_raw.upper().strip()
-    
-    # Correspondances exactes
-    exact_matches = {
-        "VIN APERITIF ROUGE MAROPARASY 75CL": "Maroparasy Rouge 75 cl",
-        "VIN BLANC DOUX MAROPARASY 75CL": "Blanc doux Maroparasy 75 cl",
-        "CONSIGNE BLLE CHAN FOUI 75CL": "CONS 2000 CHANFOUI",
-        "VIN BLANC COTE DE FIANAR BTL 75 CL NU": "Côte de Fianar Blanc 75 cl",
-        "VIN GRIS COTE DE FIANAR BTL 75 CL LOGE": "Côte de Fianar Gris 75 cl",
-        "VIN ROSE COTE DE FIANAR BTL 75 CL NU": "Côte de Fianar Rosé 75 cl",
-        "VIN ROUGE COTE DE FIANAR BTL 75 CL NU": "Côte de Fianar Rouge 75 cl",
-        "VIN ROUGE COTEAU AMB/VAO BTL 75 CL": "Côteau d'Ambalavao Rouge 75 cl",
-    }
-    
-    for key, value in exact_matches.items():
-        if key in designation:
-            return value
-    
-    # Correspondances partielles
-    if "MAROPARASY" in designation:
-        if "ROUGE" in designation:
-            return "Maroparasy Rouge 75 cl"
-        elif "BLANC" in designation and "DOUX" in designation:
-            return "Blanc doux Maroparasy 75 cl"
-    
-    elif "COTE DE FIANAR" in designation:
-        if "BLANC" in designation:
-            return "Côte de Fianar Blanc 75 cl"
-        elif "GRIS" in designation:
-            return "Côte de Fianar Gris 75 cl"
-        elif "ROSE" in designation or "ROSÉ" in designation:
-            return "Côte de Fianar Rosé 75 cl"
-        elif "ROUGE" in designation:
-            return "Côte de Fianar Rouge 75 cl"
-    
-    elif "COTEAU" in designation and ("AMB/VAO" in designation or "AMBALAVAO" in designation):
-        return "Côteau d'Ambalavao Rouge 75 cl"
-    
-    elif "CONSIGNE" in designation and "CHAN" in designation:
-        return "CONS 2000 CHANFOUI"
-    
-    # Fallback
-    return designation_raw.strip()
 
 # ==================== ULYS ====================
-def extract_bdc_ulys_precise(text: str):
-    """Extraction ULTRA-PRÉCISE pour ULYS basée sur l'OCR exact"""
+def extract_bdc_ulys_simple(text: str):
+    """Extraction SIMPLIFIÉE pour ULYS - 2 colonnes seulement"""
     result = {
         "client": "ULYS",
         "numero": "",
         "date": "",
-        "adresse_livraison": "",
         "nom_magasin": "",
-        "articles": []
+        "articles": []  # Liste de dictionnaires: {"Désignation": "", "Qté": ""}
     }
     
     # 1. Extraire numéro BDC
@@ -790,143 +468,210 @@ def extract_bdc_ulys_precise(text: str):
         result["nom_magasin"] = magasin_match.group(1).strip()
         result["adresse_livraison"] = result["nom_magasin"]
     
-    # 4. EXTRACTION DES ARTICLES - BASÉE SUR LE FORMAT EXACT
+    # 4. EXTRACTION SIMPLIFIÉE DES ARTICLES - 2 COLONNES
     articles = []
     lines = text.split('\n')
     
-    # Chercher les sections de catégories
-    current_category = ""
-    
+    # Chercher les sections avec "PAQ" (paquets) ou "/PC" (pièces)
     for line in lines:
         line_clean = line.strip()
         
-        # Détecter les catégories
-        category_match = re.search(r'(\d{6})\s*-\s*(VINS\s+[A-Z]+)', line_clean)
-        if category_match:
-            current_category = category_match.group(2).strip()
+        # Ignorer les lignes d'en-tête
+        if 'GTIN' in line_clean or 'Article No' in line_clean or 'Description' in line_clean:
             continue
         
-        # Détecter les lignes d'articles avec GTIN (13-14 chiffres)
-        gtin_match = re.search(r'\b(\d{13,14})\b', line_clean)
-        if gtin_match:
-            gtin = gtin_match.group(1)
-            
-            # Chercher la quantité après PAQ ou /PC
-            qty_match = None
-            
-            # Pattern 1: PAQ suivi d'un nombre
+        # Détecter les lignes d'articles avec PAQ (paquets)
+        if 'PAQ' in line_clean:
+            # Chercher la quantité après PAQ
             qty_match = re.search(r'PAQ\s+(\d+)', line_clean)
-            if not qty_match:
-                # Pattern 2: /PC suivi d'un nombre
-                qty_match = re.search(r'/PC\s+(\d+)', line_clean)
-            
             if qty_match:
                 qte = qty_match.group(1)
                 
-                # Extraire la description
-                # Tout entre le GTIN et PAQ ou /PC
-                gtin_pos = line_clean.find(gtin)
-                if 'PAQ' in line_clean:
-                    paq_pos = line_clean.find('PAQ', gtin_pos)
-                    if paq_pos > gtin_pos:
-                        description_raw = line_clean[gtin_pos + len(gtin):paq_pos].strip()
-                    else:
-                        description_raw = ""
-                elif '/PC' in line_clean:
-                    pc_pos = line_clean.find('/PC', gtin_pos)
-                    if pc_pos > gtin_pos:
-                        description_raw = line_clean[gtin_pos + len(gtin):pc_pos].strip()
-                    else:
-                        description_raw = ""
-                else:
-                    description_raw = ""
-                
-                # Nettoyer la description (enlever Article No)
-                description_raw = re.sub(r'\d{8}', '', description_raw).strip()
-                
-                # Normaliser la désignation
-                designation = normalize_ulys_designation(description_raw, current_category)
-                
-                articles.append({
-                    "GTIN": gtin,
-                    "Désignation": designation,
-                    "Qté": qte,
-                    "Type": "consigne" if "CONS." in designation.upper() else "article"
-                })
+                # Extraire la description de l'article (avant PAQ)
+                paq_pos = line_clean.find('PAQ')
+                if paq_pos > 0:
+                    # Enlever GTIN et Article No si présents
+                    description_part = line_clean[:paq_pos]
+                    
+                    # Enlever les séries de chiffres (GTIN: 13-14 chiffres, Article No: 8 chiffres)
+                    description_clean = re.sub(r'\d{13,14}', '', description_part)
+                    description_clean = re.sub(r'\d{8}', '', description_clean).strip()
+                    
+                    if description_clean:
+                        designation = normalize_designation_simple(description_clean, "ULYS")
+                        
+                        articles.append({
+                            "Désignation": designation,
+                            "Qté": qte
+                        })
         
-        # Recherche alternative pour les consignes
-        elif 'CONS.' in line_clean.upper() and '/PC' in line_clean:
+        # Détecter les consignes avec /PC
+        elif '/PC' in line_clean and ('CONS.' in line_clean.upper() or 'CONSIGNE' in line_clean.upper()):
             # Chercher la quantité après /PC
             qty_match = re.search(r'/PC\s+(\d+)', line_clean)
             if qty_match:
                 qte = qty_match.group(1)
                 
-                # Extraire la description (tout avant /PC)
+                # Extraire la description (avant /PC)
                 pc_pos = line_clean.find('/PC')
-                description_raw = line_clean[:pc_pos].strip()
-                
-                designation = normalize_ulys_designation(description_raw, "")
-                
-                articles.append({
-                    "Désignation": designation,
-                    "Qté": qte,
-                    "Type": "consigne"
-                })
+                if pc_pos > 0:
+                    description_part = line_clean[:pc_pos]
+                    description_clean = re.sub(r'\d{13,14}', '', description_part)
+                    description_clean = re.sub(r'\d{8}', '', description_clean).strip()
+                    
+                    if description_clean:
+                        designation = normalize_designation_simple(description_clean, "ULYS")
+                        
+                        articles.append({
+                            "Désignation": designation,
+                            "Qté": qte
+                        })
     
-    # Recherche supplémentaire pour les cas manqués
-    if not articles:
-        # Chercher les lignes avec des descriptions de vin
-        for line in lines:
-            line_clean = line.strip()
+    # Regrouper les consignes si elles apparaissent plusieurs fois
+    if articles:
+        # Regrouper par désignation
+        grouped_articles = {}
+        for article in articles:
+            designation = article["Désignation"]
+            qte = int(article["Qté"]) if article["Qté"].isdigit() else 0
             
-            if any(keyword in line_clean.upper() for keyword in 
-                   ['VIN', 'COTE', 'FIANARA', 'MAROPARASY', 'AMBALAVAO', 'CONS.']):
+            if designation in grouped_articles:
+                grouped_articles[designation] += qte
+            else:
+                grouped_articles[designation] = qte
+        
+        # Recréer la liste d'articles groupés
+        result["articles"] = [{"Désignation": k, "Qté": str(v)} for k, v in grouped_articles.items()]
+    else:
+        result["articles"] = articles
+    
+    return result
+
+# ==================== LEADER PRICE ====================
+def extract_bdc_leader_price_simple(text: str):
+    """Extraction SIMPLIFIÉE pour LEADER PRICE - 2 colonnes seulement"""
+    result = {
+        "client": "LEADER PRICE",
+        "numero": "",
+        "date": "",
+        "adresse_livraison": "",
+        "articles": []  # Liste de dictionnaires: {"Désignation": "", "Qté": ""}
+    }
+    
+    # 1. Extraire numéro BDC
+    bdc_match = re.search(r'N[°o]\s+de\s+Commande\s+(BCD\d+)', text, re.IGNORECASE)
+    if not bdc_match:
+        bdc_match = re.search(r'BCD(\d+)', text, re.IGNORECASE)
+        if bdc_match:
+            result["numero"] = f"BCD{bdc_match.group(1)}"
+    else:
+        result["numero"] = bdc_match.group(1)
+    
+    # 2. Extraire date
+    date_match = re.search(r'Date\s+(\d{2}/\d{2}/\d{2,4})', text, re.IGNORECASE)
+    if date_match:
+        date_str = date_match.group(1)
+        if len(date_str.split('/')[-1]) == 2:
+            day, month, year = date_str.split('/')
+            year = "20" + year
+            result["date"] = f"{day}/{month}/{year}"
+        else:
+            result["date"] = date_str
+    
+    # 3. Extraire adresse livraison
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        if 'A livrer à' in line or 'a livrer a' in line.lower():
+            if i + 1 < len(lines):
+                result["adresse_livraison"] = lines[i + 1].strip()
+                break
+    
+    # 4. EXTRACTION SIMPLIFIÉE DES ARTICLES - 2 COLONNES
+    articles = []
+    
+    # Chercher les lignes avec motif "nombre.000" (format Leader Price)
+    for line in lines:
+        line_clean = line.strip()
+        
+        # Ignorer les lignes d'en-tête
+        if not line_clean or 'Réf' in line_clean or 'Désignation' in line_clean:
+            continue
+        
+        # Chercher le motif "nombre.000" (ex: 12.000)
+        qty_match = re.search(r'(\d+)\.(\d{3})', line_clean)
+        if qty_match:
+            qte = qty_match.group(1)  # La partie avant le point est la quantité
+            
+            # Extraire la désignation (tout avant le motif .000)
+            qty_pos = line_clean.find(qty_match.group(0))
+            if qty_pos > 0:
+                # Enlever les références numériques au début si présentes
+                designation_part = line_clean[:qty_pos].strip()
                 
-                # Chercher une quantité (nombre après PAQ ou /PC)
-                qty_match = re.search(r'(?:PAQ|/PC)\s+(\d+)', line_clean)
+                # Enlever les références de 4-5 chiffres au début
+                designation_clean = re.sub(r'^\d{4,5}\s+', '', designation_part).strip()
+                
+                if designation_clean:
+                    designation = normalize_designation_simple(designation_clean, "LEADER PRICE")
+                    
+                    articles.append({
+                        "Désignation": designation,
+                        "Qté": qte
+                    })
+    
+    # Recherche alternative pour les consignes
+    if not articles:
+        for line in lines:
+            line_clean = line.upper().strip()
+            
+            if 'CONSIGNE' in line_clean or 'CHAN FOUI' in line_clean:
+                # Chercher un nombre (quantité)
+                qty_match = re.search(r'\b(\d{2,3})\b', line_clean)
                 if qty_match:
                     qte = qty_match.group(1)
                     
-                    # Chercher GTIN
-                    gtin_match = re.search(r'\b(\d{13,14})\b', line_clean)
-                    gtin = gtin_match.group(1) if gtin_match else ""
-                    
-                    # Extraire description
-                    if 'PAQ' in line_clean:
-                        parts = line_clean.split('PAQ')
-                        description_raw = parts[0].strip()
-                    elif '/PC' in line_clean:
-                        parts = line_clean.split('/PC')
-                        description_raw = parts[0].strip()
+                    # Chercher la désignation
+                    if 'CONSIGNE' in line_clean:
+                        designation = "CONS 2000 CHANFOUI"
                     else:
-                        description_raw = line_clean
+                        # Extraire les mots significatifs
+                        words = line_clean.split()
+                        desig_parts = []
+                        for word in words:
+                            if not re.match(r'^\d+$', word) or word in ['75', 'CL']:
+                                desig_parts.append(word)
+                        
+                        designation = ' '.join(desig_parts) if desig_parts else "CONS 2000 CHANFOUI"
                     
-                    # Nettoyer
-                    description_raw = re.sub(r'\d{13,14}', '', description_raw)
-                    description_raw = re.sub(r'\d{8}', '', description_raw).strip()
-                    
-                    designation = normalize_ulys_designation(description_raw, "")
-                    
-                    article_data = {
+                    articles.append({
                         "Désignation": designation,
-                        "Qté": qte,
-                        "Type": "consigne" if "CONS." in designation.upper() else "article"
-                    }
-                    
-                    if gtin:
-                        article_data["GTIN"] = gtin
-                    
-                    articles.append(article_data)
+                        "Qté": qte
+                    })
     
     result["articles"] = articles
     return result
 
-def normalize_ulys_designation(description_raw: str, category: str) -> str:
-    """Normalise les désignations Ulys"""
-    description = description_raw.upper().strip()
+def normalize_designation_simple(designation_raw: str, client_type: str) -> str:
+    """Normalisation simple des désignations pour tous les clients"""
+    designation = designation_raw.upper().strip()
     
-    # Correspondances exactes
-    exact_matches = {
+    # Nettoyer les espaces multiples
+    designation = re.sub(r'\s+', ' ', designation)
+    
+    # Correspondances communes pour tous les clients
+    common_matches = {
+        "COTE DE FIANAR ROUGE 75 CL": "Côte de Fianar Rouge 75 cl",
+        "COTE DE FIANAR ROUGE 75CL": "Côte de Fianar Rouge 75 cl",
+        "COTE DE FIANAR BLANC 75 CL": "Côte de Fianar Blanc 75 cl",
+        "COTE DE FIANAR BLANC 75CL": "Côte de Fianar Blanc 75 cl",
+        "COTE DE FIANAR ROSE 75 CL": "Côte de Fianar Rosé 75 cl",
+        "COTE DE FIANAR ROSÉ 75 CL": "Côte de Fianar Rosé 75 cl",
+        "COTE DE FIANAR GRIS 75 CL": "Côte de Fianar Gris 75 cl",
+        "CONS 2000 CHANFOUI": "CONS 2000 CHANFOUI",
+        "CONS. CHAN FOUI 75CL": "CONS 2000 CHANFOUI",
+        "CONSIGNE BLLE CHAN FOUI 75CL": "CONS 2000 CHANFOUI",
+        "MAROPARASY ROUGE 75 CL": "Maroparasy Rouge 75 cl",
+        "BLANC DOUX MAROPARASY 75 CL": "Blanc doux Maroparasy 75 cl",
         "VIN ROUGE CUVEE SPEC AMBALAVAO 750ML NU": "Côteau d'Ambalavao Spécial 75 cl",
         "VIN ROUGE COTE DE FIANARA 750ML NU": "Côte de Fianar Rouge 75 cl",
         "VIN BLANC DOUX MAROPARASY 750ML NU": "Blanc doux Maroparasy 75 cl",
@@ -934,60 +679,77 @@ def normalize_ulys_designation(description_raw: str, category: str) -> str:
         "VIN GRIS COTE DE FIANARA 750ML NU": "Côte de Fianar Gris 75 cl",
         "VIN ROSE COTE DE FIANARA 750ML NU": "Côte de Fianar Rosé 75 cl",
         "VIN ROUGE DOUX MAROPARASY 750ML NU": "Maroparasy Rouge 75 cl",
-        "CONS. CHAN FOUI 75CL": "CONS 2000 CHANFOUI",
     }
     
-    for key, value in exact_matches.items():
-        if key in description:
+    # Vérifier les correspondances exactes
+    for key, value in common_matches.items():
+        if key in designation:
             return value
     
     # Correspondances partielles
-    if "COTE DE FIANARA" in description or "COTE DE FIANAR" in description:
-        if "ROUGE" in description:
+    if "COTE DE FIANAR" in designation:
+        if "ROUGE" in designation:
             return "Côte de Fianar Rouge 75 cl"
-        elif "BLANC" in description:
+        elif "BLANC" in designation:
             return "Côte de Fianar Blanc 75 cl"
-        elif "ROSE" in description or "ROSÉ" in description:
+        elif "ROSE" in designation or "ROSÉ" in designation:
             return "Côte de Fianar Rosé 75 cl"
-        elif "GRIS" in description:
+        elif "GRIS" in designation:
             return "Côte de Fianar Gris 75 cl"
+        else:
+            return "Côte de Fianar Rouge 75 cl"
     
-    elif "MAROPARASY" in description:
-        if "ROUGE" in description:
+    elif "MAROPARASY" in designation:
+        if "ROUGE" in designation:
             return "Maroparasy Rouge 75 cl"
-        elif "BLANC" in description and "DOUX" in description:
+        elif "BLANC" in designation and "DOUX" in designation:
             return "Blanc doux Maroparasy 75 cl"
+        else:
+            return "Maroparasy Rouge 75 cl"
     
-    elif "AMBALAVAO" in description:
-        if "CUVEE" in description or "SPEC" in description:
+    elif "AMBALAVAO" in designation:
+        if "SPEC" in designation or "SPÉCIAL" in designation or "CUVEE" in designation:
             return "Côteau d'Ambalavao Spécial 75 cl"
         else:
             return "Côteau d'Ambalavao Rouge 75 cl"
     
-    elif "CONS." in description and "CHAN" in description:
+    elif "CONS" in designation and "CHAN" in designation:
         return "CONS 2000 CHANFOUI"
     
-    # Ajouter la catégorie si disponible
-    if category and not category.upper() in description:
-        return f"{category} - {description_raw.strip()}"
+    # Pour ULYS spécifiquement, nettoyer les mentions inutiles
+    if client_type == "ULYS":
+        designation = designation.replace("750ML NU", "").replace("VIN", "").strip()
+        designation = re.sub(r'\s+', ' ', designation)
     
-    # Fallback
-    return description_raw.strip()
+    # Pour Leader Price, nettoyer les mentions BTL, etc.
+    if client_type == "LEADER PRICE":
+        designation = designation.replace("BTL", "").replace("NU", "").replace("LOGE", "").strip()
+        designation = re.sub(r'\s+', ' ', designation)
+    
+    # Capitaliser la première lettre de chaque mot (sauf articles)
+    words = designation.split()
+    capitalized_words = []
+    for word in words:
+        if word.lower() in ['de', 'd', 'la', 'le', 'les', 'du', 'des']:
+            capitalized_words.append(word.lower())
+        else:
+            capitalized_words.append(word.capitalize())
+    
+    return ' '.join(capitalized_words)
 
-# ==================== PIPELINE PRINCIPAL ====================
-def enhanced_bdc_pipeline_precise(image_bytes: bytes, client_type: str = "auto"):
-    """Pipeline BDC ultra-précis pour les 3 formats"""
+# ==================== PIPELINE PRINCIPAL SIMPLIFIÉ ====================
+def bdc_pipeline_simple(image_bytes: bytes, client_type: str = "auto"):
+    """Pipeline BDC simplifié avec Google Vision AI - 2 colonnes seulement"""
     
     # 1. Prétraitement
     processed_img = advanced_preprocess_image(image_bytes)
     
-    # 2. OCR
-    ocr_result = google_vision_ocr_with_hints(processed_img, client_type)
+    # 2. OCR avec Google Vision AI
+    with st.spinner("🔍 Analyse avec Google Vision AI..."):
+        ocr_result = google_vision_ai_ocr(processed_img)
+    
     raw_text = ocr_result["raw_text"]
     raw_text = clean_text(raw_text)
-    
-    # Sauvegarder le texte brut
-    debug_text = raw_text
     
     # 3. Détection automatique du client
     if client_type == "auto":
@@ -1002,137 +764,92 @@ def enhanced_bdc_pipeline_precise(image_bytes: bytes, client_type: str = "auto")
     
     # 4. Extraction selon le client
     if client_type == "SUPERMAKI":
-        result = extract_bdc_supermaki_precise(raw_text)
+        result = extract_bdc_supermaki_simple(raw_text)
     elif client_type == "LEADER PRICE":
-        result = extract_bdc_leader_price_precise(raw_text)
+        result = extract_bdc_leader_price_simple(raw_text)
     elif client_type == "ULYS":
-        result = extract_bdc_ulys_precise(raw_text)
+        result = extract_bdc_ulys_simple(raw_text)
     else:
-        result = extract_bdc_supermaki_precise(raw_text)
+        result = extract_bdc_supermaki_simple(raw_text)
     
     # 5. Nettoyer et valider
-    if result["articles"]:
-        # Nettoyer les quantités
-        for article in result["articles"]:
-            if "Qté" in article:
-                qte = str(article["Qté"])
-                qte = qte.replace('.', '').replace(',', '').strip()
-                if qte.isdigit():
-                    article["Qté"] = qte
-                else:
-                    # Essayer de trouver une quantité valide
-                    qty_match = re.search(r'\b(\d+)\b', qte)
-                    if qty_match:
-                        article["Qté"] = qty_match.group(1)
-        
-        # Calculer la confiance
-        total_articles = len(result["articles"])
-        valid_articles = sum(1 for a in result["articles"] if a.get("Qté") and a.get("Désignation"))
-        confidence = valid_articles / total_articles if total_articles > 0 else 0
-        
-        result["overall_confidence"] = confidence
+    valid_articles = []
+    for article in result["articles"]:
+        if article.get("Désignation") and article.get("Qté"):
+            # Nettoyer la quantité
+            qte = str(article["Qté"])
+            qte = qte.replace('.', '').replace(',', '').strip()
+            if qte.isdigit():
+                article["Qté"] = qte
+                valid_articles.append(article)
+    
+    result["articles"] = valid_articles
+    
+    # 6. Calculer la confiance
+    total_articles = len(result["articles"])
+    if total_articles > 0:
+        result["overall_confidence"] = min(0.95, 0.7 + (total_articles * 0.05))  # Augmente avec le nombre d'articles
         result["article_count"] = total_articles
     else:
         result["overall_confidence"] = 0
         result["article_count"] = 0
     
-    # 6. Métadonnées
-    result["raw"] = debug_text
+    # 7. Métadonnées
+    result["raw"] = raw_text[:500] + "..." if len(raw_text) > 500 else raw_text  # Limiter pour l'affichage
     result["client_type"] = client_type
     
     return result
 
-def display_table_preview_enhanced(articles, client_type):
-    """Affiche un aperçu formaté du tableau extrait"""
+def display_simple_table(articles, client_type):
+    """Affiche un tableau simplifié 2 colonnes"""
     
     if not articles:
         return "<div class='table-preview'><p style='color: #666; text-align: center; padding: 20px;'>Aucun article détecté dans le document</p></div>"
     
-    # Déterminer les colonnes selon le client
-    if client_type == "SUPERMAKI":
-        columns = ["Désignation", "Qté", "Type"]
-        column_titles = ["Désignation", "Quantité", "Type"]
-    elif client_type == "LEADER PRICE":
-        columns = ["Réf", "Désignation", "Qté", "Type"]
-        column_titles = ["Réf", "Désignation", "Quantité", "Type"]
-    elif client_type == "ULYS":
-        columns = ["Désignation", "Qté", "Type"]
-        column_titles = ["Désignation", "Quantité", "Type"]
-    else:
-        columns = ["Désignation", "Qté", "Type"]
-        column_titles = ["Désignation", "Quantité", "Type"]
-    
-    # Générer le HTML du tableau
+    # Générer le HTML du tableau simplifié
     html = f"""
     <div class='table-preview'>
         <div style='margin-bottom: 15px; font-weight: bold; color: var(--petrol);'>
             📋 {len(articles)} article(s) détecté(s) - Format {client_type}
         </div>
-        <div style='display: grid; grid-template-columns: repeat({len(columns)}, auto); gap: 1px; background: #ddd;'>
+        <table class='simple-table'>
+            <thead>
+                <tr>
+                    <th>Désignation / Article</th>
+                    <th>Quantité</th>
+                </tr>
+            </thead>
+            <tbody>
     """
     
-    # En-tête
-    for title in column_titles:
-        html += f'<div class="table-header">{title}</div>'
-    
-    # Lignes de données
-    for i, item in enumerate(articles):
-        for col in columns:
-            value = item.get(col, "")
-            
-            # Formater les valeurs
-            if col == "Qté" and value:
-                try:
-                    num_value = int(str(value).replace('.', '').replace(',', ''))
-                    value = f"{num_value:,}".replace(",", " ")
-                except:
-                    pass
-            
-            if col == "Type" and value:
-                if value == "consigne":
-                    value = f"<span style='color: #e67e22; font-weight: bold;'>CONSIGNE</span>"
-                else:
-                    value = f"<span style='color: #27ae60;'>ARTICLE</span>"
-            
-            html += f'<div class="table-cell">{value}</div>'
-    
-    html += "</div>"
-    
-    # Calculer les totaux
+    # Ajouter les lignes d'articles
     total_qty = 0
-    articles_count = 0
-    consignes_count = 0
-    
-    for item in articles:
+    for i, item in enumerate(articles):
+        designation = item.get("Désignation", "")
         qte = item.get("Qté", "0")
+        
         try:
             qte_num = int(str(qte).replace('.', '').replace(',', ''))
             total_qty += qte_num
-            
-            if item.get("Type") == "consigne":
-                consignes_count += 1
-            else:
-                articles_count += 1
+            qte_formatted = f"{qte_num:,}".replace(",", " ")
         except:
-            pass
+            qte_formatted = qte
+        
+        html += f"""
+                <tr>
+                    <td>{designation}</td>
+                    <td style='font-weight: bold; text-align: center;'>{qte_formatted}</td>
+                </tr>
+        """
     
     html += f"""
-        <div style='margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;'>
-            <div style='display: flex; justify-content: space-between;'>
-                <div>
-                    <strong>Total articles:</strong> {articles_count}
-                </div>
-                <div>
-                    <strong>Total consignes:</strong> {consignes_count}
-                </div>
-                <div>
-                    <strong>Quantité totale:</strong> {total_qty:,} unités
-                </div>
-            </div>
+            </tbody>
+        </table>
+        <div style='margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px; text-align: center;'>
+            <strong>Quantité totale : {total_qty:,} unités</strong>
         </div>
+    </div>
     """
-    
-    html += "</div>"
     
     return html
 
@@ -1225,21 +942,6 @@ def extract_invoice_items(text: str):
     
     return items
 
-def invoice_pipeline(image_bytes: bytes):
-    cleaned = preprocess_image(image_bytes)
-    raw = google_vision_ocr(cleaned)
-    raw = clean_text(raw)
-    
-    return {
-        "raw": raw,
-        "facture": extract_invoice_number(raw),
-        "adresse": extract_delivery_address(raw),
-        "doit": extract_doit(raw),
-        "mois": extract_month(raw),
-        "bon_commande": extract_bon_commande(raw),
-        "articles": extract_invoice_items(raw)
-    }
-
 def preprocess_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     max_w = 2600
@@ -1254,15 +956,36 @@ def preprocess_image(image_bytes: bytes) -> bytes:
     return out.getvalue()
 
 def google_vision_ocr(img_bytes: bytes) -> str:
+    """Utilise document_text_detection pour les factures aussi"""
     client = get_vision_client()
     image = vision.Image(content=img_bytes)
-    response = client.text_detection(image=image)
+    
+    # Utiliser document_text_detection pour une meilleure précision
+    response = client.document_text_detection(image=image)
+    
     if response.error and response.error.message:
         raise Exception(f"Google Vision Error: {response.error.message}")
+    
     raw = ""
-    if response.text_annotations:
-        raw = response.text_annotations[0].description
+    if response.full_text_annotation:
+        raw = response.full_text_annotation.text
+    
     return raw or ""
+
+def invoice_pipeline(image_bytes: bytes):
+    cleaned = preprocess_image(image_bytes)
+    raw = google_vision_ocr(cleaned)
+    raw = clean_text(raw)
+    
+    return {
+        "raw": raw,
+        "facture": extract_invoice_number(raw),
+        "adresse": extract_delivery_address(raw),
+        "doit": extract_doit(raw),
+        "mois": extract_month(raw),
+        "bon_commande": extract_bon_commande(raw),
+        "articles": extract_invoice_items(raw)
+    }
 
 # ---------------------------
 # Google Sheets Functions (inchangées)
@@ -1360,12 +1083,14 @@ def save_invoice_without_duplicates(ws, invoice_data, user_nom):
     except Exception as e:
         raise Exception(f"Erreur lors de l'enregistrement: {str(e)}")
 
-def save_bdc_without_duplicates(ws, bdc_data, user_nom):
+def save_bdc_simple_to_sheets(ws, bdc_data, user_nom):
+    """Enregistre les BDC simplifiés (2 colonnes) dans Google Sheets"""
     try:
         all_values = ws.get_all_values()
         
+        # Vérifier les doublons
         for row in all_values:
-            if len(row) >= 6:
+            if len(row) >= 7:
                 existing_bdc = row[2] if len(row) > 2 else ""
                 existing_client = row[1] if len(row) > 1 else ""
                 existing_article = row[4] if len(row) > 4 else ""
@@ -1374,35 +1099,37 @@ def save_bdc_without_duplicates(ws, bdc_data, user_nom):
                     if (existing_bdc == bdc_data["numero"] and 
                         existing_client == bdc_data["client"] and
                         existing_article == item.get("Désignation", "")):
-                        return 0, 1
+                        return 0, 1  # Doublon trouvé
         
+        # Préparer les lignes à ajouter
         rows_to_add = []
         for item in bdc_data["articles"]:
-            designation = item.get("Désignation", item.get("article", ""))
-            qte = item.get("Qté", item.get("bouteilles", ""))
+            designation = item.get("Désignation", "")
+            qte = item.get("Qté", "")
             
             if designation and qte:
                 rows_to_add.append([
                     bdc_data.get("date", ""),
                     bdc_data.get("client", ""),
                     bdc_data.get("numero", ""),
-                    bdc_data.get("adresse_livraison", ""),
+                    bdc_data.get("adresse_livraison", bdc_data.get("nom_magasin", "")),
                     str(designation).strip(),
                     str(qte).strip(),
                     user_nom
                 ])
         
+        # Ajouter les lignes
         if rows_to_add:
             ws.append_rows(rows_to_add)
             return len(rows_to_add), 0
         
-        return 0, 0
+        return 0, 0  # Aucune donnée à enregistrer
     
     except Exception as e:
         raise Exception(f"Erreur lors de l'enregistrement: {str(e)}")
 
 # ---------------------------
-# Session State (inchangé)
+# Session State
 # ---------------------------
 if "auth" not in st.session_state:
     st.session_state.auth = False
@@ -1475,12 +1202,12 @@ if st.session_state.mode is None:
             st.rerun()
     
     with col2:
-        if st.button("📝 Scanner BDC (Version Ultra-Précise)", use_container_width=True):
+        if st.button("📝 Scanner BDC (Google Vision AI)", use_container_width=True):
             st.session_state.mode = "bdc"
             st.rerun()
     
     st.markdown("<p style='text-align:center;font-size:0.9em;color:var(--muted)'>"
-                "Version BDC avec extraction ultra-précise basée sur vos exemples réels</p>", unsafe_allow_html=True)
+                "Version BDC avec Google Vision AI pour une extraction ultra-précise</p>", unsafe_allow_html=True)
     
     st.markdown("</div>", unsafe_allow_html=True)
     
@@ -1515,7 +1242,7 @@ if st.session_state.mode == "facture":
             img.save(buf, format="JPEG")
             img_bytes = buf.getvalue()
             
-            with st.spinner("Traitement OCR en cours..."):
+            with st.spinner("Traitement OCR avec Google Vision AI..."):
                 try:
                     result = invoice_pipeline(img_bytes)
                     st.session_state.ocr_result = result
@@ -1689,7 +1416,7 @@ if st.session_state.mode == "facture":
             st.rerun()
 
 # ---------------------------
-# NOUVEAU MODE BDC AVEC EXTRACTION ULTRA-PRÉCISE
+# NOUVEAU MODE BDC AVEC GOOGLE VISION AI
 # ---------------------------
 elif st.session_state.mode == "bdc":
     if not st.session_state.bdc_client_type:
@@ -1702,7 +1429,7 @@ elif st.session_state.mode == "bdc":
         with col1:
             st.markdown("<div class='scan-option-card'>", unsafe_allow_html=True)
             st.markdown("<h4 style='text-align:center'>🍷 SUPERMAKI</h4>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align:center;font-size:0.9em'>Format avec REF, EAN, Désignation</p>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align:center;font-size:0.9em'>Format avec tableau REF/EAN</p>", unsafe_allow_html=True)
             if st.button("Sélectionner SUPERMAKI", key="select_supermaki", use_container_width=True):
                 st.session_state.bdc_client_type = "SUPERMAKI"
                 st.rerun()
@@ -1711,7 +1438,7 @@ elif st.session_state.mode == "bdc":
         with col2:
             st.markdown("<div class='scan-option-card'>", unsafe_allow_html=True)
             st.markdown("<h4 style='text-align:center'>🏪 LEADER PRICE</h4>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align:center;font-size:0.9em'>Format avec Réf, Désignation, Qté</p>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align:center;font-size:0.9em'>Format avec quantité.000</p>", unsafe_allow_html=True)
             if st.button("Sélectionner LEADER PRICE", key="select_leader", use_container_width=True):
                 st.session_state.bdc_client_type = "LEADER PRICE"
                 st.rerun()
@@ -1720,7 +1447,7 @@ elif st.session_state.mode == "bdc":
         with col3:
             st.markdown("<div class='scan-option-card'>", unsafe_allow_html=True)
             st.markdown("<h4 style='text-align:center'>🛒 ULYS</h4>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align:center;font-size:0.9em'>Format avec GTIN, Description, Qté</p>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align:center;font-size:0.9em'>Format avec GTIN et PAQ</p>", unsafe_allow_html=True)
             if st.button("Sélectionner ULYS", key="select_ulys", use_container_width=True):
                 st.session_state.bdc_client_type = "ULYS"
                 st.rerun()
@@ -1728,7 +1455,7 @@ elif st.session_state.mode == "bdc":
         
         st.markdown("<div class='card' style='margin-top:20px'>", unsafe_allow_html=True)
         st.markdown("<h4 style='text-align:center'>🔍 Détection Automatique</h4>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center'>L'application détectera automatiquement le format</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center'>Google Vision AI détectera automatiquement le format</p>", unsafe_allow_html=True)
         if st.button("🎯 Détection Automatique", key="select_auto", use_container_width=True):
             st.session_state.bdc_client_type = "auto"
             st.rerun()
@@ -1791,9 +1518,9 @@ elif st.session_state.mode == "bdc":
             img.save(buf, format="JPEG")
             img_bytes = buf.getvalue()
             
-            with st.spinner(f"🔍 Extraction ultra-précise pour {client_name} en cours..."):
+            with st.spinner(f"🔍 Analyse avec Google Vision AI pour {client_name}..."):
                 try:
-                    result = enhanced_bdc_pipeline_precise(img_bytes, st.session_state.bdc_client_type)
+                    result = bdc_pipeline_simple(img_bytes, st.session_state.bdc_client_type)
                     st.session_state.ocr_result = result
                     st.session_state.show_ocr_results = True
                     st.rerun()
@@ -1809,12 +1536,12 @@ elif st.session_state.mode == "bdc":
         
         st.markdown("</div>", unsafe_allow_html=True)
         
-        # APERÇU DU TABLEAU EXTRACTION PRÉCISE
+        # APERÇU DU TABLEAU SIMPLIFIÉ (2 COLONNES)
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown(f"<h4>📊 Tableau des articles détectés</h4>", unsafe_allow_html=True)
+        st.markdown(f"<h4>📊 Articles détectés (2 colonnes)</h4>", unsafe_allow_html=True)
         
         # Afficher le tableau formaté
-        table_html = display_table_preview_enhanced(result.get("articles", []), result.get("client_type", ""))
+        table_html = display_simple_table(result.get("articles", []), result.get("client_type", ""))
         st.markdown(table_html, unsafe_allow_html=True)
         
         # Indicateur de confiance
@@ -1825,6 +1552,7 @@ elif st.session_state.mode == "bdc":
             if overall_confidence > 0.8:
                 confidence_class = "confidence-high"
                 confidence_text = "Élevée"
+                st.balloons()
             elif overall_confidence > 0.6:
                 confidence_class = "confidence-medium"
                 confidence_text = "Moyenne"
@@ -1855,7 +1583,6 @@ elif st.session_state.mode == "bdc":
             
             with col2:
                 adresse = st.text_input("Adresse livraison", value=result.get("adresse_livraison", ""), key="bdc_adresse")
-                adresse_fournisseur = st.text_input("Adresse fournisseur", value=result.get("adresse_fournisseur", ""), key="bdc_adresse_four")
             
             client = "SUPERMAKI"
         
@@ -1878,7 +1605,6 @@ elif st.session_state.mode == "bdc":
             
             with col2:
                 adresse = st.text_input("Nom du Magasin", value=result.get("nom_magasin", ""), key="bdc_adresse")
-                nom_fournisseur = st.text_input("Nom Fournisseur", value=result.get("nom_fournisseur", ""), key="bdc_fournisseur")
             
             client = "ULYS"
         
@@ -1894,68 +1620,59 @@ elif st.session_state.mode == "bdc":
         
         st.markdown("</div>", unsafe_allow_html=True)
         
-        # Section articles éditable
+        # Section articles éditable (tableau 2 colonnes)
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("<h4>🛒 Édition des articles (si nécessaire)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4>🛒 Édition des articles</h4>", unsafe_allow_html=True)
+        st.markdown("<p>Tableau simplifié - 2 colonnes seulement</p>", unsafe_allow_html=True)
         
         articles = result.get("articles", [])
         if articles:
-            # Préparer les données pour l'affichage
-            display_data = []
-            for i, item in enumerate(articles):
-                display_item = item.copy()
-                display_data.append(display_item)
+            # Créer un DataFrame avec les 2 colonnes
+            data = []
+            for item in articles:
+                data.append({
+                    "Désignation": item.get("Désignation", ""),
+                    "Quantité": item.get("Qté", "")
+                })
             
-            df = pd.DataFrame(display_data)
+            df = pd.DataFrame(data)
             
-            # Déterminer les colonnes à afficher
-            if result.get("client_type") == "SUPERMAKI":
-                column_order = ["Désignation", "Qté", "Type"]
-            elif result.get("client_type") == "LEADER PRICE":
-                column_order = ["Réf", "Désignation", "Qté", "Type"]
-            elif result.get("client_type") == "ULYS":
-                column_order = ["Désignation", "Qté", "Type"]
-            else:
-                column_order = [col for col in df.columns]
-            
-            # Réorganiser les colonnes
-            existing_cols = [col for col in column_order if col in df.columns]
-            df = df.reindex(columns=existing_cols)
-            
-            # Configurer les colonnes pour l'édition
-            column_config = {}
-            for col in df.columns:
-                if col == "Qté":
-                    column_config[col] = st.column_config.NumberColumn("Quantité", min_value=0)
-                elif col == "Type":
-                    column_config[col] = st.column_config.SelectboxColumn("Type", options=["article", "consigne"])
-                else:
-                    column_config[col] = st.column_config.TextColumn(col)
-            
-            edited_df = st.data_editor(
-                df,
-                num_rows="dynamic",
-                column_config=column_config,
-                use_container_width=True,
-                key="bdc_articles_editor"
-            )
-        else:
-            st.info("💡 Pour ajouter des articles manuellement, utilisez le tableau ci-dessous.")
-            df = pd.DataFrame(columns=["Désignation", "Qté", "Type"])
+            # Éditeur de données
             edited_df = st.data_editor(
                 df,
                 num_rows="dynamic",
                 column_config={
-                    "Désignation": st.column_config.TextColumn("Article (Désignation)"),
-                    "Qté": st.column_config.NumberColumn("Quantité", min_value=0),
-                    "Type": st.column_config.SelectboxColumn("Type", options=["article", "consigne"])
+                    "Désignation": st.column_config.TextColumn(
+                        "Désignation / Article",
+                        width="large",
+                        help="Nom de l'article ou désignation"
+                    ),
+                    "Quantité": st.column_config.NumberColumn(
+                        "Quantité",
+                        min_value=0,
+                        width="small",
+                        help="Quantité commandée"
+                    )
                 },
                 use_container_width=True,
-                key="bdc_articles_empty"
+                key="bdc_articles_simple"
+            )
+        else:
+            st.info("💡 Pour ajouter des articles manuellement, utilisez le tableau ci-dessous.")
+            df = pd.DataFrame(columns=["Désignation", "Quantité"])
+            edited_df = st.data_editor(
+                df,
+                num_rows="dynamic",
+                column_config={
+                    "Désignation": st.column_config.TextColumn("Désignation / Article"),
+                    "Quantité": st.column_config.NumberColumn("Quantité", min_value=0)
+                },
+                use_container_width=True,
+                key="bdc_articles_empty_simple"
             )
         
-        if st.button("➕ Ajouter une ligne manuellement", key="bdc_add_line"):
-            new_row = {"Désignation": "", "Qté": 0, "Type": "article"}
+        if st.button("➕ Ajouter une ligne manuellement", key="bdc_add_line_simple"):
+            new_row = {"Désignation": "", "Quantité": 0}
             if 'edited_df' in locals():
                 edited_df = pd.concat([edited_df, pd.DataFrame([new_row])], ignore_index=True)
             else:
@@ -1965,11 +1682,11 @@ elif st.session_state.mode == "bdc":
         
         # Section debug OCR
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        with st.expander("🔍 Voir le texte OCR brut pour vérification"):
-            st.text_area("Texte OCR complet", value=result.get("raw", ""), height=300, key="bdc_raw")
+        with st.expander("🔍 Voir l'extrait OCR pour vérification"):
+            st.text_area("Texte OCR (extrait)", value=result.get("raw", ""), height=150, key="bdc_raw")
         
-        # Bouton pour forcer la réextraction avec un autre algorithme
-        if st.button("🔄 Réessayer l'extraction avec un autre algorithme", key="bdc_retry"):
+        # Bouton pour réessayer
+        if st.button("🔄 Réanalyser avec Google Vision AI", key="bdc_retry"):
             st.session_state.show_ocr_results = False
             st.rerun()
         
@@ -1993,10 +1710,11 @@ elif st.session_state.mode == "bdc":
                         articles_to_save = []
                         if 'edited_df' in locals():
                             for _, row in edited_df.iterrows():
-                                article_data = {}
-                                for col in edited_df.columns:
-                                    article_data[col] = row[col]
-                                articles_to_save.append(article_data)
+                                if str(row["Désignation"]).strip() and str(row["Quantité"]).strip():
+                                    articles_to_save.append({
+                                        "Désignation": str(row["Désignation"]).strip(),
+                                        "Qté": str(row["Quantité"]).strip()
+                                    })
                         
                         if articles_to_save:
                             bdc_data = {
@@ -2004,26 +1722,35 @@ elif st.session_state.mode == "bdc":
                                 "client": client,
                                 "numero": numero,
                                 "adresse_livraison": adresse,
+                                "nom_magasin": result.get("nom_magasin", ""),
                                 "articles": articles_to_save
                             }
                             
-                            saved_count, duplicate_count = save_bdc_without_duplicates(ws, bdc_data, st.session_state.user_nom)
+                            saved_count, duplicate_count = save_bdc_simple_to_sheets(ws, bdc_data, st.session_state.user_nom)
                             
                             if saved_count > 0:
                                 st.session_state.bdc_scans += 1
                                 st.success(f"✅ {saved_count} ligne(s) enregistrée(s) avec succès!")
-                                st.info(f"📝 Format: Date | Client | Numéro BDC | Adresse | Article | Qte | Editeur")
+                                st.info(f"📝 Format simplifié: Date | Client | Numéro BDC | Adresse | Article | Quantité | Editeur")
                                 st.info(f"👤 Enregistré par: {st.session_state.user_nom}")
-                                st.info(f"🏷️ Type: {result.get('client_type', 'Inconnu')}")
+                                st.info(f"🏷️ Type détecté: {result.get('client_type', 'Inconnu')}")
                                 
                                 # Afficher un récapitulatif
                                 st.markdown("---")
                                 st.markdown("### 📋 Récapitulatif enregistré:")
+                                total_qty = 0
                                 for i, article in enumerate(articles_to_save[:5]):  # Montrer les 5 premiers
-                                    st.write(f"**{i+1}.** {article.get('Désignation', '')} - Qté: {article.get('Qté', '')}")
+                                    qty = article.get("Qté", "0")
+                                    try:
+                                        total_qty += int(qty)
+                                    except:
+                                        pass
+                                    st.write(f"**{i+1}.** {article.get('Désignation', '')} - Qté: {qty}")
                                 
                                 if len(articles_to_save) > 5:
                                     st.write(f"... et {len(articles_to_save) - 5} autres articles")
+                                
+                                st.write(f"**Total:** {total_qty} unités")
                                 
                                 if st.button("🗑️ Effacer et scanner un nouveau BDC", use_container_width=True, type="secondary"):
                                     st.session_state.uploaded_file = None
@@ -2036,7 +1763,7 @@ elif st.session_state.mode == "bdc":
                             else:
                                 st.warning("⚠️ Aucune donnée valide à enregistrer")
                         else:
-                            st.error("❌ Aucun article à enregistrer. Ajoutez des articles dans le tableau ci-dessus.")
+                            st.error("❌ Aucun article valide à enregistrer. Vérifiez les désignations et quantités.")
                             
                 except Exception as e:
                     st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
