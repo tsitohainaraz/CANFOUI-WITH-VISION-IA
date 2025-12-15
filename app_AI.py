@@ -1,6 +1,7 @@
 # ============================================================
-# BDC ULYS — EXTRACTION FIDÈLE
-# OpenCV (structure) + Google Vision AI (texte)
+# BDC ULYS — OpenCV + Google Vision AI
+# Extraction fiable Désignation / Quantité
+# Compatible Streamlit Cloud (opencv-python-headless)
 # ============================================================
 
 import streamlit as st
@@ -9,116 +10,87 @@ import numpy as np
 import re
 from io import BytesIO
 from PIL import Image
+import pandas as pd
 from google.cloud import vision
 from google.oauth2.service_account import Credentials
-import pandas as pd
 
 # ============================================================
 # STREAMLIT CONFIG
 # ============================================================
-st.set_page_config(page_title="BDC ULYS — OpenCV + Vision", page_icon="🧾")
+st.set_page_config(page_title="BDC ULYS — Vision + OpenCV", page_icon="🧾")
 st.title("🧾 BDC ULYS — Extraction fidèle")
-st.caption("OpenCV (tableau) + Vision AI (OCR)")
+st.caption("OpenCV (structure) + Vision AI (OCR)")
 
 # ============================================================
-# GOOGLE VISION OCR (PAR ZONE)
+# GOOGLE VISION OCR (image -> texte)
 # ============================================================
-def vision_ocr_bytes(image_bytes, creds):
+def vision_ocr(image_bytes, creds):
     client = vision.ImageAnnotatorClient(
         credentials=Credentials.from_service_account_info(creds)
     )
     image = vision.Image(content=image_bytes)
-    res = client.document_text_detection(image=image)
-    return res.full_text_annotation.text or ""
+    response = client.document_text_detection(image=image)
+    return response.full_text_annotation.text or ""
 
 # ============================================================
-# OPENCV — DÉTECTION DES COLONNES
+# OPENCV — DETECTION DES LIGNES DU TABLEAU
 # ============================================================
-def detect_columns(image_cv):
-    gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+def detect_rows(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    bw = cv2.adaptiveThreshold(
+        gray, 255,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
+        cv2.THRESH_BINARY_INV,
+        25, 15
+    )
 
-    kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50))
-    vertical = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_v, iterations=2)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (50, 2))
+    detect = cv2.morphologyEx(bw, cv2.MORPH_OPEN, kernel, iterations=2)
 
-    contours, _ = cv2.findContours(vertical, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    columns = []
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        if h > image_cv.shape[0] * 0.2:
-            columns.append((x, y, w, h))
-
-    columns = sorted(columns, key=lambda c: c[0])
-    return columns
-
-# ============================================================
-# OPENCV — EXTRACTION ZONES LIGNES
-# ============================================================
-def extract_row_boxes(image_cv):
-    gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
-
-    kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
-    horizontal = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_h, iterations=2)
-
-    contours, _ = cv2.findContours(horizontal, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(detect, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     rows = []
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        if w > image_cv.shape[1] * 0.3:
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        if w > img.shape[1] * 0.4 and h < 80:
             rows.append((x, y, w, h))
 
-    rows = sorted(rows, key=lambda r: r[1])
-    return rows
+    return sorted(rows, key=lambda r: r[1])
 
 # ============================================================
-# EXTRACTION ARTICLES ULYS
+# EXTRACTION ARTICLES ULYS (STRUCTURE VISUELLE)
 # ============================================================
-def extract_ulys_articles(image_pil, creds):
-    image_cv = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
-
-    columns = detect_columns(image_cv)
-    rows = extract_row_boxes(image_cv)
-
-    if len(columns) < 2:
-        return []
-
-    # Hypothèse ULYS :
-    # colonne 0 = désignation
-    # colonne dernière = quantité
-    desc_col = columns[0]
-    qty_col = columns[-1]
+def extract_articles_ulys(image_pil, creds):
+    img = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+    rows = detect_rows(img)
 
     articles = []
 
-    for row in rows:
-        y1 = row[1]
-        y2 = row[1] + row[3]
+    for (x, y, w, h) in rows:
+        row_img = img[y:y+h, x:x+w]
 
-        # Zone désignation
-        dx, dy, dw, dh = desc_col
-        crop_desc = image_cv[y1:y2, dx:dx+dw]
+        buf = BytesIO()
+        Image.fromarray(cv2.cvtColor(row_img, cv2.COLOR_BGR2RGB)).save(buf, format="PNG")
+        text = vision_ocr(buf.getvalue(), creds).upper()
 
-        # Zone quantité
-        qx, qy, qw, qh = qty_col
-        crop_qty = image_cv[y1:y2, qx:qx+qw]
+        # Filtrer lignes non articles
+        if not any(k in text for k in ["VIN", "MAROPARASY", "COTE", "AMBALAVAO", "CONS."]):
+            continue
 
-        def to_bytes(img):
-            buf = BytesIO()
-            Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).save(buf, format="PNG")
-            return buf.getvalue()
+        # Nettoyage désignation
+        designation = re.sub(r"\s{2,}", " ", text.replace("\n", " ")).strip()
 
-        desc_text = vision_ocr_bytes(to_bytes(crop_desc), creds).strip()
-        qty_text = vision_ocr_bytes(to_bytes(crop_qty), creds).strip()
+        # Quantité (la PLUS GRANDE valeur entière de la ligne)
+        qty_candidates = re.findall(r"\b\d{1,3}\b", text)
+        if not qty_candidates:
+            continue
 
-        qty_match = re.search(r"\b(\d{1,3})\b", qty_text)
-        if desc_text and qty_match:
-            articles.append({
-                "Désignation": desc_text.replace("\n", " ").strip(),
-                "Quantité": int(qty_match.group(1))
-            })
+        qty = max(map(int, qty_candidates))
+
+        articles.append({
+            "Désignation": designation.title(),
+            "Quantité": qty
+        })
 
     return articles
 
@@ -132,15 +104,22 @@ if uploaded:
     st.image(image, use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Credentials Vision AI manquants")
+        st.error("❌ Credentials Google Vision manquants")
         st.stop()
 
     with st.spinner("🔍 Analyse OpenCV + Vision AI..."):
-        articles = extract_ulys_articles(
+        articles = extract_articles_ulys(
             image,
             dict(st.secrets["gcp_vision"])
         )
 
-    st.subheader("🛒 Articles extraits (structure visuelle)")
+    st.subheader("🛒 Articles détectés")
     df = pd.DataFrame(articles)
-    st.dataframe(df, use_container_width=True)
+
+    if df.empty:
+        st.warning("⚠️ Aucun article détecté — vérifier la qualité du scan")
+    else:
+        st.dataframe(df, use_container_width=True)
+
+    with st.expander("📊 Résumé"):
+        st.write("Nombre d’articles :", len(df))
