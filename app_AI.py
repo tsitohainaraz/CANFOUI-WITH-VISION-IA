@@ -1,11 +1,6 @@
 # ============================================================
-# FACTURE EN COMPTE — CHAN FOUI & FILS
-# Extraction :
-# - Date
-# - Facture en compte N°
-# - Adresse de livraison
-# - DOIT (S2M / ULYS / DLP)
-# - Tableau Désignation / Quantité
+# FACTURE EN COMPTE — VERSION FINALE V2 (FIDÈLE)
+# Extraction stricte du tableau marchandises
 # API : Google Vision AI
 # ============================================================
 
@@ -20,9 +15,9 @@ import pandas as pd
 # ---------------- STREAMLIT ----------------
 st.set_page_config(page_title="FACTURE EN COMPTE", page_icon="🧾")
 st.title("🧾 Facture en compte — Chan Foui & Fils")
-st.caption("Extraction automatique (Vision AI)")
+st.caption("Extraction fidèle des articles (Vision AI)")
 
-# ---------------- IMAGE PREPROCESS ----------------
+# ---------------- IMAGE ----------------
 def preprocess_image(b: bytes) -> bytes:
     img = Image.open(BytesIO(b)).convert("RGB")
     img = ImageOps.autocontrast(img)
@@ -41,7 +36,7 @@ def vision_ocr(b: bytes, creds: dict) -> str:
     return res.full_text_annotation.text or ""
 
 # ---------------- EXTRACTION ----------------
-def extract_facture(text: str):
+def extract_facture_en_compte(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
     result = {
@@ -52,70 +47,66 @@ def extract_facture(text: str):
         "articles": []
     }
 
-    # -------- DATE --------
+    # ---- MÉTADONNÉES ----
     m = re.search(r"le\s+(\d{1,2}\s+\w+\s+\d{4})", text, re.IGNORECASE)
     if m:
         result["date"] = m.group(1)
 
-    # -------- FACTURE EN COMPTE N° --------
     m = re.search(r"FACTURE EN COMPTE\s+N[°o]?\s*(\d+)", text, re.IGNORECASE)
     if m:
         result["facture_numero"] = m.group(1)
 
-    # -------- DOIT --------
     m = re.search(r"DOIT\s*:\s*(S2M|ULYS|DLP)", text, re.IGNORECASE)
     if m:
         result["doit"] = m.group(1)
 
-    # -------- ADRESSE DE LIVRAISON --------
     m = re.search(r"Adresse de livraison\s*:\s*(.+)", text, re.IGNORECASE)
     if m:
         result["adresse_livraison"] = m.group(1).strip()
 
-    # -------- TABLEAU --------
-    in_table = False
-    designation_queue = []
+    # ---- TABLEAU STRICT ----
+    in_designation_block = False
+    in_quantity_block = False
 
-    def clean_designation(s: str) -> str:
-        s = re.sub(r"\s{2,}", " ", s)
-        return s.strip()
+    designation_queue = []
+    quantity_list = []
 
     for line in lines:
         up = line.upper()
 
-        # Début tableau
+        # Début désignations
         if "DÉSIGNATION DES MARCHANDISES" in up:
-            in_table = True
+            in_designation_block = True
             continue
 
-        if not in_table:
+        # Fin désignations
+        if in_designation_block and "CONSIGNE" in up:
+            in_designation_block = False
             continue
 
-        # Fin tableau
-        if "TOTAL HT" in up or "CONSINGE" in up:
-            break
-
-        # Désignation
-        if (
-            len(line) > 15
-            and not re.search(r"\d{2,}", line)
-            and not any(x in up for x in [
-                "NB", "BTLL", "PU", "MONTANT"
-            ])
-        ):
-            designation_queue.append(clean_designation(line))
+        # Collecte désignations
+        if in_designation_block:
+            if len(line) > 10 and not re.search(r"\d", line):
+                designation_queue.append(line.strip())
             continue
 
-        # Quantité = Nb btlls (entier)
-        qty_match = re.search(r"\b(\d{2,3})\b", line)
-        if qty_match and designation_queue:
-            qty = int(qty_match.group(1))
-            designation = designation_queue.pop(0)
+        # Début quantités
+        if "NB BILLS" in up:
+            in_quantity_block = True
+            continue
 
-            result["articles"].append({
-                "Désignation": designation,
-                "Quantité": qty
-            })
+        # Collecte quantités Nb bills (entiers seuls)
+        if in_quantity_block:
+            if re.fullmatch(r"\d{1,3}", line):
+                quantity_list.append(int(line))
+            continue
+
+    # ---- ASSOCIATION FIFO ----
+    for d, q in zip(designation_queue, quantity_list):
+        result["articles"].append({
+            "Désignation": d,
+            "Quantité": q
+        })
 
     return result
 
@@ -123,10 +114,10 @@ def extract_facture(text: str):
 def pipeline(image_bytes, creds):
     img = preprocess_image(image_bytes)
     raw = vision_ocr(img, creds)
-    return extract_facture(raw), raw
+    return extract_facture_en_compte(raw), raw
 
 # ---------------- UI ----------------
-uploaded = st.file_uploader("📤 Importer la FACTURE EN COMPTE", ["jpg", "jpeg", "png"])
+uploaded = st.file_uploader("📤 Importer FACTURE EN COMPTE", ["jpg", "jpeg", "png"])
 
 if uploaded:
     image = Image.open(uploaded)
@@ -147,9 +138,9 @@ if uploaded:
     st.write("📦 Adresse de livraison :", result["adresse_livraison"])
     st.write("👤 DOIT :", result["doit"])
 
-    st.subheader("🛒 Articles")
+    st.subheader("🛒 Articles (fidèles)")
     df = pd.DataFrame(result["articles"])
     st.dataframe(df, use_container_width=True)
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR brut", raw, height=300)
+        st.text_area("OCR brut", raw, height=350)
