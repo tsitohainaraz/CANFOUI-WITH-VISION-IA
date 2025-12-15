@@ -1,5 +1,7 @@
 # ============================================================
-# FACTURE EN COMPTE — CHAN FOUI & FILS (VERSION STABLE)
+# app_ulys_bdc_vision_ai_FINAL.py
+# BDC ULYS — EXTRACTION COMPLÈTE DE TOUTES LES LIGNES
+# API : Google Vision AI (document_text_detection)
 # ============================================================
 
 import streamlit as st
@@ -10,138 +12,182 @@ from google.cloud import vision
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# ---------------- STREAMLIT ----------------
-st.set_page_config(page_title="FACTURE EN COMPTE", page_icon="🧾")
-st.title("🧾 Facture en compte — Chan Foui & Fils")
-st.caption("Extraction automatique (Vision AI)")
+# ============================================================
+# STREAMLIT CONFIG
+# ============================================================
+st.set_page_config(
+    page_title="BDC ULYS — Vision AI (complet)",
+    page_icon="🧾",
+    layout="centered"
+)
 
-# ---------------- IMAGE PREPROCESS ----------------
-def preprocess_image(b: bytes) -> bytes:
-    img = Image.open(BytesIO(b)).convert("RGB")
+st.title("🧾 Bon de Commande ULYS")
+st.caption("Extraction COMPLÈTE — aucune ligne manquante (Vision AI)")
+
+# ============================================================
+# IMAGE PREPROCESS
+# ============================================================
+def preprocess_image(image_bytes: bytes) -> bytes:
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
 
-# ---------------- OCR ----------------
-def vision_ocr(b: bytes, creds: dict) -> str:
-    client = vision.ImageAnnotatorClient(
-        credentials=Credentials.from_service_account_info(creds)
-    )
-    image = vision.Image(content=b)
-    res = client.document_text_detection(image=image)
-    return res.full_text_annotation.text or ""
+# ============================================================
+# GOOGLE VISION OCR
+# ============================================================
+def google_vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
+    creds = Credentials.from_service_account_info(creds_dict)
+    client = vision.ImageAnnotatorClient(credentials=creds)
+    image = vision.Image(content=image_bytes)
+    response = client.document_text_detection(image=image)
+    if response.error.message:
+        raise Exception(response.error.message)
+    return response.full_text_annotation.text or ""
 
-# ---------------- EXTRACTION ----------------
-def extract_facture(text: str):
+def clean_text(text: str) -> str:
+    text = text.replace("\r", "\n")
+    text = re.sub(r"[^\S\r\n]+", " ", text)
+    return text.strip()
+
+# ============================================================
+# EXTRACTION ULYS — LOGIQUE "1 QUANTITÉ = 1 LIGNE"
+# ============================================================
+def extract_bdc_ulys(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
     result = {
+        "client": "ULYS",
+        "numero": "",
         "date": "",
-        "facture_numero": "",
-        "adresse_livraison": "",
-        "doit": "",
         "articles": []
     }
 
-    # -------- DATE --------
-    m = re.search(r"le\s+(\d{1,2}\s+\w+\s+\d{4})", text, re.IGNORECASE)
+    # Métadonnées
+    m = re.search(r"N[°o]\s*(\d{8,})", text)
+    if m:
+        result["numero"] = m.group(1)
+
+    m = re.search(r"Date de la Commande\s*:?[\s\-]*(\d{2}/\d{2}/\d{4})", text)
     if m:
         result["date"] = m.group(1)
 
-    # -------- FACTURE --------
-    m = re.search(r"FACTURE EN COMPTE\s+N[°o]?\s*(\d+)", text, re.IGNORECASE)
-    if m:
-        result["facture_numero"] = m.group(1)
-
-    # -------- DOIT --------
-    m = re.search(r"DOIT\s*:\s*(S2M|ULYS|DLP)", text, re.IGNORECASE)
-    if m:
-        result["doit"] = m.group(1)
-
-    # -------- ADRESSE --------
-    m = re.search(r"Adresse de livraison\s*:\s*(.+)", text, re.IGNORECASE)
-    if m:
-        result["adresse_livraison"] = m.group(1).strip()
-
-    # -------- TABLEAU --------
+    # -----------------------------
+    # PARSING ROBUSTE
+    # -----------------------------
     in_table = False
-    designation_queue = []
+    current_designation = ""
+    waiting_qty = False
+
+    def is_valid_qty(s: str) -> bool:
+        s = s.replace("D", "").replace("O", "0").replace("G", "0")
+        return re.fullmatch(r"\d{1,3}", s) is not None
 
     def clean_designation(s: str) -> str:
-        return re.sub(r"\s{2,}", " ", s).strip()
+        s = re.sub(r"\b\d{6,}\b", "", s)  # codes longs
+        s = s.replace("PAQ", "").replace("/PC", "")
+        s = re.sub(r"\s{2,}", " ", s)
+        return s.strip()
 
     for line in lines:
         up = line.upper()
 
-        # Début tableau
-        if "DÉSIGNATION DES MARCHANDISES" in up:
+        # Début du tableau (tolérant OCR)
+        if "DESCRIPTION DE L'ARTICLE" in up:
             in_table = True
             continue
 
         if not in_table:
             continue
 
-        # Fin tableau (plus robuste)
-        if "ARRÊTÉE LA PRÉSENTE FACTURE" in up or "TOTAL HT" in up:
+        # Fin du tableau
+        if "TOTAL DE LA COMMANDE" in up:
             break
 
-        # Désignation (autorise 75 CL / 750 ML)
-        if (
-            len(line) > 12
-            and not any(x in up for x in [
-                "NB", "BTLL", "PU", "MONTANT", "TOTAL"
-            ])
-            and not re.fullmatch(r"\d+", line)
-        ):
-            designation_queue.append(clean_designation(line))
+        # Ignorer sections
+        if re.match(r"\d{6}\s+(VINS|CONSIGNE|LIQUEUR)", up):
             continue
 
-        # Quantité réaliste métier
-        qty_match = re.search(r"\b(6|12|24|48|60|72|120)\b", line)
-        if qty_match and designation_queue:
-            qty = int(qty_match.group(1))
-            designation = designation_queue.pop(0)
+        # -------------------------
+        # DÉSIGNATION = CONTEXTE
+        # -------------------------
+        if ("VIN " in up or "CONS." in up) and not re.match(r"\d{6,}", line):
+            current_designation = clean_designation(line)
+            waiting_qty = False
+            continue
 
-            result["articles"].append({
-                "Désignation": designation,
-                "Quantité": qty
-            })
+        # -------------------------
+        # UNITÉ → attente quantité
+        # -------------------------
+        if up in ["PAQ", "/PC"]:
+            waiting_qty = True
+            continue
+
+        # -------------------------
+        # QUANTITÉ = ÉVÉNEMENT
+        # -------------------------
+        if current_designation and waiting_qty:
+            clean = (
+                line.replace("D", "")
+                    .replace("O", "0")
+                    .replace("G", "0")
+            )
+            if is_valid_qty(clean):
+                result["articles"].append({
+                    "Désignation": current_designation.title(),
+                    "Quantité": int(clean)
+                })
+                # ⚠️ on NE RÉINITIALISE PAS la désignation
+                waiting_qty = False
+                continue
 
     return result
 
-# ---------------- PIPELINE ----------------
-def pipeline(image_bytes, creds):
+# ============================================================
+# PIPELINE
+# ============================================================
+def bdc_pipeline(image_bytes: bytes, creds_dict: dict):
     img = preprocess_image(image_bytes)
-    raw = vision_ocr(img, creds)
-    return extract_facture(raw), raw
+    raw = google_vision_ocr(img, creds_dict)
+    raw = clean_text(raw)
+    return extract_bdc_ulys(raw), raw
 
-# ---------------- UI ----------------
-uploaded = st.file_uploader("📤 Importer la FACTURE EN COMPTE", ["jpg", "jpeg", "png"])
+# ============================================================
+# UI
+# ============================================================
+uploaded = st.file_uploader(
+    "📤 Importer le Bon de Commande ULYS",
+    type=["jpg", "jpeg", "png"]
+)
 
 if uploaded:
     image = Image.open(uploaded)
-    st.image(image, use_container_width=True)
+    st.image(image, caption="Aperçu BDC ULYS", use_column_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Credentials Vision AI manquants")
+        st.error("❌ Ajoute les credentials Google Vision dans .streamlit/secrets.toml")
         st.stop()
 
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    result, raw = pipeline(buf.getvalue(), dict(st.secrets["gcp_vision"]))
+    with st.spinner("🔍 Analyse Vision AI..."):
+        result, raw_text = bdc_pipeline(
+            buf.getvalue(),
+            dict(st.secrets["gcp_vision"])
+        )
 
-    st.subheader("📋 Informations facture")
-    st.write("📅 Date :", result["date"])
-    st.write("🧾 Facture n° :", result["facture_numero"])
-    st.write("📦 Adresse de livraison :", result["adresse_livraison"])
-    st.write("👤 DOIT :", result["doit"])
+    st.subheader("📋 Informations BDC")
+    st.write(f"**Client :** {result['client']}")
+    st.write(f"**Numéro :** {result['numero']}")
+    st.write(f"**Date :** {result['date']}")
 
-    st.subheader("🛒 Articles")
+    st.subheader("🛒 Articles détectés (COMPLETS)")
     df = pd.DataFrame(result["articles"])
     st.dataframe(df, use_container_width=True)
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR brut", raw, height=300)
+        st.text_area("OCR", raw_text, height=300)
+
