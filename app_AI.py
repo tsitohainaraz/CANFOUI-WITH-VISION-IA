@@ -1,134 +1,155 @@
+# ============================================================
+# FACTURE EN COMPTE — CHAN FOUI & FILS
+# Extraction :
+# - Date
+# - Facture en compte N°
+# - Adresse de livraison
+# - DOIT (S2M / ULYS / DLP)
+# - Tableau Désignation / Quantité
+# API : Google Vision AI
+# ============================================================
+
 import streamlit as st
 import re
-import pandas as pd
 from io import BytesIO
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 from google.cloud import vision
 from google.oauth2.service_account import Credentials
+import pandas as pd
 
-# --------------------------------------------------
-# STREAMLIT CONFIG
-# --------------------------------------------------
-st.set_page_config(page_title="Facture Chan Foui", page_icon="🧾")
-st.title("🧾 Facture en compte – Chan Foui & Fils")
-st.caption("Extraction fidèle Désignation ↔ Nb bills (anti-empty)")
+# ---------------- STREAMLIT ----------------
+st.set_page_config(page_title="FACTURE EN COMPTE", page_icon="🧾")
+st.title("🧾 Facture en compte — Chan Foui & Fils")
+st.caption("Extraction automatique (Vision AI)")
 
-# --------------------------------------------------
-# IMAGE PREPROCESS
-# --------------------------------------------------
-def preprocess_image(image_bytes: bytes) -> bytes:
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+# ---------------- IMAGE PREPROCESS ----------------
+def preprocess_image(b: bytes) -> bytes:
+    img = Image.open(BytesIO(b)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=160))
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
 
-# --------------------------------------------------
-# GOOGLE VISION OCR
-# --------------------------------------------------
-def vision_ocr(image_bytes: bytes, creds: dict) -> str:
+# ---------------- OCR ----------------
+def vision_ocr(b: bytes, creds: dict) -> str:
     client = vision.ImageAnnotatorClient(
         credentials=Credentials.from_service_account_info(creds)
     )
-    image = vision.Image(content=image_bytes)
+    image = vision.Image(content=b)
     res = client.document_text_detection(image=image)
     return res.full_text_annotation.text or ""
 
-# --------------------------------------------------
-# EXTRACTION ROBUSTE (ANTI EMPTY)
-# --------------------------------------------------
-def extract_designation_nb_bills(ocr_text: str) -> pd.DataFrame:
-    lines = [l.strip() for l in ocr_text.split("\n") if l.strip()]
+# ---------------- EXTRACTION ----------------
+def extract_facture(text: str):
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    # ---------- 1. DESIGNATIONS ----------
-    designations = []
-    in_designation = False
+    result = {
+        "date": "",
+        "facture_numero": "",
+        "adresse_livraison": "",
+        "doit": "",
+        "articles": []
+    }
+
+    # -------- DATE --------
+    m = re.search(r"le\s+(\d{1,2}\s+\w+\s+\d{4})", text, re.IGNORECASE)
+    if m:
+        result["date"] = m.group(1)
+
+    # -------- FACTURE EN COMPTE N° --------
+    m = re.search(r"FACTURE EN COMPTE\s+N[°o]?\s*(\d+)", text, re.IGNORECASE)
+    if m:
+        result["facture_numero"] = m.group(1)
+
+    # -------- DOIT --------
+    m = re.search(r"DOIT\s*:\s*(S2M|ULYS|DLP)", text, re.IGNORECASE)
+    if m:
+        result["doit"] = m.group(1)
+
+    # -------- ADRESSE DE LIVRAISON --------
+    m = re.search(r"Adresse de livraison\s*:\s*(.+)", text, re.IGNORECASE)
+    if m:
+        result["adresse_livraison"] = m.group(1).strip()
+
+    # -------- TABLEAU --------
+    in_table = False
+    designation_queue = []
+
+    def clean_designation(s: str) -> str:
+        s = re.sub(r"\s{2,}", " ", s)
+        return s.strip()
 
     for line in lines:
         up = line.upper()
 
+        # Début tableau
         if "DÉSIGNATION DES MARCHANDISES" in up:
-            in_designation = True
+            in_table = True
             continue
 
-        if in_designation and "SUIVANT VOTRE BON DE COMMANDE" in up:
+        if not in_table:
+            continue
+
+        # Fin tableau
+        if "TOTAL HT" in up or "CONSINGE" in up:
             break
 
-        if in_designation:
-            if up == "CONSIGNE":
-                continue
-            if len(line) > 10 and not re.search(r"\d", line):
-                designations.append(line)
-
-    if not designations:
-        return pd.DataFrame(columns=["Désignation", "Nb bills"])
-
-    # ---------- 2. EXTRAIRE TOUS LES NB BILLS ----------
-    all_numbers = []
-    nb_bills_section = False
-
-    for line in lines:
-        up = line.upper()
-
-        if "NB BILLS" in up:
-            nb_bills_section = True
+        # Désignation
+        if (
+            len(line) > 15
+            and not re.search(r"\d{2,}", line)
+            and not any(x in up for x in [
+                "NB", "BTLL", "PU", "MONTANT"
+            ])
+        ):
+            designation_queue.append(clean_designation(line))
             continue
 
-        if not nb_bills_section:
-            continue
+        # Quantité = Nb btlls (entier)
+        qty_match = re.search(r"\b(\d{2,3})\b", line)
+        if qty_match and designation_queue:
+            qty = int(qty_match.group(1))
+            designation = designation_queue.pop(0)
 
-        # ignorer montants
-        if "," in line or "." in line:
-            continue
+            result["articles"].append({
+                "Désignation": designation,
+                "Quantité": qty
+            })
 
-        nums = re.findall(r"\d{1,3}", line)
-        for n in nums:
-            val = int(n)
-            if 1 <= val <= 150:
-                all_numbers.append(val)
+    return result
 
-    # ---------- 3. PRENDRE EXACTEMENT N VALEURS ----------
-    nb_needed = len(designations)
-    nb_bills = all_numbers[:nb_needed]
+# ---------------- PIPELINE ----------------
+def pipeline(image_bytes, creds):
+    img = preprocess_image(image_bytes)
+    raw = vision_ocr(img, creds)
+    return extract_facture(raw), raw
 
-    rows = []
-    for d, q in zip(designations, nb_bills):
-        rows.append({
-            "Désignation": d,
-            "Nb bills": q
-        })
-
-    return pd.DataFrame(rows)
-
-# --------------------------------------------------
-# UI
-# --------------------------------------------------
-uploaded = st.file_uploader(
-    "📤 Importer une facture en compte (image)",
-    type=["jpg", "jpeg", "png"]
-)
+# ---------------- UI ----------------
+uploaded = st.file_uploader("📤 Importer la FACTURE EN COMPTE", ["jpg", "jpeg", "png"])
 
 if uploaded:
     image = Image.open(uploaded)
     st.image(image, use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Clé Google Vision AI manquante")
+        st.error("❌ Credentials Vision AI manquants")
         st.stop()
 
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    with st.spinner("🔍 OCR en cours…"):
-        ocr_text = vision_ocr(
-            preprocess_image(buf.getvalue()),
-            dict(st.secrets["gcp_vision"])
-        )
+    result, raw = pipeline(buf.getvalue(), dict(st.secrets["gcp_vision"]))
 
-    st.subheader("🛒 Articles (fidèles)")
-    df = extract_designation_nb_bills(ocr_text)
+    st.subheader("📋 Informations facture")
+    st.write("📅 Date :", result["date"])
+    st.write("🧾 Facture en compte n° :", result["facture_numero"])
+    st.write("📦 Adresse de livraison :", result["adresse_livraison"])
+    st.write("👤 DOIT :", result["doit"])
+
+    st.subheader("🛒 Articles")
+    df = pd.DataFrame(result["articles"])
     st.dataframe(df, use_container_width=True)
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR brut", ocr_text, height=350)
+        st.text_area("OCR brut", raw, height=300)
