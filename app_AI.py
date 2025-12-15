@@ -1,6 +1,6 @@
 # ============================================================
-# BDC ULYS — EXTRACTION FIABLE ET COMPLÈTE
-# API : Google Vision AI (document_text_detection)
+# BDC ULYS — EXTRACTION PRÉCISE PAR LISTE BLANCHE
+# API : Google Vision AI
 # ============================================================
 
 import streamlit as st
@@ -10,23 +10,107 @@ from PIL import Image, ImageFilter, ImageOps
 from google.cloud import vision
 from google.oauth2.service_account import Credentials
 import pandas as pd
+import unicodedata
 
 # ============================================================
 # STREAMLIT CONFIG
 # ============================================================
 st.set_page_config(
-    page_title="BDC ULYS — Extraction fidèle",
+    page_title="BDC ULYS — Extraction précise",
     page_icon="🧾",
     layout="centered"
 )
 
 st.title("🧾 Bon de Commande ULYS")
-st.caption("Extraction fidèle — aucune ligne manquante")
+st.caption("Extraction précise basée sur désignations standardisées")
 
 # ============================================================
-# IMAGE PREPROCESSING
+# LISTE BLANCHE DES DÉSIGNATIONS (FOURNIE PAR TOI)
 # ============================================================
-def preprocess_image(image_bytes: bytes) -> bytes:
+RAW_PRODUCTS = [
+    "Côte de Fianar Rouge 75 cl",
+    "Côte de Fianar Rouge 37 cl",
+    "Côte de Fianar Rouge 3L",
+    "Côte de Fianar Blanc 3L",
+    "Côte de Fianar Rosé 3L",
+    "Blanc doux Maroparasy 3L",
+    "Côte de Fianar Blanc 75 cl",
+    "Côte de Fianar Blanc 37 cl",
+    "Côte de Fianar Rosé 75 cl",
+    "Côte de Fianar Rosé 37 cl",
+    "Côte de Fianar Gris 75 cl",
+    "Côte de Fianar Gris 37 cl",
+    "Maroparasy Rouge 75 cl",
+    "Maroparasy Rouge 37 cl",
+    "Blanc doux Maroparasy 75 cl",
+    "Blanc doux Maroparasy 37 cl",
+    "Côteau d'Ambalavao Rouge 75 cl",
+    "Côteau d'Ambalavao Blanc 75 cl",
+    "Côteau d'Ambalavao Rosé 75 cl",
+    "Côteau d'Ambalavao Spécial 75 cl",
+    "Aperao Orange 75 cl",
+    "Aperao Pêche 75 cl",
+    "Aperao Ananas 75 cl",
+    "Aperao Epices 75 cl",
+    "Aperao Ratafia 75 cl",
+    "Aperao Eau de vie 75 cl",
+    "Aperao Eau de vie 37 cl",
+    "Vin de Champêtre 100 cl",
+    "Vin de Champêtre 50 cl",
+    "Jus de raisin Rouge 70 cl",
+    "Jus de raisin Rouge 20 cl",
+    "Jus de raisin Blanc 70 cl",
+    "Jus de raisin Blanc 20 cl",
+    "Sambatra 20 cl",
+    "Vin rouge Côte de fianar btl 75 CL nu",
+    "Vin rouge Côte de fianar btl 37 CL nu",
+    "Vin rouge 3l cote de fianar",
+    "Vin blanc 3l cote de fianar",
+    "Vin Rose 3L COTE DE FIANAR",
+    "Vin blanc côte de fianar btl 75 CL nu",
+    "Vin rose cote de fianar btl 75 CL",
+    "Vin Gris côte de fianar btl 75 CL nu",
+    "VIN APERITIF ROUGE MAROPARASY 75CL",
+    "VIN BLANC DOUX MAROPARASY 75CL",
+    "Vin rouge coteau d'amb/vao btl 75 CL",
+    "Vin Blanc Ambalavao 750ML NU",
+    "Côteau d'Ambalavao Cuvee Spécial Rouge 75 CL",
+    "JUS DE RAISIN ROUGE 75CL LP7",
+    "JUS DE RAISIN BLANC 75CL LP7",
+    "VIN ROUGE COTE DE FIANARA 750 ML NU",
+    "VIN ROUGE COTE DE FIANARA 370 ML NU",
+    "VIN BLANC COTE DE FIANARA 750 ML NU",
+    "VIN ROSE COTE DE FIANARA 750 ML NU",
+    "VIN GRIS COTE DE FIANARA 750 ML NU",
+    "APERITIF MAROPARASY 75 CL",
+    "VIN BLANC DOUX MAROPARASY 750 ML NU",
+    "VIN DE MADAGASCAR 75 CL ROUGE",
+    "VIN DE MADAGASCAR 75 CL ROSE",
+    "Vin rouge cuvee special Ambalavao 750 ML NU",
+    "JUS DE RAISIN 70cl",
+    "VIN ROUGE DOUX MAROPARASY 750 ML NU",
+    "Coteau d'Ambalavao Cuvée special RGE",
+]
+
+# ============================================================
+# NORMALISATION TEXTE
+# ============================================================
+def normalize_text(s: str) -> str:
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = s.lower()
+    s = re.sub(r"[^\w\s]", " ", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+STANDARD_PRODUCTS = {
+    normalize_text(p): p for p in RAW_PRODUCTS
+}
+
+# ============================================================
+# IMAGE PREPROCESS
+# ============================================================
+def preprocess_image(image_bytes):
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
     img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
@@ -35,148 +119,78 @@ def preprocess_image(image_bytes: bytes) -> bytes:
     return out.getvalue()
 
 # ============================================================
-# GOOGLE VISION OCR
+# OCR
 # ============================================================
-def vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
+def vision_ocr(image_bytes, creds_dict):
     creds = Credentials.from_service_account_info(creds_dict)
     client = vision.ImageAnnotatorClient(credentials=creds)
     image = vision.Image(content=image_bytes)
-    response = client.document_text_detection(image=image)
-    return response.full_text_annotation.text or ""
-
-def clean_text(text: str) -> str:
-    text = text.replace("\r", "\n")
-    text = re.sub(r"[^\S\r\n]+", " ", text)
-    return text.strip()
+    res = client.document_text_detection(image=image)
+    return res.full_text_annotation.text or ""
 
 # ============================================================
-# EXTRACTION LOGIQUE — ULYS (FENÊTRE GLISSANTE)
+# EXTRACTION ULYS
 # ============================================================
 def extract_bdc_ulys(text: str):
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    norm = normalize_text(text)
 
     result = {
-        "client": "ULYS",
-        "numero": "",
-        "date": "",
-        "articles": []
+        "Client": "ULYS",
+        "Articles": []
     }
 
-    # ---------------- METADONNEES ----------------
-    m = re.search(r"N[°o]\s*(\d{8,})", text)
-    if m:
-        result["numero"] = m.group(1)
+    for norm_name, display_name in STANDARD_PRODUCTS.items():
+        if norm_name in norm:
+            pos = norm.find(norm_name)
+            window = norm[pos:pos + 150]
 
-    m = re.search(r"Date de la Commande\s*:?[\s\-]*(\d{2}/\d{2}/\d{4})", text)
-    if m:
-        result["date"] = m.group(1)
-
-    # ---------------- TABLE ----------------
-    in_table = False
-    i = 0
-
-    def is_designation(line: str) -> bool:
-        up = line.upper()
-        return (
-            up.startswith("VIN ")
-            or up.startswith("CONS.")
-            or "CONSIGNE" in up
-        )
-
-    def clean_designation(s: str) -> str:
-        s = re.sub(r"\b\d{6,}\b", "", s)  # codes longs
-        s = s.replace("PAQ", "").replace("/PC", "")
-        s = re.sub(r"\s{2,}", " ", s)
-        return s.strip().title()
-
-    def normalize_qty(s: str):
-        s = s.replace("D", "").replace("O", "0").replace("G", "0")
-        if re.fullmatch(r"\d{1,3}", s):
-            return int(s)
-        return None
-
-    while i < len(lines):
-        line = lines[i]
-        up = line.upper()
-
-        # Début tableau
-        if "DESCRIPTION DE L'ARTICLE" in up:
-            in_table = True
-            i += 1
-            continue
-
-        if not in_table:
-            i += 1
-            continue
-
-        # Fin tableau
-        if "TOTAL DE LA COMMANDE" in up:
-            break
-
-        # Désignation détectée
-        if is_designation(line):
-            designation = clean_designation(line)
-            qty = None
-
-            # 🔍 Recherche quantité dans les lignes suivantes
-            for j in range(i + 1, min(i + 8, len(lines))):
-                candidate = normalize_qty(lines[j])
-                if candidate is not None:
-                    qty = candidate
-                    break
-
-            result["articles"].append({
-                "Désignation": designation,
-                "Quantité": qty
-            })
-
-        i += 1
+            qty_match = re.search(r"\b(\d{1,3})\b", window)
+            if qty_match:
+                qty = int(qty_match.group(1))
+                if 1 <= qty <= 500:
+                    result["Articles"].append({
+                        "Désignation": display_name,
+                        "Quantité": qty
+                    })
 
     return result
 
 # ============================================================
 # PIPELINE
 # ============================================================
-def pipeline(image_bytes: bytes, creds_dict: dict):
+def pipeline(image_bytes, creds):
     img = preprocess_image(image_bytes)
-    raw = vision_ocr(img, creds_dict)
-    raw = clean_text(raw)
+    raw = vision_ocr(img, creds)
     return extract_bdc_ulys(raw), raw
 
 # ============================================================
 # UI
 # ============================================================
 uploaded = st.file_uploader(
-    "📤 Importer le Bon de Commande ULYS",
-    type=["jpg", "jpeg", "png"]
+    "📤 Importer un Bon de Commande ULYS",
+    ["jpg", "jpeg", "png"]
 )
 
 if uploaded:
     image = Image.open(uploaded)
-    st.image(image, caption="Aperçu BDC ULYS", use_container_width=True)
+    st.image(image, use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Credentials Google Vision manquants")
+        st.error("❌ Credentials Vision AI manquants")
         st.stop()
 
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    with st.spinner("🔍 Analyse Vision AI..."):
-        result, raw_text = pipeline(
+    with st.spinner("🔍 Analyse du BDC ULYS..."):
+        result, raw = pipeline(
             buf.getvalue(),
             dict(st.secrets["gcp_vision"])
         )
 
-    # ---------------- AFFICHAGE ----------------
-    st.subheader("📋 Informations BDC")
-    st.write("**Client :**", result["client"])
-    st.write("**Numéro :**", result["numero"])
-    st.write("**Date :**", result["date"])
-
-    st.subheader("🛒 Articles détectés (FIDÈLES)")
-    df = pd.DataFrame(result["articles"])
+    st.subheader("🛒 Tableau des articles (fidèle)")
+    df = pd.DataFrame(result["Articles"])
     st.dataframe(df, use_container_width=True)
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR brut", raw_text, height=350)
+        st.text_area("OCR", raw, height=300)
