@@ -11,7 +11,7 @@ from google.oauth2.service_account import Credentials
 # --------------------------------------------------
 st.set_page_config(page_title="Facture Chan Foui", page_icon="🧾")
 st.title("🧾 Facture en compte – Chan Foui & Fils")
-st.caption("Extraction fidèle : Désignation + Nb bills")
+st.caption("Extraction fidèle Désignation ↔ Nb bills (anti-empty)")
 
 # --------------------------------------------------
 # IMAGE PREPROCESS
@@ -36,12 +36,12 @@ def vision_ocr(image_bytes: bytes, creds: dict) -> str:
     return res.full_text_annotation.text or ""
 
 # --------------------------------------------------
-# EXTRACTION FIDÈLE (LOGIQUE OCR RÉEL)
+# EXTRACTION ROBUSTE (ANTI EMPTY)
 # --------------------------------------------------
 def extract_designation_nb_bills(ocr_text: str) -> pd.DataFrame:
     lines = [l.strip() for l in ocr_text.split("\n") if l.strip()]
 
-    # ---------- 1. DÉSIGNATIONS ----------
+    # ---------- 1. DESIGNATIONS ----------
     designations = []
     in_designation = False
 
@@ -61,33 +61,37 @@ def extract_designation_nb_bills(ocr_text: str) -> pd.DataFrame:
             if len(line) > 10 and not re.search(r"\d", line):
                 designations.append(line)
 
-    # ---------- 2. NB BILLS ----------
-    nb_bills = []
-    in_nb_bills = False
+    if not designations:
+        return pd.DataFrame(columns=["Désignation", "Nb bills"])
+
+    # ---------- 2. EXTRAIRE TOUS LES NB BILLS ----------
+    all_numbers = []
+    nb_bills_section = False
 
     for line in lines:
         up = line.upper()
 
         if "NB BILLS" in up:
-            in_nb_bills = True
+            nb_bills_section = True
             continue
 
-        if in_nb_bills:
-            if "TOTAL HT" in up:
-                break
+        if not nb_bills_section:
+            continue
 
-            # ignorer montants
-            if "." in line or "," in line:
-                continue
+        # ignorer montants
+        if "," in line or "." in line:
+            continue
 
-            # extraire TOUS les nombres de la ligne
-            nums = re.findall(r"\d{1,3}", line)
-            for n in nums:
-                val = int(n)
-                if 1 <= val <= 150:
-                    nb_bills.append(val)
+        nums = re.findall(r"\d{1,3}", line)
+        for n in nums:
+            val = int(n)
+            if 1 <= val <= 150:
+                all_numbers.append(val)
 
-    # ---------- 3. ASSOCIATION STRICTE ----------
+    # ---------- 3. PRENDRE EXACTEMENT N VALEURS ----------
+    nb_needed = len(designations)
+    nb_bills = all_numbers[:nb_needed]
+
     rows = []
     for d, q in zip(designations, nb_bills):
         rows.append({
