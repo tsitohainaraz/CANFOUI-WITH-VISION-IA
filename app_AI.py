@@ -1,6 +1,6 @@
 # ============================================================
-# BDC ULYS — EXTRACTION FIDÈLE (Vision AI ONLY)
-# Aucun OpenCV — 100% Streamlit Cloud compatible
+# BDC ULYS — EXTRACTION FIDÈLE (RÈGLES MÉTIER)
+# Google Vision AI uniquement (sans OpenCV)
 # ============================================================
 
 import streamlit as st
@@ -21,53 +21,32 @@ st.set_page_config(
 )
 
 st.title("🧾 Bon de Commande ULYS")
-st.caption("Extraction robuste — aucune ligne ratée")
+st.caption("Extraction fidèle basée sur règles métier (Vision AI)")
 
 # ============================================================
-# IMAGE PREPROCESS (SANS OPENCV)
+# IMAGE PREPROCESS (LÉGER, SÛR)
 # ============================================================
 def preprocess_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
-    out = BytesIO()
-    img.save(out, format="PNG")
-    return out.getvalue()
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.0, percent=150))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 # ============================================================
-# GOOGLE VISION OCR
+# OCR — GOOGLE VISION
 # ============================================================
-def google_vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
-    creds = Credentials.from_service_account_info(creds_dict)
-    client = vision.ImageAnnotatorClient(credentials=creds)
+def vision_ocr(image_bytes: bytes, creds: dict) -> str:
+    client = vision.ImageAnnotatorClient(
+        credentials=Credentials.from_service_account_info(creds)
+    )
     image = vision.Image(content=image_bytes)
-    response = client.document_text_detection(image=image)
-
-    if response.error.message:
-        raise RuntimeError(response.error.message)
-
-    return response.full_text_annotation.text or ""
-
-def clean_text(text: str) -> str:
-    text = text.replace("\r", "\n")
-    text = re.sub(r"[^\S\r\n]+", " ", text)
-    return text.strip()
+    res = client.document_text_detection(image=image)
+    return res.full_text_annotation.text or ""
 
 # ============================================================
-# SAFE INTEGER EXTRACTION (ANTI ValueError)
-# ============================================================
-def safe_extract_int(s: str):
-    if not s:
-        return None
-
-    s = s.replace("D", "").replace("O", "0").replace("G", "0")
-    match = re.search(r"\b(\d{1,3})\b", s)
-    if match:
-        return int(match.group(1))
-    return None
-
-# ============================================================
-# ULYS — EXTRACTION LOGIQUE FIDÈLE
+# EXTRACTION MÉTIER ULYS
 # ============================================================
 def extract_ulys(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -79,79 +58,66 @@ def extract_ulys(text: str):
         "articles": []
     }
 
-    # ---------------- METADATA ----------------
+    # ---------------- METADONNÉES ----------------
     m = re.search(r"N[°o]\s*(\d{8,})", text)
     if m:
         result["numero"] = m.group(1)
 
-    m = re.search(r"Date de la Commande\s*:?\s*(\d{2}/\d{2}/\d{4})", text)
+    m = re.search(r"Date de la Commande\s*:?[\s\-]*(\d{2}/\d{2}/\d{4})", text)
     if m:
         result["date"] = m.group(1)
 
-    # ---------------- TABLE PARSING ----------------
-    in_table = False
+    # ---------------- RÈGLES MÉTIER ----------------
     current_designation = None
-    waiting_qty = False
 
-    def clean_designation(s: str) -> str:
-        s = re.sub(r"\b\d{6,}\b", "", s)   # codes longs
-        s = s.replace("PAQ", "").replace("/PC", "")
-        s = re.sub(r"\s{2,}", " ", s)
-        return s.strip().title()
+    def is_designation(line: str) -> bool:
+        return (
+            len(line) > 12
+            and not re.search(r"\d{4,}", line)
+            and not any(x in line.upper() for x in [
+                "PAQ", "/PC", "DATE", "TOTAL", "FACTEUR",
+                "GTIN", "ARTICLE", "UNITE", "CONV"
+            ])
+        )
+
+    def is_quantity(line: str) -> bool:
+        return re.fullmatch(r"\d{1,3}", line) is not None
 
     for line in lines:
         up = line.upper()
 
-        # Début tableau
-        if "DESCRIPTION DE L'ARTICLE" in up:
-            in_table = True
-            continue
-
-        if not in_table:
-            continue
-
-        # Fin tableau
+        # STOP TABLE
         if "TOTAL DE LA COMMANDE" in up:
             break
 
-        # Ignorer titres de sections
-        if re.match(r"\d{6}\s+(VINS|CONSIGNE|LIQUEUR)", up):
+        # IGNORE TECHNIQUE
+        if any(x in up for x in [
+            "PAQ", "/PC", "1 PAQ", "PC",
+            "D3", "CONV", "DATE", "LIVRAISON"
+        ]):
             continue
 
-        # ---------------- DESIGNATION ----------------
-        if (
-            ("VIN " in up or "CONS." in up)
-            and not re.search(r"\d{6,}", line)
-            and len(line) > 15
-        ):
-            current_designation = clean_designation(line)
-            waiting_qty = False
+        # DÉSIGNATION
+        if is_designation(line):
+            current_designation = re.sub(r"\s{2,}", " ", line).title()
             continue
 
-        # ---------------- UNITÉ ----------------
-        if up in ["PAQ", "/PC"]:
-            waiting_qty = True
-            continue
-
-        # ---------------- QUANTITÉ ----------------
-        if current_designation and waiting_qty:
-            qty = safe_extract_int(line)
-            if qty is not None:
-                result["articles"].append({
-                    "Désignation": current_designation,
-                    "Quantité": qty
-                })
-                waiting_qty = False
+        # QUANTITÉ
+        if current_designation and is_quantity(line):
+            result["articles"].append({
+                "Désignation": current_designation,
+                "Quantité": int(line)
+            })
+            current_designation = None
 
     return result
 
 # ============================================================
 # PIPELINE
 # ============================================================
-def pipeline(image_bytes: bytes, creds_dict: dict):
+def pipeline(image_bytes, creds):
     img = preprocess_image(image_bytes)
-    raw = google_vision_ocr(img, creds_dict)
-    raw = clean_text(raw)
+    raw = vision_ocr(img, creds)
     return extract_ulys(raw), raw
 
 # ============================================================
@@ -164,29 +130,31 @@ uploaded = st.file_uploader(
 
 if uploaded:
     image = Image.open(uploaded)
-    st.image(image, caption="Aperçu BDC ULYS", use_container_width=True)
+    st.image(image, use_column_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Ajoute les credentials Vision AI dans secrets.toml")
+        st.error("❌ Credentials Vision AI manquants")
         st.stop()
 
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    with st.spinner("🔍 Analyse Vision AI en cours..."):
-        result, raw_text = pipeline(
-            buf.getvalue(),
-            dict(st.secrets["gcp_vision"])
-        )
+    with st.spinner("🔍 Analyse Vision AI..."):
+        result, raw = pipeline(buf.getvalue(), dict(st.secrets["gcp_vision"]))
 
     st.subheader("📋 Informations BDC")
     st.write("**Client :**", result["client"])
     st.write("**Numéro :**", result["numero"])
     st.write("**Date :**", result["date"])
 
-    st.subheader("🛒 Articles extraits (fidèles)")
+    st.subheader("🛒 Articles extraits (FIDÈLES)")
     df = pd.DataFrame(result["articles"])
-    st.dataframe(df, use_container_width=True)
+
+    if df.empty:
+        st.warning("⚠️ Aucun article détecté — vérifier la qualité du scan")
+    else:
+        st.dataframe(df, use_container_width=True)
+        st.success(f"✅ {len(df)} lignes détectées")
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR brut", raw_text, height=300)
+        st.text_area("OCR", raw, height=300)
