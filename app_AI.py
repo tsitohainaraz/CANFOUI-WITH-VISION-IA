@@ -1,6 +1,12 @@
 # ============================================================
-# app_ulys_bdc_FINAL_STABLE.py
-# Extraction ULYS robuste (Vision AI + règles métier)
+# FACTURE EN COMPTE — CHAN FOUI & FILS
+# Extraction fidèle :
+# - Date
+# - Facture en compte N°
+# - Adresse de livraison
+# - DOIT
+# - Articles : Désignation / Quantité (Nb btlls)
+# API : Google Vision AI
 # ============================================================
 
 import streamlit as st
@@ -11,152 +17,133 @@ from google.cloud import vision
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# ============================================================
-# CONFIG
-# ============================================================
-st.set_page_config(
-    page_title="BDC ULYS — Extraction fiable",
-    page_icon="🧾",
-    layout="centered"
-)
+# ---------------- STREAMLIT ----------------
+st.set_page_config(page_title="FACTURE — Chan Foui & Fils", page_icon="🧾")
+st.title("🧾 Facture en compte — Chan Foui & Fils")
 
-st.title("🧾 Bon de Commande ULYS")
-st.caption("Extraction fidèle par règles métier")
-
-# ============================================================
-# OCR
-# ============================================================
-def preprocess_image(image_bytes):
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+# ---------------- IMAGE PREPROCESS ----------------
+def preprocess_image(b: bytes) -> bytes:
+    img = Image.open(BytesIO(b)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=150))
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
 
-def vision_ocr(image_bytes, creds):
+# ---------------- OCR ----------------
+def vision_ocr(b: bytes, creds: dict) -> str:
     client = vision.ImageAnnotatorClient(
         credentials=Credentials.from_service_account_info(creds)
     )
-    image = vision.Image(content=image_bytes)
+    image = vision.Image(content=b)
     res = client.document_text_detection(image=image)
     return res.full_text_annotation.text or ""
 
-def clean_text(txt):
-    txt = txt.replace("\r", "\n")
-    txt = re.sub(r"[^\S\r\n]+", " ", txt)
-    return txt.strip()
-
-# ============================================================
-# PRODUITS ULYS (MOTS CLÉS)
-# ============================================================
-PRODUCT_KEYWORDS = [
-    "VIN ROUGE COTE DE",
-    "VIN BLANC COTE DE",
-    "VIN BLANC DOUX MAROPARASY",
-    "VIN ROUGE DOUX MAROPARASY",
-    "VIN GRIS COTE DE",
-    "CONS. CHAN FOUI 75CL",
-    "CONS. CHAN FOUL 75CL"
-]
-
-def normalize_designation(text):
-    t = re.sub(r"[^A-Z0-9 ]", " ", text.upper())
-    t = re.sub(r"\s+", " ", t)
-    return t.strip()
-
-# ============================================================
-# EXTRACTION MÉTIER (CLÉ)
-# ============================================================
-def extract_ulys(text):
+# ---------------- EXTRACTION FACTURE ----------------
+def extract_facture(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
-    rows = []
 
-    i = 0
-    while i < len(lines):
-        line = normalize_designation(lines[i])
+    result = {
+        "date": "",
+        "facture_numero": "",
+        "adresse_livraison": "",
+        "doit": "",
+        "articles": []
+    }
 
-        # Détection début article
-        if any(k in line for k in PRODUCT_KEYWORDS):
-            designation_parts = [line]
-            qty = None
+    # DATE
+    m = re.search(r"le\s+(\d{1,2}\s+\w+\s+\d{4})", text, re.IGNORECASE)
+    if m:
+        result["date"] = m.group(1)
 
-            # Fenêtre métier
-            for j in range(i + 1, min(i + 10, len(lines))):
-                candidate = normalize_designation(lines[j])
+    # FACTURE N°
+    m = re.search(r"FACTURE EN COMPTE\s+N[°o]?\s*(\d+)", text, re.IGNORECASE)
+    if m:
+        result["facture_numero"] = m.group(1)
 
-                # Reconstruction désignation
-                if (
-                    not re.search(r"\d{1,3}", candidate)
-                    and not any(x in candidate for x in ["PAQ", "/PC", "PC"])
-                ):
-                    designation_parts.append(candidate)
+    # DOIT
+    m = re.search(r"DOIT\s*:\s*([A-Z0-9]+)", text)
+    if m:
+        result["doit"] = m.group(1)
 
-                # Détection quantité
-                num = re.sub(r"[^\d]", "", candidate)
-                if num.isdigit():
-                    val = int(num)
-                    if 1 <= val <= 300:
-                        qty = val
-                        break
+    # ADRESSE LIVRAISON
+    m = re.search(r"Adresse de livraison\s*:\s*(.+)", text, re.IGNORECASE)
+    if m:
+        result["adresse_livraison"] = m.group(1).strip()
 
-            designation = " ".join(designation_parts)
-            designation = re.sub(r"\s+", " ", designation)
+    # -------- TABLEAU --------
+    in_table = False
+    current_designation = None
 
-            if qty:
-                rows.append({
-                    "Désignation": designation.title(),
-                    "Quantité": qty
-                })
+    def is_qty(s):
+        s = s.replace("D", "").replace("O", "0")
+        return re.fullmatch(r"\d{1,3}", s)
 
-            i = j
-        i += 1
+    for i, line in enumerate(lines):
+        up = line.upper()
 
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
+        # Début tableau
+        if "DÉSIGNATION DES MARCHANDISES" in up:
+            in_table = True
+            continue
 
-    # Agrégation finale
-    df = df.groupby("Désignation", as_index=False)["Quantité"].sum()
-    return df
+        if not in_table:
+            continue
 
-# ============================================================
-# PIPELINE
-# ============================================================
+        # Fin tableau
+        if "TOTAL HT" in up or "ARRÊTÉE LA PRÉSENTE FACTURE" in up:
+            break
+
+        # Désignation (ligne texte sans chiffres)
+        if (
+            len(line) > 15
+            and not re.search(r"\d{2,}", line)
+            and not any(x in up for x in ["NB", "PU", "MONTANT", "COLIS"])
+        ):
+            current_designation = line.strip()
+            continue
+
+        # Quantité = Nb btlls
+        if current_designation and is_qty(line):
+            result["articles"].append({
+                "Désignation": current_designation,
+                "Quantité": int(line)
+            })
+            current_designation = None
+
+    return result
+
+# ---------------- PIPELINE ----------------
 def pipeline(image_bytes, creds):
     img = preprocess_image(image_bytes)
     raw = vision_ocr(img, creds)
-    raw = clean_text(raw)
-    df = extract_ulys(raw)
-    return df, raw
+    return extract_facture(raw), raw
 
-# ============================================================
-# UI
-# ============================================================
-uploaded = st.file_uploader(
-    "📤 Importer un BDC ULYS",
-    type=["jpg", "jpeg", "png"]
-)
+# ---------------- UI ----------------
+uploaded = st.file_uploader("📤 Importer la FACTURE", ["jpg", "jpeg", "png"])
 
 if uploaded:
     image = Image.open(uploaded)
-    st.image(image, use_column_width=True)
+    st.image(image, use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Credentials Vision manquants")
+        st.error("❌ Credentials Vision AI manquants")
         st.stop()
 
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    with st.spinner("Analyse en cours..."):
-        df, raw = pipeline(buf.getvalue(), dict(st.secrets["gcp_vision"]))
+    result, raw = pipeline(buf.getvalue(), dict(st.secrets["gcp_vision"]))
 
-    st.subheader("🛒 Articles extraits (FIDÈLES)")
-    if df.empty:
-        st.warning("⚠️ Aucun article détecté")
-    else:
-        st.dataframe(df, use_container_width=True)
+    st.subheader("📋 Informations facture")
+    st.write("📅 Date :", result["date"])
+    st.write("🧾 Facture n° :", result["facture_numero"])
+    st.write("📦 Adresse :", result["adresse_livraison"])
+    st.write("👤 DOIT :", result["doit"])
+
+    st.subheader("🛒 Articles (fidèles)")
+    df = pd.DataFrame(result["articles"])
+    st.dataframe(df, use_container_width=True)
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR", raw, height=350)
+        st.text_area("OCR", raw, height=300)
