@@ -1,12 +1,14 @@
 # ============================================================
-# BDC ULYS — EXTRACTION FIDÈLE (SANS EMPTY / SANS FUSION)
-# API : Google Vision AI
+# BDC ULYS — EXTRACTION FIDÈLE
+# OpenCV (structure) + Google Vision AI (texte)
 # ============================================================
 
 import streamlit as st
+import cv2
+import numpy as np
 import re
 from io import BytesIO
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image
 from google.cloud import vision
 from google.oauth2.service_account import Credentials
 import pandas as pd
@@ -14,155 +16,131 @@ import pandas as pd
 # ============================================================
 # STREAMLIT CONFIG
 # ============================================================
-st.set_page_config(
-    page_title="BDC ULYS — Extraction fiable",
-    page_icon="🧾",
-    layout="centered"
-)
-
-st.title("🧾 Bon de Commande ULYS")
-st.caption("Extraction fidèle des articles — Vision AI")
+st.set_page_config(page_title="BDC ULYS — OpenCV + Vision", page_icon="🧾")
+st.title("🧾 BDC ULYS — Extraction fidèle")
+st.caption("OpenCV (tableau) + Vision AI (OCR)")
 
 # ============================================================
-# IMAGE PREPROCESS
+# GOOGLE VISION OCR (PAR ZONE)
 # ============================================================
-def preprocess_image(image_bytes: bytes) -> bytes:
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
-    img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
-    out = BytesIO()
-    img.save(out, format="PNG")
-    return out.getvalue()
-
-# ============================================================
-# GOOGLE VISION OCR
-# ============================================================
-def google_vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
-    creds = Credentials.from_service_account_info(creds_dict)
-    client = vision.ImageAnnotatorClient(credentials=creds)
+def vision_ocr_bytes(image_bytes, creds):
+    client = vision.ImageAnnotatorClient(
+        credentials=Credentials.from_service_account_info(creds)
+    )
     image = vision.Image(content=image_bytes)
     res = client.document_text_detection(image=image)
     return res.full_text_annotation.text or ""
 
-def clean_text(text: str) -> str:
-    text = text.replace("\r", "\n")
-    text = re.sub(r"[^\S\r\n]+", " ", text)
-    return text.strip()
+# ============================================================
+# OPENCV — DÉTECTION DES COLONNES
+# ============================================================
+def detect_columns(image_cv):
+    gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50))
+    vertical = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_v, iterations=2)
+
+    contours, _ = cv2.findContours(vertical, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    columns = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        if h > image_cv.shape[0] * 0.2:
+            columns.append((x, y, w, h))
+
+    columns = sorted(columns, key=lambda c: c[0])
+    return columns
 
 # ============================================================
-# EXTRACTION BDC ULYS — LOGIQUE CORRECTE
-# 1 désignation = 1 quantité
+# OPENCV — EXTRACTION ZONES LIGNES
 # ============================================================
-def extract_bdc_ulys(text: str):
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+def extract_row_boxes(image_cv):
+    gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
 
-    result = {
-        "client": "ULYS",
-        "numero": "",
-        "date": "",
-        "articles": []
-    }
+    kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
+    horizontal = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_h, iterations=2)
 
-    # ---------------- MÉTADONNÉES ----------------
-    m = re.search(r"N[°o]\s*(\d{8,})", text)
-    if m:
-        result["numero"] = m.group(1)
+    contours, _ = cv2.findContours(horizontal, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    m = re.search(r"Date de la Commande\s*:?\s*(\d{2}/\d{2}/\d{4})", text)
-    if m:
-        result["date"] = m.group(1)
+    rows = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        if w > image_cv.shape[1] * 0.3:
+            rows.append((x, y, w, h))
 
-    # ---------------- RÈGLES MÉTIER ----------------
-    VALID_QTY = {
-        "1", "2", "3", "6", "10", "12",
-        "24", "36", "48", "60", "72", "120", "231"
-    }
+    rows = sorted(rows, key=lambda r: r[1])
+    return rows
 
-    def is_category(line: str) -> bool:
-        return bool(re.match(r"\d{6}\s+(VINS|LIQUEUR|CONSIGNE)", line.upper()))
+# ============================================================
+# EXTRACTION ARTICLES ULYS
+# ============================================================
+def extract_ulys_articles(image_pil, creds):
+    image_cv = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
 
-    def is_noise(line: str) -> bool:
-        up = line.upper()
-        return (
-            up in {"PAQ", "/PC", "PC"}
-            or "PAQ=" in up
-            or "PC=" in up
-            or re.search(r"\d{2}\.\d{2}\.\d{4}", up)
-        )
+    columns = detect_columns(image_cv)
+    rows = extract_row_boxes(image_cv)
 
-    def clean_designation(s: str) -> str:
-        s = re.sub(r"\b\d{6,}\b", "", s)  # codes GTIN
-        s = s.replace("PAQ", "").replace("/PC", "")
-        s = re.sub(r"\s{2,}", " ", s)
-        return s.strip().title()
+    if len(columns) < 2:
+        return []
 
-    # ---------------- PARSING ----------------
-    current_designation = None
+    # Hypothèse ULYS :
+    # colonne 0 = désignation
+    # colonne dernière = quantité
+    desc_col = columns[0]
+    qty_col = columns[-1]
 
-    for line in lines:
-        # ignorer bruit et catégories
-        if is_category(line) or is_noise(line):
-            continue
+    articles = []
 
-        # quantité → clôture article
-        if line in VALID_QTY and current_designation:
-            result["articles"].append({
-                "Désignation": current_designation,
-                "Quantité": int(line)
+    for row in rows:
+        y1 = row[1]
+        y2 = row[1] + row[3]
+
+        # Zone désignation
+        dx, dy, dw, dh = desc_col
+        crop_desc = image_cv[y1:y2, dx:dx+dw]
+
+        # Zone quantité
+        qx, qy, qw, qh = qty_col
+        crop_qty = image_cv[y1:y2, qx:qx+qw]
+
+        def to_bytes(img):
+            buf = BytesIO()
+            Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).save(buf, format="PNG")
+            return buf.getvalue()
+
+        desc_text = vision_ocr_bytes(to_bytes(crop_desc), creds).strip()
+        qty_text = vision_ocr_bytes(to_bytes(crop_qty), creds).strip()
+
+        qty_match = re.search(r"\b(\d{1,3})\b", qty_text)
+        if desc_text and qty_match:
+            articles.append({
+                "Désignation": desc_text.replace("\n", " ").strip(),
+                "Quantité": int(qty_match.group(1))
             })
-            current_designation = None
-            continue
 
-        # nouvelle désignation (remplace l’ancienne)
-        if not re.fullmatch(r"\d+", line):
-            cleaned = clean_designation(line)
-            if len(cleaned) > 10:
-                current_designation = cleaned
-
-    return result
-
-# ============================================================
-# PIPELINE
-# ============================================================
-def bdc_pipeline(image_bytes: bytes, creds_dict: dict):
-    img = preprocess_image(image_bytes)
-    raw = google_vision_ocr(img, creds_dict)
-    raw = clean_text(raw)
-    return extract_bdc_ulys(raw), raw
+    return articles
 
 # ============================================================
 # UI
 # ============================================================
-uploaded = st.file_uploader(
-    "📤 Importer le Bon de Commande ULYS",
-    type=["jpg", "jpeg", "png"]
-)
+uploaded = st.file_uploader("📤 Importer le BDC ULYS", ["jpg", "jpeg", "png"])
 
 if uploaded:
     image = Image.open(uploaded)
-    st.image(image, caption="Aperçu BDC ULYS", use_container_width=True)
+    st.image(image, use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Credentials Google Vision manquants")
+        st.error("❌ Credentials Vision AI manquants")
         st.stop()
 
-    buf = BytesIO()
-    image.save(buf, format="JPEG")
-
-    with st.spinner("🔍 Analyse Vision AI..."):
-        result, raw_text = bdc_pipeline(
-            buf.getvalue(),
+    with st.spinner("🔍 Analyse OpenCV + Vision AI..."):
+        articles = extract_ulys_articles(
+            image,
             dict(st.secrets["gcp_vision"])
         )
 
-    st.subheader("📋 Informations BDC")
-    st.write(f"**Client :** {result['client']}")
-    st.write(f"**Numéro :** {result['numero']}")
-    st.write(f"**Date :** {result['date']}")
-
-    st.subheader("🛒 Articles extraits (fidèles)")
-    df = pd.DataFrame(result["articles"])
+    st.subheader("🛒 Articles extraits (structure visuelle)")
+    df = pd.DataFrame(articles)
     st.dataframe(df, use_container_width=True)
-
-    with st.expander("🔎 OCR brut"):
-        st.text_area("OCR", raw_text, height=300)
