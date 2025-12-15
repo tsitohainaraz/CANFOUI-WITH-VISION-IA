@@ -1,6 +1,6 @@
 # ============================================================
-# app_leaderprice_bdc_vision_ai_FINAL.py
-# BDC LEADER PRICE — Extraction complète Désignation / Quantité
+# BDC LEADER PRICE — VERSION FINALE V2
+# Extraction fidèle de TOUTES les lignes (VIN + CONSIGNES)
 # OCR réel (colonnes éclatées)
 # API : Google Cloud Vision AI
 # ============================================================
@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 st.title("🧾 Bon de Commande LEADER PRICE")
-st.caption("Extraction complète (OCR réel) — Google Vision AI")
+st.caption("Extraction complète VIN + CONSIGNES (OCR réel)")
 
 # ============================================================
 # PRETRAITEMENT IMAGE
@@ -43,11 +43,9 @@ def google_vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
     creds = Credentials.from_service_account_info(creds_dict)
     client = vision.ImageAnnotatorClient(credentials=creds)
     image = vision.Image(content=image_bytes)
-
     response = client.document_text_detection(image=image)
     if response.error.message:
-        raise Exception(response.error.message)
-
+        raise RuntimeError(response.error.message)
     return response.full_text_annotation.text or ""
 
 def clean_text(text: str) -> str:
@@ -77,20 +75,19 @@ def extract_leaderprice(text: str):
     if m:
         result["date"] = m.group(1)
 
-    # -------- PARSING --------
+    # -------- PARSING TABLEAU --------
     in_table = False
     current_designation = ""
 
     def clean_designation(s: str) -> str:
-        # Supprimer refs courtes isolées
-        s = re.sub(r"\b\d{4}\b", "", s)
+        s = re.sub(r"\b\d{4}\b", "", s)   # refs isolées
         s = re.sub(r"\s{2,}", " ", s)
         return s.strip()
 
     for line in lines:
         up = line.upper()
 
-        # ---- DÉBUT TABLEAU (OCR RÉEL LEADER PRICE) ----
+        # ---- DÉBUT TABLEAU ----
         if up == "RÉF" or "DÉSIGNATION" in up:
             in_table = True
             continue
@@ -102,15 +99,19 @@ def extract_leaderprice(text: str):
         if "TOTAL HT" in up:
             break
 
-        # ---- DÉSIGNATION = CONTEXTE ----
+        # ---- DÉSIGNATION = CONTEXTE ROBUSTE ----
         if (
-            any(k in up for k in ["VIN ", "CONSIGNE"])
-            and not re.search(r"\d+\.\d{3}", line)
+            not re.search(r"\d+\.\d{3}", line)      # pas une quantité
+            and len(line) >= 15                     # texte significatif
+            and not any(x in up for x in [
+                "PIÈCES", "C/12", "PX", "REM",
+                "MONTANT", "QTÉ", "DATE", "TOTAL"
+            ])
         ):
             current_designation = clean_designation(line)
             continue
 
-        # ---- QUANTITÉ = ÉVÉNEMENT (.000) ----
+        # ---- QUANTITÉ = ÉVÉNEMENT ----
         qty_match = re.search(r"(\d{2,4})\.(\d{3})", line)
         if qty_match and current_designation:
             qty = int(qty_match.group(1))
@@ -144,13 +145,13 @@ if uploaded:
     st.image(image, caption="Aperçu BDC LEADER PRICE", use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Ajoute les credentials Google Vision dans .streamlit/secrets.toml")
+        st.error("❌ Credentials Google Vision absents (.streamlit/secrets.toml)")
         st.stop()
 
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    with st.spinner("🔍 Analyse avec Vision AI..."):
+    with st.spinner("🔍 Analyse Vision AI en cours..."):
         result, raw_text = bdc_pipeline(
             buf.getvalue(),
             dict(st.secrets["gcp_vision"])
@@ -170,4 +171,4 @@ if uploaded:
         st.warning("Aucun article détecté")
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR brut", raw_text, height=300)
+        st.text_area("OCR brut", raw_text, height=350)
