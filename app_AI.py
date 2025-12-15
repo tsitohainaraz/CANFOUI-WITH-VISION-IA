@@ -1,6 +1,6 @@
 # ============================================================
-# app_ulys_bdc.py
-# Extraction BDC ULYS — Désignation / Quantité (lignes séparées)
+# app_ulys_bdc_final.py
+# BDC ULYS — Extraction fiable Désignation / Quantité
 # API : Google Vision AI (document_text_detection)
 # ============================================================
 
@@ -16,13 +16,13 @@ import pandas as pd
 # CONFIG STREAMLIT
 # ============================================================
 st.set_page_config(
-    page_title="BDC ULYS — Extraction fidèle",
+    page_title="BDC ULYS — Extraction fiable",
     page_icon="🧾",
     layout="centered"
 )
 
 st.title("🧾 Bon de Commande ULYS")
-st.caption("Extraction fidèle — Désignation & Quantité (lignes séparées)")
+st.caption("Extraction fidèle — Désignation & Quantité (Vision AI)")
 
 # ============================================================
 # PRETRAITEMENT IMAGE
@@ -30,7 +30,7 @@ st.caption("Extraction fidèle — Désignation & Quantité (lignes séparées)"
 def preprocess_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
@@ -55,7 +55,7 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 # ============================================================
-# EXTRACTION BDC ULYS (FORMAT HORIZONTAL)
+# EXTRACTION BDC ULYS (LOGIQUE MÉTIER STRICTE)
 # ============================================================
 def extract_bdc_ulys(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -77,45 +77,47 @@ def extract_bdc_ulys(text: str):
     if m:
         result["date"] = m.group(1)
 
-    # ----------------------------
-    # Extraction des lignes articles
-    # ----------------------------
+    # ------------------------------------------------
+    # EXTRACTION DES ARTICLES (SEULEMENT DANS LE TABLEAU)
+    # ------------------------------------------------
+    in_table = False
+    current_designation = ""
+
     for line in lines:
+        up = line.upper()
 
-        line_upper = line.upper()
-
-        # Ignorer les titres / catégories / totaux
-        if any(k in line_upper for k in [
-            "GTIN", "ARTICLE NO", "DESCRIPTION", "UNITE",
-            "TOTAL", "CREÉ", "APPROUVÉ", "VINS ROUGES",
-            "VINS BLANCS", "VINS ROSES", "LIQUEUR",
-            "DETAILS DU", "BON DE COMMANDE"
-        ]):
+        # Début du tableau
+        if "DESCRIPTION DE L'ARTICLE" in up and "QTÉ" in up:
+            in_table = True
             continue
 
-        # Chercher une quantité (Qté)
-        qty_match = re.search(r"\b(\d{1,3})\b", line)
-        if not qty_match:
+        if not in_table:
             continue
 
-        quantite = int(qty_match.group(1))
+        # Fin du tableau
+        if "TOTAL DE LA COMMANDE" in up:
+            break
 
-        # Désignation = texte avant la quantité
-        designation = line[:qty_match.start()].strip()
-
-        # Filtre anti-faux positifs
-        if len(designation) < 5:
+        # Ignorer les catégories (VINS ROUGES, BLANCS, etc.)
+        if re.match(r"\d{6}\s+(VINS|CONSIGNE|LIQUEUR)", up):
             continue
 
-        if any(k in designation.upper() for k in [
-            "PAQ", "/PC", "CONV", "DATE"
-        ]):
+        # Construire la désignation (multi-lignes)
+        if any(k in up for k in ["VIN ", "CONS."]) and not up.endswith("PAQ") and not up.endswith("/PC"):
+            current_designation += " " + line
             continue
 
-        result["articles"].append({
-            "Désignation": designation.title(),
-            "Quantité": quantite
-        })
+        # Ignorer unité
+        if up in ["PAQ", "/PC"]:
+            continue
+
+        # Quantité = nombre seul sur la ligne
+        if current_designation and re.fullmatch(r"\d{1,3}", line):
+            result["articles"].append({
+                "Désignation": current_designation.strip().title(),
+                "Quantité": int(line)
+            })
+            current_designation = ""
 
     return result
 
@@ -164,7 +166,7 @@ if uploaded:
     st.write(f"**Date :** {result['date']}")
 
     # ARTICLES
-    st.subheader("🛒 Articles détectés (lignes séparées)")
+    st.subheader("🛒 Articles détectés (fidèles)")
     if result["articles"]:
         df = pd.DataFrame(result["articles"])
         st.dataframe(df, use_container_width=True)
