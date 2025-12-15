@@ -6,16 +6,16 @@ from PIL import Image, ImageOps, ImageFilter
 from google.cloud import vision
 from google.oauth2.service_account import Credentials
 
-# =========================================================
-# CONFIG STREAMLIT
-# =========================================================
+# --------------------------------------------------
+# STREAMLIT CONFIG
+# --------------------------------------------------
 st.set_page_config(page_title="Facture Chan Foui", page_icon="🧾")
 st.title("🧾 Facture en compte – Chan Foui & Fils")
-st.caption("Extraction fidèle : Désignation + Nb bills (Google Vision AI)")
+st.caption("Extraction fidèle : Désignation + Nb bills")
 
-# =========================================================
-# IMAGE PREPROCESS (OCR PROPRE)
-# =========================================================
+# --------------------------------------------------
+# IMAGE PREPROCESS
+# --------------------------------------------------
 def preprocess_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
@@ -24,45 +24,44 @@ def preprocess_image(image_bytes: bytes) -> bytes:
     img.save(out, format="PNG")
     return out.getvalue()
 
-# =========================================================
+# --------------------------------------------------
 # GOOGLE VISION OCR
-# =========================================================
+# --------------------------------------------------
 def vision_ocr(image_bytes: bytes, creds: dict) -> str:
     client = vision.ImageAnnotatorClient(
         credentials=Credentials.from_service_account_info(creds)
     )
     image = vision.Image(content=image_bytes)
-    response = client.document_text_detection(image=image)
-    return response.full_text_annotation.text or ""
+    res = client.document_text_detection(image=image)
+    return res.full_text_annotation.text or ""
 
-# =========================================================
-# EXTRACTION FIDÈLE (DÉSIGNATION + NB BILLS)
-# =========================================================
+# --------------------------------------------------
+# EXTRACTION FIDÈLE (LOGIQUE OCR RÉEL)
+# --------------------------------------------------
 def extract_designation_nb_bills(ocr_text: str) -> pd.DataFrame:
     lines = [l.strip() for l in ocr_text.split("\n") if l.strip()]
 
-    # ---------- DÉSIGNATIONS ----------
+    # ---------- 1. DÉSIGNATIONS ----------
     designations = []
-    in_table = False
+    in_designation = False
 
     for line in lines:
         up = line.upper()
 
         if "DÉSIGNATION DES MARCHANDISES" in up:
-            in_table = True
+            in_designation = True
             continue
 
-        if in_table and ("TOTAL HT" in up or "MONTANT HT" in up):
+        if in_designation and "SUIVANT VOTRE BON DE COMMANDE" in up:
             break
 
-        if in_table:
+        if in_designation:
             if up == "CONSIGNE":
                 continue
-
             if len(line) > 10 and not re.search(r"\d", line):
                 designations.append(line)
 
-    # ---------- NB BILLS ----------
+    # ---------- 2. NB BILLS ----------
     nb_bills = []
     in_nb_bills = False
 
@@ -74,18 +73,21 @@ def extract_designation_nb_bills(ocr_text: str) -> pd.DataFrame:
             continue
 
         if in_nb_bills:
-            if "TOTAL HT" in up or "MONTANT HT" in up:
+            if "TOTAL HT" in up:
                 break
 
             # ignorer montants
-            if "," in line or "." in line:
+            if "." in line or "," in line:
                 continue
 
+            # extraire TOUS les nombres de la ligne
             nums = re.findall(r"\d{1,3}", line)
             for n in nums:
-                nb_bills.append(int(n))
+                val = int(n)
+                if 1 <= val <= 150:
+                    nb_bills.append(val)
 
-    # ---------- ASSOCIATION STRICTE ----------
+    # ---------- 3. ASSOCIATION STRICTE ----------
     rows = []
     for d, q in zip(designations, nb_bills):
         rows.append({
@@ -95,20 +97,20 @@ def extract_designation_nb_bills(ocr_text: str) -> pd.DataFrame:
 
     return pd.DataFrame(rows)
 
-# =========================================================
-# INTERFACE STREAMLIT
-# =========================================================
-uploaded_file = st.file_uploader(
+# --------------------------------------------------
+# UI
+# --------------------------------------------------
+uploaded = st.file_uploader(
     "📤 Importer une facture en compte (image)",
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file:
-    image = Image.open(uploaded_file)
+if uploaded:
+    image = Image.open(uploaded)
     st.image(image, use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Clé Google Vision AI manquante (st.secrets)")
+        st.error("❌ Clé Google Vision AI manquante")
         st.stop()
 
     buf = BytesIO()
