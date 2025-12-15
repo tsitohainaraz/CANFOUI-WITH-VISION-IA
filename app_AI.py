@@ -1,12 +1,5 @@
 # ============================================================
-# FACTURE EN COMPTE — CHAN FOUI & FILS
-# Extraction :
-# - Date
-# - Facture en compte N°
-# - Adresse de livraison
-# - DOIT (S2M / ULYS / DLP)
-# - Tableau Désignation / Quantité
-# API : Google Vision AI
+# FACTURE EN COMPTE — CHAN FOUI & FILS (VERSION STABLE)
 # ============================================================
 
 import streamlit as st
@@ -57,7 +50,7 @@ def extract_facture(text: str):
     if m:
         result["date"] = m.group(1)
 
-    # -------- FACTURE EN COMPTE N° --------
+    # -------- FACTURE --------
     m = re.search(r"FACTURE EN COMPTE\s+N[°o]?\s*(\d+)", text, re.IGNORECASE)
     if m:
         result["facture_numero"] = m.group(1)
@@ -67,7 +60,7 @@ def extract_facture(text: str):
     if m:
         result["doit"] = m.group(1)
 
-    # -------- ADRESSE DE LIVRAISON --------
+    # -------- ADRESSE --------
     m = re.search(r"Adresse de livraison\s*:\s*(.+)", text, re.IGNORECASE)
     if m:
         result["adresse_livraison"] = m.group(1).strip()
@@ -77,8 +70,7 @@ def extract_facture(text: str):
     designation_queue = []
 
     def clean_designation(s: str) -> str:
-        s = re.sub(r"\s{2,}", " ", s)
-        return s.strip()
+        return re.sub(r"\s{2,}", " ", s).strip()
 
     for line in lines:
         up = line.upper()
@@ -91,23 +83,23 @@ def extract_facture(text: str):
         if not in_table:
             continue
 
-        # Fin tableau
-        if "TOTAL HT" in up or "CONSINGE" in up:
+        # Fin tableau (plus robuste)
+        if "ARRÊTÉE LA PRÉSENTE FACTURE" in up or "TOTAL HT" in up:
             break
 
-        # Désignation
+        # Désignation (autorise 75 CL / 750 ML)
         if (
-            len(line) > 15
-            and not re.search(r"\d{2,}", line)
+            len(line) > 12
             and not any(x in up for x in [
-                "NB", "BTLL", "PU", "MONTANT"
+                "NB", "BTLL", "PU", "MONTANT", "TOTAL"
             ])
+            and not re.fullmatch(r"\d+", line)
         ):
             designation_queue.append(clean_designation(line))
             continue
 
-        # Quantité = Nb btlls (entier)
-        qty_match = re.search(r"\b(\d{2,3})\b", line)
+        # Quantité réaliste métier
+        qty_match = re.search(r"\b(6|12|24|48|60|72|120)\b", line)
         if qty_match and designation_queue:
             qty = int(qty_match.group(1))
             designation = designation_queue.pop(0)
@@ -143,7 +135,7 @@ if uploaded:
 
     st.subheader("📋 Informations facture")
     st.write("📅 Date :", result["date"])
-    st.write("🧾 Facture en compte n° :", result["facture_numero"])
+    st.write("🧾 Facture n° :", result["facture_numero"])
     st.write("📦 Adresse de livraison :", result["adresse_livraison"])
     st.write("👤 DOIT :", result["doit"])
 
