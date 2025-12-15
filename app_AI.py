@@ -1,7 +1,6 @@
 # ============================================================
-# app_leaderprice_bdc_vision_ai.py
-# BDC LEADER PRICE — Extraction Désignation / Qté Cédée
-# API : Google Cloud Vision AI (document_text_detection)
+# BDC LEADER PRICE — VERSION OCR RÉEL (ROBUSTE)
+# API : Google Vision AI
 # ============================================================
 
 import streamlit as st
@@ -12,52 +11,31 @@ from google.cloud import vision
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# ============================================================
-# STREAMLIT CONFIG
-# ============================================================
-st.set_page_config(
-    page_title="BDC LEADER PRICE — Vision AI",
-    page_icon="🧾",
-    layout="centered"
-)
-
+# ---------------- STREAMLIT ----------------
+st.set_page_config(page_title="BDC LEADER PRICE", page_icon="🧾")
 st.title("🧾 Bon de Commande LEADER PRICE")
-st.caption("Extraction fidèle — Qté Cédée (Google Vision AI)")
+st.caption("Extraction fidèle — OCR réel Vision AI")
 
-# ============================================================
-# PRETRAITEMENT IMAGE
-# ============================================================
-def preprocess_image(image_bytes: bytes) -> bytes:
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+# ---------------- IMAGE ----------------
+def preprocess_image(b: bytes) -> bytes:
+    img = Image.open(BytesIO(b)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
 
-# ============================================================
-# GOOGLE VISION OCR
-# ============================================================
-def google_vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
-    creds = Credentials.from_service_account_info(creds_dict)
-    client = vision.ImageAnnotatorClient(credentials=creds)
-    image = vision.Image(content=image_bytes)
+# ---------------- OCR ----------------
+def vision_ocr(b: bytes, creds: dict) -> str:
+    client = vision.ImageAnnotatorClient(
+        credentials=Credentials.from_service_account_info(creds)
+    )
+    image = vision.Image(content=b)
+    res = client.document_text_detection(image=image)
+    return res.full_text_annotation.text or ""
 
-    response = client.document_text_detection(image=image)
-    if response.error.message:
-        raise Exception(response.error.message)
-
-    return response.full_text_annotation.text or ""
-
-def clean_text(text: str) -> str:
-    text = text.replace("\r", "\n")
-    text = re.sub(r"[^\S\r\n]+", " ", text)
-    return text.strip()
-
-# ============================================================
-# EXTRACTION LEADER PRICE (LOGIQUE LIGNE PAR LIGNE)
-# ============================================================
-def extract_bdc_leaderprice(text: str):
+# ---------------- EXTRACTION LEADER PRICE ----------------
+def extract_leaderprice(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
     result = {
@@ -67,17 +45,22 @@ def extract_bdc_leaderprice(text: str):
         "articles": []
     }
 
-    # Numéro commande
-    m = re.search(r"N[°o]\s*de\s*Commande\s*:?[\s\-]*([A-Z0-9]+)", text, re.IGNORECASE)
+    # Métadonnées
+    m = re.search(r"BCD\d+", text)
     if m:
-        result["numero"] = m.group(1)
+        result["numero"] = m.group(0)
 
-    # Date
-    m = re.search(r"Date\s*:?[\s\-]*(\d{2}/\d{2}/\d{2,4})", text)
+    m = re.search(r"Date\s*(\d{2}/\d{2}/\d{2,4})", text)
     if m:
         result["date"] = m.group(1)
 
     in_table = False
+    current_designation = ""
+
+    def clean_designation(s: str) -> str:
+        s = re.sub(r"\b\d{4}\b", "", s)        # refs
+        s = re.sub(r"\s{2,}", " ", s)
+        return s.strip()
 
     for line in lines:
         up = line.upper()
@@ -94,78 +77,55 @@ def extract_bdc_leaderprice(text: str):
         if "TOTAL HT" in up:
             break
 
-        # Qté Cédée = nombre finissant par .000
-        qty_match = re.search(r"(\d+\.\d{3})", line)
-        if not qty_match:
+        # Désignation = contexte
+        if any(k in up for k in [
+            "VIN ", "CONSIGNE"
+        ]) and not re.search(r"\d+\.\d{3}", line):
+            current_designation = clean_designation(line)
             continue
 
-        qty = int(float(qty_match.group(1)))
-
-        # Nettoyage désignation
-        designation = line
-        designation = re.sub(r"^\d+\s*", "", designation)          # Ref
-        designation = re.sub(r"\d+\.\d{3}.*$", "", designation)    # après Qté
-        designation = designation.replace("Pièces", "")
-        designation = re.sub(r"\s{2,}", " ", designation)
-
-        if len(designation.strip()) < 5:
+        # Quantité = événement
+        qty_match = re.search(r"(\d{2,4})\.(\d{3})", line)
+        if qty_match and current_designation:
+            qty = int(qty_match.group(1))
+            result["articles"].append({
+                "Désignation": current_designation.title(),
+                "Quantité": qty
+            })
             continue
-
-        result["articles"].append({
-            "Désignation": designation.strip().title(),
-            "Quantité": qty
-        })
 
     return result
 
-# ============================================================
-# PIPELINE COMPLET
-# ============================================================
-def bdc_pipeline(image_bytes: bytes, creds_dict: dict):
+# ---------------- PIPELINE ----------------
+def pipeline(image_bytes, creds):
     img = preprocess_image(image_bytes)
-    raw = google_vision_ocr(img, creds_dict)
-    raw = clean_text(raw)
-    return extract_bdc_leaderprice(raw), raw
+    raw = vision_ocr(img, creds)
+    return extract_leaderprice(raw), raw
 
-# ============================================================
-# INTERFACE STREAMLIT
-# ============================================================
-uploaded = st.file_uploader(
-    "📤 Importer le Bon de Commande LEADER PRICE",
-    type=["jpg", "jpeg", "png"]
-)
+# ---------------- UI ----------------
+uploaded = st.file_uploader("📤 Importer BDC LEADER PRICE", ["jpg", "jpeg", "png"])
 
 if uploaded:
     image = Image.open(uploaded)
-    st.image(image, caption="Aperçu BDC LEADER PRICE", use_column_width=True)
+    st.image(image, use_container_width=True)
 
     if "gcp_vision" not in st.secrets:
-        st.error("❌ Ajoute les credentials Google Vision dans .streamlit/secrets.toml")
+        st.error("❌ Credentials Vision AI manquants")
         st.stop()
 
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    with st.spinner("🔍 Analyse avec Vision AI..."):
-        result, raw_text = bdc_pipeline(
-            buf.getvalue(),
-            dict(st.secrets["gcp_vision"])
-        )
+    result, raw = pipeline(buf.getvalue(), dict(st.secrets["gcp_vision"]))
 
-    # INFOS BDC
     st.subheader("📋 Informations BDC")
-    st.write(f"**Client :** {result['client']}")
-    st.write(f"**Numéro :** {result['numero']}")
-    st.write(f"**Date :** {result['date']}")
+    st.write("Client :", result["client"])
+    st.write("Numéro :", result["numero"])
+    st.write("Date :", result["date"])
 
-    # ARTICLES
-    st.subheader("🛒 Articles détectés (LEADER PRICE)")
-    if result["articles"]:
-        df = pd.DataFrame(result["articles"])
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.warning("Aucun article détecté")
+    st.subheader("🛒 Articles détectés")
+    df = pd.DataFrame(result["articles"])
+    st.dataframe(df, use_container_width=True)
 
-    # OCR brut
-    with st.expander("🔎 Voir le texte OCR brut"):
-        st.text_area("OCR brut", raw_text, height=300)
+    with st.expander("🔎 OCR brut"):
+        st.text_area("OCR", raw, height=300)
