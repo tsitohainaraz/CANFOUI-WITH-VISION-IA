@@ -1,7 +1,7 @@
 # ============================================================
-# app_ulys_bdc_final.py
-# BDC ULYS — Extraction fiable Désignation / Quantité
-# API : Google Vision AI (document_text_detection)
+# app_ulys_bdc_vision_ai.py
+# Extraction fiable Bon de Commande ULYS
+# API : Google Cloud Vision AI (document_text_detection)
 # ============================================================
 
 import streamlit as st
@@ -16,13 +16,13 @@ import pandas as pd
 # CONFIG STREAMLIT
 # ============================================================
 st.set_page_config(
-    page_title="BDC ULYS — Extraction fiable",
+    page_title="BDC ULYS — Vision AI",
     page_icon="🧾",
     layout="centered"
 )
 
 st.title("🧾 Bon de Commande ULYS")
-st.caption("Extraction fidèle — Désignation & Quantité (Vision AI)")
+st.caption("Extraction fiable Désignation / Quantité — Google Vision AI")
 
 # ============================================================
 # PRETRAITEMENT IMAGE
@@ -55,7 +55,7 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 # ============================================================
-# EXTRACTION BDC ULYS (LOGIQUE MÉTIER STRICTE)
+# EXTRACTION BDC ULYS (MACHINE À ÉTATS)
 # ============================================================
 def extract_bdc_ulys(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -72,52 +72,74 @@ def extract_bdc_ulys(text: str):
     if m:
         result["numero"] = m.group(1)
 
-    # Date
-    m = re.search(r"Date de la Commande\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})", text)
+    # Date commande
+    m = re.search(r"Date de la Commande\s*:?[\s\-]*(\d{2}/\d{2}/\d{4})", text)
     if m:
         result["date"] = m.group(1)
 
-    # ------------------------------------------------
-    # EXTRACTION DES ARTICLES (SEULEMENT DANS LE TABLEAU)
-    # ------------------------------------------------
+    # -----------------------------
+    # MACHINE À ÉTATS
+    # -----------------------------
     in_table = False
-    current_designation = ""
+    state = "WAIT_DESC"
+    current_desc = ""
 
     for line in lines:
         up = line.upper()
 
-        # Début du tableau
-        if "DESCRIPTION DE L'ARTICLE" in up and "QTÉ" in up:
+        # Début tableau (tolérant à l’OCR cassé)
+        if "DESCRIPTION DE L'ARTICLE" in up:
             in_table = True
             continue
 
         if not in_table:
             continue
 
-        # Fin du tableau
+        # Fin tableau
         if "TOTAL DE LA COMMANDE" in up:
             break
 
-        # Ignorer les catégories (VINS ROUGES, BLANCS, etc.)
+        # Ignorer catégories
         if re.match(r"\d{6}\s+(VINS|CONSIGNE|LIQUEUR)", up):
             continue
 
-        # Construire la désignation (multi-lignes)
-        if any(k in up for k in ["VIN ", "CONS."]) and not up.endswith("PAQ") and not up.endswith("/PC"):
-            current_designation += " " + line
+        # -------------------------
+        # ÉTAT : ATTENTE DÉSIGNATION
+        # -------------------------
+        if state == "WAIT_DESC":
+            if "VIN " in up or "CONS." in up:
+                current_desc = line
+                state = "READ_DESC"
             continue
 
-        # Ignorer unité
-        if up in ["PAQ", "/PC"]:
+        # -------------------------
+        # ÉTAT : LECTURE DÉSIGNATION
+        # -------------------------
+        if state == "READ_DESC":
+            if up in ["PAQ", "/PC"]:
+                state = "WAIT_QTY"
+            else:
+                if not re.search(r"\d{2}/\d{2}/\d{4}", line):
+                    current_desc += " " + line
             continue
 
-        # Quantité = nombre seul sur la ligne
-        if current_designation and re.fullmatch(r"\d{1,3}", line):
-            result["articles"].append({
-                "Désignation": current_designation.strip().title(),
-                "Quantité": int(line)
-            })
-            current_designation = ""
+        # -------------------------
+        # ÉTAT : ATTENTE QUANTITÉ
+        # -------------------------
+        if state == "WAIT_QTY":
+            clean = (
+                line.replace("D", "")
+                    .replace("O", "0")
+                    .replace("G", "0")
+            )
+
+            if re.fullmatch(r"\d{1,3}", clean):
+                result["articles"].append({
+                    "Désignation": current_desc.strip().title(),
+                    "Quantité": int(clean)
+                })
+                current_desc = ""
+                state = "WAIT_DESC"
 
     return result
 
