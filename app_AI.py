@@ -1,5 +1,6 @@
 # ============================================================
-# BDC ULYS — VERSION FINALE STABLE (Vision AI only)
+# BDC ULYS — EXTRACTION FIDÈLE AVEC NORMALISATION MÉTIER
+# Vision AI + règles métier
 # ============================================================
 
 import streamlit as st
@@ -10,150 +11,138 @@ from google.cloud import vision
 from google.oauth2.service_account import Credentials
 import pandas as pd
 
-# ---------------- CONFIG ----------------
-st.set_page_config(page_title="BDC ULYS", page_icon="🧾")
-st.title("🧾 Bon de Commande ULYS — Extraction fiable")
+# ============================================================
+# PRODUITS STANDARDISÉS (EXTRAIT DE TON EXCEL)
+# ============================================================
 
-# ---------------- IMAGE PREPROCESS ----------------
-def preprocess_image(b):
-    img = Image.open(BytesIO(b)).convert("RGB")
+PRODUITS = {
+    "Côte de Fianar Rouge 3L": [
+        "VIN ROUGE COTE DE FIANAR 3L",
+        "VIN ROUGE COTE DE FIANARA 3L",
+        "VIN ROUGE COTE DE FIANAR",
+    ],
+    "Côte de Fianar Rouge 75 cl": [
+        "VIN ROUGE COTE DE FIANARA 750 ML NU",
+        "VIN ROUGE COTE DE FIANAR 750ML",
+    ],
+    "Vin Blanc Doux Maroparasy 75 cl": [
+        "VIN BLANC DOUX MAROPARASY 750 ML NU",
+    ],
+    "Vin Gris Côte de Fianar 75 cl": [
+        "VIN GRIS COTE DE FIANARA 750ML NU",
+    ],
+    "Vin Rouge Doux Maroparasy 75 cl": [
+        "VIN ROUGE DOUX MAROPARASY 750 ML NU",
+    ],
+    "Consigne Chan Foui 75CL": [
+        "CONS. CHAN FOUI 75CL",
+        "CONS CHAN FOUI 75CL",
+    ],
+}
+
+# ============================================================
+# STREAMLIT CONFIG
+# ============================================================
+
+st.set_page_config("BDC ULYS", "🧾")
+st.title("🧾 BDC ULYS — Extraction métier fidèle")
+
+# ============================================================
+# OCR
+# ============================================================
+
+def preprocess(img_bytes):
+    img = Image.open(BytesIO(img_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
+    img = img.filter(ImageFilter.UnsharpMask(1.2, 180))
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
 
-# ---------------- OCR ----------------
-def vision_ocr(b, creds):
+def ocr_vision(img_bytes, creds):
     client = vision.ImageAnnotatorClient(
         credentials=Credentials.from_service_account_info(creds)
     )
-    image = vision.Image(content=b)
+    image = vision.Image(content=img_bytes)
     res = client.document_text_detection(image=image)
     return res.full_text_annotation.text or ""
 
-# ---------------- EXTRACTION METIER ----------------
-def extract_ulys(text: str):
+# ============================================================
+# NORMALISATION PRODUIT
+# ============================================================
+
+def normaliser_produit(designation):
+    d = designation.upper()
+    for produit, variantes in PRODUITS.items():
+        for v in variantes:
+            if v in d:
+                return produit
+    return None
+
+# ============================================================
+# EXTRACTION ULYS
+# ============================================================
+
+def extract_ulys(text):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
+    articles = []
 
-    result = {
-        "client": "ULYS",
-        "numero": "",
-        "date": "",
-        "articles": []
-    }
-
-    # ---- META ----
-    m = re.search(r"N[°o]\s*(\d{8,})", text)
-    if m:
-        result["numero"] = m.group(1)
-
-    m = re.search(r"Date de la Commande\s*:?\s*(\d{2}/\d{2}/\d{4})", text)
-    if m:
-        result["date"] = m.group(1)
-
-    # ---- TABLE ----
-    in_table = False
     current_designation = None
+    attente_qte = False
 
-    def normalize_qty(s):
-        s = s.replace("D", "").replace("O", "0").replace("G", "0")
-        return s if s.isdigit() else None
-
-    def clean_designation(s):
-        s = re.sub(r"\b\d{6,}\b", "", s)
-        s = s.replace("PAQ", "").replace("/PC", "")
-        s = re.sub(r"\s{2,}", " ", s)
-        return s.strip()
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
+    for line in lines:
         up = line.upper()
 
-        # Start table
-        if "DESCRIPTION DE L'ARTICLE" in up:
-            in_table = True
-            i += 1
+        # Désignation candidate
+        if "VIN " in up or "CONS" in up:
+            prod = normaliser_produit(up)
+            if prod:
+                current_designation = prod
+                attente_qte = False
             continue
 
-        if not in_table:
-            i += 1
+        # Détection unité
+        if up in ["PAQ", "/PC"]:
+            attente_qte = True
             continue
 
-        # End table
-        if "TOTAL DE LA COMMANDE" in up:
-            break
+        # Quantité valide (métier)
+        if attente_qte and current_designation:
+            clean = re.sub(r"[^\d]", "", line)
+            if clean.isdigit():
+                qte = int(clean)
+                if 1 <= qte <= 300:
+                    articles.append({
+                        "Désignation": current_designation,
+                        "Quantité": qte
+                    })
+                    attente_qte = False
 
-        # Ignore category headers
-        if re.match(r"\d{6}\s+(VINS|CONSIGNE|LIQUEUR)", up):
-            i += 1
-            continue
+    # Regroupement final
+    df = pd.DataFrame(articles)
+    if not df.empty:
+        df = df.groupby("Désignation", as_index=False)["Quantité"].sum()
 
-        # Detect designation
-        if (
-            ("VIN " in up or "CONS." in up)
-            and not re.fullmatch(r"\d+", line)
-        ):
-            current_designation = clean_designation(line)
-            i += 1
-            continue
+    return df
 
-        # Detect quantity (may be next or next+1 line)
-        qty = normalize_qty(line)
-        if qty and current_designation:
-            result["articles"].append({
-                "Désignation": current_designation.title(),
-                "Quantité": int(qty)
-            })
-            i += 1
-            continue
+# ============================================================
+# UI
+# ============================================================
 
-        # Handle D3 / split quantities
-        if line.startswith("D") and i + 1 < len(lines):
-            q = normalize_qty(lines[i + 1])
-            if q and current_designation:
-                result["articles"].append({
-                    "Désignation": current_designation.title(),
-                    "Quantité": int(q)
-                })
-                i += 2
-                continue
-
-        i += 1
-
-    return result
-
-# ---------------- PIPELINE ----------------
-def pipeline(image_bytes, creds):
-    img = preprocess_image(image_bytes)
-    raw = vision_ocr(img, creds)
-    return extract_ulys(raw), raw
-
-# ---------------- UI ----------------
-uploaded = st.file_uploader("📤 Importer le BDC ULYS", ["jpg", "jpeg", "png"])
+uploaded = st.file_uploader("📤 Importer le BDC ULYS", ["jpg", "png", "jpeg"])
 
 if uploaded:
     img = Image.open(uploaded)
     st.image(img, use_container_width=True)
 
-    if "gcp_vision" not in st.secrets:
-        st.error("❌ Credentials Vision AI manquants")
-        st.stop()
-
     buf = BytesIO()
     img.save(buf, format="JPEG")
 
-    result, raw = pipeline(buf.getvalue(), dict(st.secrets["gcp_vision"]))
+    raw = ocr_vision(preprocess(buf.getvalue()), dict(st.secrets["gcp_vision"]))
+    df = extract_ulys(raw)
 
-    st.subheader("📋 Informations")
-    st.write("Client :", result["client"])
-    st.write("Numéro :", result["numero"])
-    st.write("Date :", result["date"])
-
-    st.subheader("🛒 Articles extraits (FIDÈLES)")
-    df = pd.DataFrame(result["articles"])
+    st.subheader("🛒 Articles (FIDÈLES)")
     st.dataframe(df, use_container_width=True)
 
-    with st.expander("🔎 OCR brut"):
-        st.text_area("OCR", raw, height=300)
+    with st.expander("OCR brut"):
+        st.text_area("", raw, height=300)
