@@ -1,7 +1,7 @@
 # ============================================================
-# app_supermaki_bdc.py
-# Extraction fiable BDC SUPERMAKI (Désignation / Quantité)
-# Google Vision AI + Streamlit
+# app_ulys_bdc.py
+# Extraction BDC ULYS — Désignation / Quantité (lignes séparées)
+# API : Google Vision AI (document_text_detection)
 # ============================================================
 
 import streamlit as st
@@ -16,13 +16,13 @@ import pandas as pd
 # CONFIG STREAMLIT
 # ============================================================
 st.set_page_config(
-    page_title="BDC SUPERMAKI — Extraction fidèle",
+    page_title="BDC ULYS — Extraction fidèle",
     page_icon="🧾",
     layout="centered"
 )
 
-st.title("🧾 BDC SUPERMAKI — Extraction fidèle")
-st.caption("Google Vision AI · Désignation & Quantité exactes")
+st.title("🧾 Bon de Commande ULYS")
+st.caption("Extraction fidèle — Désignation & Quantité (lignes séparées)")
 
 # ============================================================
 # PRETRAITEMENT IMAGE
@@ -30,7 +30,7 @@ st.caption("Google Vision AI · Désignation & Quantité exactes")
 def preprocess_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=160))
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
@@ -55,91 +55,67 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 # ============================================================
-# NORMALISATION DES DÉSIGNATIONS
+# EXTRACTION BDC ULYS (FORMAT HORIZONTAL)
 # ============================================================
-def normalize_designation(designation: str) -> str:
-    d = designation.upper()
-    d = re.sub(r"\s+", " ", d)
-
-    if "COTE DE FIANAR" in d:
-        if "ROUGE" in d:
-            return "Côte de Fianar Rouge 75 cl"
-        if "BLANC" in d:
-            return "Côte de Fianar Blanc 75 cl"
-        if "ROSE" in d or "ROSÉ" in d:
-            return "Côte de Fianar Rosé 75 cl"
-        if "GRIS" in d:
-            return "Côte de Fianar Gris 75 cl"
-        return "Côte de Fianar Rouge 75 cl"
-
-    if "CONS" in d and "CHAN" in d:
-        return "CONS 2000 CHANFOUI"
-
-    if "MAROPARASY" in d:
-        return "Maroparasy Rouge 75 cl"
-
-    return designation.title()
-
-# ============================================================
-# EXTRACTION BDC SUPERMAKI (PAR BLOCS VERTICAUX)
-# ============================================================
-def extract_bdc_supermaki(text: str):
+def extract_bdc_ulys(text: str):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
     result = {
-        "client": "SUPERMAKI",
+        "client": "ULYS",
         "numero": "",
         "date": "",
-        "adresse_livraison": "",
         "articles": []
     }
 
     # Numéro BDC
-    m = re.search(r"Bon de commande n[°o]\s*(\d{8})", text)
+    m = re.search(r"N[°o]\s*(\d{8,})", text)
     if m:
         result["numero"] = m.group(1)
 
     # Date
-    m = re.search(r"Date\s+[ée]mission\s*(\d{2}/\d{2}/\d{4})", text)
+    m = re.search(r"Date de la Commande\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})", text)
     if m:
         result["date"] = m.group(1)
 
-    # Adresse livraison
-    for i, l in enumerate(lines):
-        if "Adresse de livraison" in l and i + 1 < len(lines):
-            result["adresse_livraison"] = lines[i + 1]
-            break
+    # ----------------------------
+    # Extraction des lignes articles
+    # ----------------------------
+    for line in lines:
 
-    # --- EXTRACTION PAR BLOCS ---
-    i = 0
-    while i < len(lines):
+        line_upper = line.upper()
 
-        # REF = exactement 6 chiffres
-        if re.fullmatch(r"\d{6}", lines[i]):
+        # Ignorer les titres / catégories / totaux
+        if any(k in line_upper for k in [
+            "GTIN", "ARTICLE NO", "DESCRIPTION", "UNITE",
+            "TOTAL", "CREÉ", "APPROUVÉ", "VINS ROUGES",
+            "VINS BLANCS", "VINS ROSES", "LIQUEUR",
+            "DETAILS DU", "BON DE COMMANDE"
+        ]):
+            continue
 
-            # Vérifier qu'il reste assez de lignes
-            if i + 5 < len(lines):
-                ean = lines[i + 1]
-                designation = lines[i + 2]
-                pcb = lines[i + 3]
-                nb_colis = lines[i + 4]
-                quantite = lines[i + 5]
+        # Chercher une quantité (Qté)
+        qty_match = re.search(r"\b(\d{1,3})\b", line)
+        if not qty_match:
+            continue
 
-                if (
-                    re.fullmatch(r"\d{13}\.?", ean) and
-                    any(k in designation.upper() for k in ["COTE", "CONS", "MAROPARASY"]) and
-                    pcb.isdigit() and
-                    nb_colis.isdigit() and
-                    quantite.isdigit()
-                ):
-                    result["articles"].append({
-                        "Désignation": normalize_designation(designation),
-                        "Quantité": int(quantite)
-                    })
-                    i += 6
-                    continue
+        quantite = int(qty_match.group(1))
 
-        i += 1
+        # Désignation = texte avant la quantité
+        designation = line[:qty_match.start()].strip()
+
+        # Filtre anti-faux positifs
+        if len(designation) < 5:
+            continue
+
+        if any(k in designation.upper() for k in [
+            "PAQ", "/PC", "CONV", "DATE"
+        ]):
+            continue
+
+        result["articles"].append({
+            "Désignation": designation.title(),
+            "Quantité": quantite
+        })
 
     return result
 
@@ -150,19 +126,19 @@ def bdc_pipeline(image_bytes: bytes, creds_dict: dict):
     img = preprocess_image(image_bytes)
     raw = google_vision_ocr(img, creds_dict)
     raw = clean_text(raw)
-    return extract_bdc_supermaki(raw), raw
+    return extract_bdc_ulys(raw), raw
 
 # ============================================================
 # INTERFACE STREAMLIT
 # ============================================================
 uploaded = st.file_uploader(
-    "📤 Importer l’image du BDC SUPERMAKI",
+    "📤 Importer l’image du Bon de Commande ULYS",
     type=["jpg", "jpeg", "png"]
 )
 
 if uploaded:
     image = Image.open(uploaded)
-    st.image(image, caption="Aperçu du BDC", use_column_width=True)
+    st.image(image, caption="Aperçu du BDC ULYS", use_column_width=True)
 
     if "gcp_vision" not in st.secrets:
         st.error("❌ Ajoute les credentials Google Vision dans .streamlit/secrets.toml")
@@ -186,10 +162,9 @@ if uploaded:
     st.write(f"**Client :** {result['client']}")
     st.write(f"**Numéro BDC :** {result['numero']}")
     st.write(f"**Date :** {result['date']}")
-    st.write(f"**Adresse livraison :** {result['adresse_livraison']}")
 
     # ARTICLES
-    st.subheader("🛒 Articles détectés (fidèles)")
+    st.subheader("🛒 Articles détectés (lignes séparées)")
     if result["articles"]:
         df = pd.DataFrame(result["articles"])
         st.dataframe(df, use_container_width=True)
