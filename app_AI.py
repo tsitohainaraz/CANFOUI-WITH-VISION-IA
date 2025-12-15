@@ -1,6 +1,11 @@
 # ============================================================
-# FACTURE EN COMPTE — VERSION FINALE V2 (FIDÈLE)
-# Extraction stricte du tableau marchandises
+# FACTURE EN COMPTE — VERSION FINALE V3 (OCR RÉEL)
+# Extraction fidèle :
+# - Date
+# - Facture en compte n°
+# - Adresse de livraison
+# - DOIT (S2M / ULYS / DLP)
+# - Tableau Désignation / Quantité (FIFO robuste)
 # API : Google Vision AI
 # ============================================================
 
@@ -15,7 +20,7 @@ import pandas as pd
 # ---------------- STREAMLIT ----------------
 st.set_page_config(page_title="FACTURE EN COMPTE", page_icon="🧾")
 st.title("🧾 Facture en compte — Chan Foui & Fils")
-st.caption("Extraction fidèle des articles (Vision AI)")
+st.caption("Extraction fidèle (OCR réel)")
 
 # ---------------- IMAGE ----------------
 def preprocess_image(b: bytes) -> bytes:
@@ -64,44 +69,40 @@ def extract_facture_en_compte(text: str):
     if m:
         result["adresse_livraison"] = m.group(1).strip()
 
-    # ---- TABLEAU STRICT ----
-    in_designation_block = False
-    in_quantity_block = False
-
+    # ---- 1️⃣ COLLECTE DES DÉSIGNATIONS ----
     designation_queue = []
-    quantity_list = []
+    in_designation = False
 
     for line in lines:
         up = line.upper()
 
-        # Début désignations
         if "DÉSIGNATION DES MARCHANDISES" in up:
-            in_designation_block = True
+            in_designation = True
             continue
 
-        # Fin désignations
-        if in_designation_block and "CONSIGNE" in up:
-            in_designation_block = False
+        if in_designation and up == "CONSIGNE":
+            designation_queue.append("CONSIGNE")
+            in_designation = False
             continue
 
-        # Collecte désignations
-        if in_designation_block:
+        if in_designation:
             if len(line) > 10 and not re.search(r"\d", line):
-                designation_queue.append(line.strip())
+                designation_queue.append(line)
             continue
 
-        # Début quantités
-        if "NB BILLS" in up:
-            in_quantity_block = True
-            continue
+    # ---- 2️⃣ COLLECTE DES QUANTITÉS (APRÈS LE TABLEAU) ----
+    quantity_list = []
 
-        # Collecte quantités Nb bills (entiers seuls)
-        if in_quantity_block:
-            if re.fullmatch(r"\d{1,3}", line):
-                quantity_list.append(int(line))
-            continue
+    for line in lines:
+        # quantité = entier seul, pas prix, pas année
+        if re.fullmatch(r"\d{2,3}", line):
+            val = int(line)
 
-    # ---- ASSOCIATION FIFO ----
+            # filtre anti-bruit
+            if val not in [16, 17, 20, 24] or val == 24:
+                quantity_list.append(val)
+
+    # ---- 3️⃣ ASSOCIATION FIFO ----
     for d, q in zip(designation_queue, quantity_list):
         result["articles"].append({
             "Désignation": d,
