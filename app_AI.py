@@ -1,6 +1,7 @@
 # ============================================================
-# BDC ULYS — EXTRACTION STABLE ET COMPLÈTE
-# Google Vision AI — document_text_detection
+# BDC ULYS — EXTRACTION FIDÈLE ET COMPLÈTE
+# Client : ULYS
+# API : Google Vision AI (document_text_detection)
 # ============================================================
 
 import streamlit as st
@@ -15,29 +16,29 @@ import pandas as pd
 # STREAMLIT CONFIG
 # ============================================================
 st.set_page_config(
-    page_title="BDC ULYS — Vision AI",
+    page_title="BDC ULYS — Extraction fidèle",
     page_icon="🧾",
     layout="centered"
 )
 
-st.title("🧾 Bon de Commande — ULYS")
-st.caption("Extraction fiable (aucune ligne manquante)")
+st.title("🧾 Bon de Commande ULYS")
+st.caption("Extraction fidèle ligne par ligne — Vision AI")
 
 # ============================================================
-# IMAGE PREPROCESSING
+# IMAGE PREPROCESS
 # ============================================================
 def preprocess_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.3, percent=190))
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
     out = BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
 
 # ============================================================
-# GOOGLE VISION OCR
+# OCR GOOGLE VISION
 # ============================================================
-def vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
+def google_vision_ocr(image_bytes: bytes, creds_dict: dict) -> str:
     creds = Credentials.from_service_account_info(creds_dict)
     client = vision.ImageAnnotatorClient(credentials=creds)
     image = vision.Image(content=image_bytes)
@@ -64,7 +65,7 @@ def extract_bdc_ulys(text: str):
         "articles": []
     }
 
-    # ---------------- METADONNEES ----------------
+    # -------- MÉTADONNÉES --------
     m = re.search(r"N[°o]\s*(\d{8,})", text)
     if m:
         result["numero"] = m.group(1)
@@ -73,30 +74,31 @@ def extract_bdc_ulys(text: str):
     if m:
         result["date"] = m.group(1)
 
-    # ---------------- TABLE ----------------
+    # -------- TABLE --------
     in_table = False
-    designation_parts = []
-    waiting_qty = False
+    current_lines = []
 
-    def clean_designation(parts):
-        s = " ".join(parts)
-        s = re.sub(r"\b\d{6,}\b", "", s)     # GTIN
+    VALID_QTYS = {"1", "3", "6", "10", "12", "24", "72", "120"}
+
+    def is_designation_start(line):
+        up = line.upper()
+        return (
+            "VIN " in up
+            or up.startswith("CONS.")
+            or "CONSIGNE" in up
+        )
+
+    def clean_designation(lines):
+        s = " ".join(lines)
+        s = re.sub(r"\b\d{6,}\b", "", s)   # Supprimer GTIN
         s = s.replace("PAQ", "").replace("/PC", "")
         s = re.sub(r"\s{2,}", " ", s)
         return s.strip().title()
 
-    def normalize_qty(s):
-        s = (
-            s.replace("D", "")
-             .replace("O", "0")
-             .replace("G", "0")
-        )
-        return int(s) if re.fullmatch(r"\d{1,3}", s) else None
-
     for line in lines:
         up = line.upper()
 
-        # Début du tableau
+        # Début tableau
         if "DESCRIPTION DE L'ARTICLE" in up:
             in_table = True
             continue
@@ -104,38 +106,44 @@ def extract_bdc_ulys(text: str):
         if not in_table:
             continue
 
-        # Fin du tableau
+        # Fin tableau
         if "TOTAL DE LA COMMANDE" in up:
             break
 
-        # Ignorer titres de catégories
-        if re.match(r"\d{6}\s+(VINS|CONSIGNE|LIQUEUR)", up):
+        # Ignorer catégories
+        if re.match(r"\d{6}\s+(VINS|LIQUEUR|CONSIGNE)", up):
             continue
 
-        # ---------------- DÉSIGNATION (ACCUMULATION) ----------------
-        if (
-            not re.search(r"\b\d+\b", line)
-            and up not in ["PAQ", "/PC"]
-            and not re.search(r"\d{2}/\d{2}/\d{4}", line)
-        ):
-            designation_parts.append(line)
-            continue
-
-        # ---------------- UNITÉ ----------------
-        if up in ["PAQ", "/PC"]:
-            waiting_qty = True
-            continue
-
-        # ---------------- QUANTITÉ ----------------
-        if waiting_qty and designation_parts:
-            qty = normalize_qty(line)
-            if qty is not None:
+        # ---- NOUVEL ARTICLE ----
+        if is_designation_start(line):
+            if current_lines:
                 result["articles"].append({
-                    "Désignation": clean_designation(designation_parts),
-                    "Quantité": qty
+                    "Désignation": clean_designation(current_lines),
+                    "Quantité": None
                 })
-                designation_parts = []
-                waiting_qty = False
+                current_lines = []
+
+            current_lines.append(line)
+            continue
+
+        # ---- TEXTE DE SUITE ----
+        if current_lines and not re.search(r"\b\d+\b", line):
+            current_lines.append(line)
+            continue
+
+        # ---- QUANTITÉ ----
+        qty = (
+            line.replace("D", "")
+                .replace("O", "0")
+                .replace("G", "0")
+        )
+
+        if qty in VALID_QTYS and current_lines:
+            result["articles"].append({
+                "Désignation": clean_designation(current_lines),
+                "Quantité": int(qty)
+            })
+            current_lines = []
 
     return result
 
@@ -144,7 +152,7 @@ def extract_bdc_ulys(text: str):
 # ============================================================
 def bdc_pipeline(image_bytes: bytes, creds_dict: dict):
     img = preprocess_image(image_bytes)
-    raw = vision_ocr(img, creds_dict)
+    raw = google_vision_ocr(img, creds_dict)
     raw = clean_text(raw)
     return extract_bdc_ulys(raw), raw
 
@@ -152,7 +160,7 @@ def bdc_pipeline(image_bytes: bytes, creds_dict: dict):
 # UI
 # ============================================================
 uploaded = st.file_uploader(
-    "📤 Importer un Bon de Commande ULYS",
+    "📤 Importer le Bon de Commande ULYS",
     type=["jpg", "jpeg", "png"]
 )
 
@@ -167,7 +175,7 @@ if uploaded:
     buf = BytesIO()
     image.save(buf, format="JPEG")
 
-    with st.spinner("🔍 Analyse Vision AI en cours..."):
+    with st.spinner("🔍 Analyse Vision AI..."):
         result, raw_text = bdc_pipeline(
             buf.getvalue(),
             dict(st.secrets["gcp_vision"])
@@ -183,4 +191,4 @@ if uploaded:
     st.dataframe(df, use_container_width=True)
 
     with st.expander("🔎 OCR brut"):
-        st.text_area("OCR brut", raw_text, height=300)
+        st.text_area("OCR", raw_text, height=350)
