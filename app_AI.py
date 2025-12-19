@@ -1,5 +1,5 @@
 # ============================================================
-# OCR FACTURES & BDC — OPENAI VISION (VERSION STABLE)
+# OCR FACTURES & BDC — OPENAI VISION + STANDARDISATION
 # ============================================================
 
 import streamlit as st
@@ -22,7 +22,7 @@ st.set_page_config(
 )
 
 st.title("🧾 OCR Factures & Bons de Commande")
-st.caption("OpenAI Vision • Prompt optimisé • Suivi tokens")
+st.caption("OpenAI Vision • Prompt optimisé • Standardisation produits")
 
 # ============================================================
 # SECRETS
@@ -63,6 +63,89 @@ st.caption(
 )
 
 # ============================================================
+# TABLE DE STANDARDISATION PRODUITS
+# ============================================================
+
+STANDARD_PRODUCTS = [
+    {
+        "standard": "Côte de Fianar Rouge 75 cl",
+        "aliases": [
+            "vin rouge cote de fianar",
+            "vin rouge cote de fianara",
+            "cote de fianar rouge"
+        ]
+    },
+    {
+        "standard": "Côte de Fianar Blanc 75 cl",
+        "aliases": [
+            "vin blanc cote de fianar",
+            "vin blanc cote de fianara",
+            "cote de fianar blanc"
+        ]
+    },
+    {
+        "standard": "Côte de Fianar Rosé 75 cl",
+        "aliases": [
+            "vin rose cote de fianar",
+            "vin rose cote de fianara",
+            "cote de fianar rose"
+        ]
+    },
+    {
+        "standard": "Côte de Fianar Gris 75 cl",
+        "aliases": [
+            "vin gris cote de fianar",
+            "vin gris cote de fianara"
+        ]
+    },
+    {
+        "standard": "Blanc doux Maroparasy 75 cl",
+        "aliases": [
+            "vin blanc doux maroparasy",
+            "blanc doux maroparasy"
+        ]
+    },
+    {
+        "standard": "Maroparasy Rouge 75 cl",
+        "aliases": [
+            "vin rouge doux maroparasy",
+            "vin aperitif rouge maroparasy"
+        ]
+    },
+    {
+        "standard": "Côteau d'Ambalavao Rouge 75 cl",
+        "aliases": [
+            "vin rouge ambalavao",
+            "coteau ambalavao rouge"
+        ]
+    },
+    {
+        "standard": "Côteau d'Ambalavao Blanc 75 cl",
+        "aliases": [
+            "vin blanc ambalavao",
+            "coteau ambalavao blanc"
+        ]
+    }
+]
+
+# ============================================================
+# NORMALISATION DÉSIGNATION
+# ============================================================
+
+def normalize_designation(raw_name: str) -> str:
+    if not raw_name:
+        return ""
+
+    name = raw_name.lower()
+
+    for product in STANDARD_PRODUCTS:
+        for alias in product["aliases"]:
+            if alias in name:
+                return product["standard"]
+
+    return "❓ Non standardisé"
+
+# ============================================================
 # IMAGE → BASE64 (VISION SAFE)
 # ============================================================
 
@@ -76,13 +159,13 @@ def image_to_base64(image_bytes: bytes) -> str:
     return f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode()}"
 
 # ============================================================
-# PROMPT OPTIMISÉ (–20 % TOKENS)
+# PROMPT OPTIMISÉ
 # ============================================================
 
 PROMPT = """
 Analyse un document commercial scanné à Madagascar.
 
-Type possible :
+Types possibles :
 - FACTURE
 - BDC ULYS
 - BDC LEADER PRICE
@@ -127,7 +210,7 @@ def extract_facture_bdc(image_bytes: bytes) -> dict:
         max_output_tokens=1000
     )
 
-    usage = response.usage  # ← OBJET (pas dict)
+    usage = response.usage
 
     return {
         "data": json.loads(response.output_text),
@@ -139,7 +222,7 @@ def extract_facture_bdc(image_bytes: bytes) -> dict:
     }
 
 # ============================================================
-# UPLOAD
+# UPLOAD DOCUMENT
 # ============================================================
 
 uploaded_file = st.file_uploader(
@@ -162,7 +245,6 @@ if uploaded_file:
     data = result["data"]
     usage = result["usage"]
 
-    # MAJ TOKENS
     st.session_state.used_tokens += usage["total_tokens"]
 
     st.success("✅ Analyse terminée")
@@ -180,17 +262,36 @@ if uploaded_file:
         st.markdown(f"**📅 Date :** {data.get('date_document','')}")
 
     # ========================================================
-    # TABLE ARTICLES
+    # TABLEAU 1 — OCR BRUT
     # ========================================================
 
-    st.subheader("📦 Articles détectés")
+    st.subheader("📦 Articles (OCR brut)")
 
-    df = pd.DataFrame(data.get("articles", []))
+    df_raw = pd.DataFrame(data.get("articles", []))
 
-    df = st.data_editor(
-        df,
+    df_raw = st.data_editor(
+        df_raw,
         num_rows="dynamic",
-        use_container_width=True
+        use_container_width=True,
+        key="raw_table"
+    )
+
+    # ========================================================
+    # TABLEAU 2 — STANDARDISÉ
+    # ========================================================
+
+    st.subheader("📘 Articles standardisés")
+
+    df_standard = df_raw.copy()
+    df_standard["designation_standardisee"] = df_standard["designation"].apply(
+        normalize_designation
+    )
+
+    df_standard = st.data_editor(
+        df_standard[["designation", "designation_standardisee", "qte"]],
+        num_rows="dynamic",
+        use_container_width=True,
+        key="standard_table"
     )
 
     st.caption(
@@ -208,7 +309,7 @@ if uploaded_file:
             "fournisseur": data.get("fournisseur"),
             "numero_document": data.get("numero_document"),
             "date_document": data.get("date_document"),
-            "articles": df.to_dict(orient="records"),
+            "articles_standardises": df_standard.to_dict(orient="records"),
             "validated_at": datetime.now().isoformat()
         }
 
@@ -219,4 +320,4 @@ if uploaded_file:
 # FOOTER
 # ============================================================
 
-st.caption("⚡ OpenAI Vision • Streamlit • Version stable")
+st.caption("⚡ OpenAI Vision • Standardisation produits • Version finale")
