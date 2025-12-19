@@ -6,7 +6,8 @@ google-api-python-client
 gspread==6.1.4
 Pillow==10.4.0
 
-# 🔥 AJOUT OBLIGATOIRE
 opencv-python-headless
 numpy
 pandas
+
+openai>=1.40.0
