@@ -42,7 +42,27 @@ openai_client = OpenAI(
 )
 
 # ============================================================
-# FONCTION D'ANALYSE PAR CHATGPT VISION
+# PRÉTRAITEMENT IMAGE (OBLIGATOIRE)
+# ============================================================
+
+def prepare_image_for_openai(image_bytes: bytes) -> str:
+    """
+    Redimensionne et compresse l'image pour OpenAI Vision.
+    Garantit une image compatible (< 1 MB).
+    """
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+
+    # Taille max compatible Vision
+    MAX_SIZE = (1600, 1600)
+    img.thumbnail(MAX_SIZE)
+
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG", quality=75, optimize=True)
+
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+# ============================================================
+# FONCTION D'ANALYSE FACTURE / BDC
 # ============================================================
 
 def extract_facture_bdc(image_bytes: bytes) -> dict:
@@ -51,7 +71,7 @@ def extract_facture_bdc(image_bytes: bytes) -> dict:
     et retourne un JSON structuré.
     """
 
-    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+    image_b64 = prepare_image_for_openai(image_bytes)
 
     prompt = """
 Tu es un expert en analyse de factures et bons de commande à Madagascar.
@@ -62,7 +82,7 @@ Tu es un expert en analyse de factures et bons de commande à Madagascar.
    - Facture
    - BDC ULYS
    - BDC S2M
-   - BDC SUPERMARKET
+   - BDC SUPERMARCHÉ
    - Autre BDC
 
 2. Extrais si visible :
@@ -77,8 +97,8 @@ Tu es un expert en analyse de factures et bons de commande à Madagascar.
    - Désignation
    - Qté
 
-5. Corrige les erreurs OCR évidentes.
-6. Regroupe les lignes cassées.
+5. Regroupe les lignes cassées.
+6. Corrige les erreurs OCR évidentes.
 
 Retourne STRICTEMENT un JSON valide, sans texte autour :
 
@@ -173,7 +193,7 @@ if uploaded_file:
     )
 
     # ========================================================
-    # VALIDATION & EXPORT
+    # VALIDATION
     # ========================================================
 
     if st.button("✅ Valider les données"):
