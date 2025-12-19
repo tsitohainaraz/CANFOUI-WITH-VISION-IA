@@ -1,12 +1,12 @@
 # ============================================
-# TEST OPENAI API — STREAMLIT (MINIMAL)
+# TEST OPENAI API — STREAMLIT (FINAL)
 # ============================================
 
 import streamlit as st
 from openai import OpenAI
 
 # ----------------------------
-# Configuration page
+# Configuration de la page
 # ----------------------------
 st.set_page_config(
     page_title="Test OpenAI API",
@@ -18,7 +18,7 @@ st.title("🧪 Test OpenAI API")
 st.caption("Vérification clé API + crédit + projet")
 
 # ----------------------------
-# Vérification secrets
+# Vérification des secrets
 # ----------------------------
 if "OPENAI_API_KEY" not in st.secrets:
     st.error("❌ OPENAI_API_KEY non trouvé dans les secrets Streamlit")
@@ -31,7 +31,7 @@ st.success("✅ OPENAI_API_KEY détectée")
 # ----------------------------
 openai_client = OpenAI(
     api_key=st.secrets["OPENAI_API_KEY"],
-    project=st.secrets.get("OPENAI_PROJECT_ID")  # optionnel mais recommandé
+    project=st.secrets.get("OPENAI_PROJECT_ID")
 )
 
 # ----------------------------
@@ -42,7 +42,7 @@ if st.button("TEST OPENAI"):
         response = openai_client.responses.create(
             model="gpt-4.1-mini",
             input="Réponds uniquement par OK",
-            max_output_tokens=5
+            max_output_tokens=16
         )
 
         st.success("✅ Appel OpenAI réussi")
