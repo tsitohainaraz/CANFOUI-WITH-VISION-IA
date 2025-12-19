@@ -47,31 +47,27 @@ openai_client = OpenAI(
 
 def prepare_image_for_openai(image_bytes: bytes) -> str:
     """
-    Redimensionne et compresse l'image pour OpenAI Vision.
-    Garantit une image compatible (< 1 MB).
+    Prépare une image compatible OpenAI Vision
+    → retourne une DATA URL base64
     """
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
 
-    # Taille max compatible Vision
     MAX_SIZE = (1600, 1600)
     img.thumbnail(MAX_SIZE)
 
     buffer = BytesIO()
     img.save(buffer, format="JPEG", quality=75, optimize=True)
 
-    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+    image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    return f"data:image/jpeg;base64,{image_b64}"
 
 # ============================================================
-# FONCTION D'ANALYSE FACTURE / BDC
+# ANALYSE FACTURE / BDC
 # ============================================================
 
 def extract_facture_bdc(image_bytes: bytes) -> dict:
-    """
-    Analyse une facture ou BDC via ChatGPT Vision
-    et retourne un JSON structuré.
-    """
 
-    image_b64 = prepare_image_for_openai(image_bytes)
+    image_data_url = prepare_image_for_openai(image_bytes)
 
     prompt = """
 Tu es un expert en analyse de factures et bons de commande à Madagascar.
@@ -118,27 +114,20 @@ Retourne STRICTEMENT un JSON valide, sans texte autour :
 
     response = openai_client.responses.create(
         model="gpt-4.1-mini",
-        input=[{
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": prompt},
-                {"type": "input_image", "image_base64": image_b64}
-            ]
-        }],
+        input=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": image_data_url}
+                ]
+            }
+        ],
         temperature=0,
         max_output_tokens=1200
     )
 
-    try:
-        return json.loads(response.output_text)
-    except Exception:
-        return {
-            "type_document": "",
-            "fournisseur": "",
-            "numero_document": "",
-            "date_document": "",
-            "articles": []
-        }
+    return json.loads(response.output_text)
 
 # ============================================================
 # UPLOAD DOCUMENT
@@ -161,47 +150,32 @@ if uploaded_file:
     with st.spinner("Analyse du document par IA…"):
         result = extract_facture_bdc(image_bytes)
 
-    # ========================================================
-    # INFORMATIONS GÉNÉRALES
-    # ========================================================
-
     st.success("✅ Analyse terminée")
 
     col1, col2 = st.columns(2)
-
     with col1:
-        st.markdown(f"**📄 Type :** {result['type_document']}")
-        st.markdown(f"**🏢 Fournisseur :** {result['fournisseur']}")
-
+        st.markdown(f"**📄 Type :** {result.get('type_document','')}")
+        st.markdown(f"**🏢 Fournisseur :** {result.get('fournisseur','')}")
     with col2:
-        st.markdown(f"**🧾 Numéro :** {result['numero_document']}")
-        st.markdown(f"**📅 Date :** {result['date_document']}")
-
-    # ========================================================
-    # TABLEAU DES ARTICLES
-    # ========================================================
+        st.markdown(f"**🧾 Numéro :** {result.get('numero_document','')}")
+        st.markdown(f"**📅 Date :** {result.get('date_document','')}")
 
     st.subheader("📦 Articles détectés")
 
-    df = pd.DataFrame(result["articles"])
+    df = pd.DataFrame(result.get("articles", []))
 
     df = st.data_editor(
         df,
         num_rows="dynamic",
-        use_container_width=True,
-        key="articles_editor"
+        use_container_width=True
     )
-
-    # ========================================================
-    # VALIDATION
-    # ========================================================
 
     if st.button("✅ Valider les données"):
         output = {
-            "type_document": result["type_document"],
-            "fournisseur": result["fournisseur"],
-            "numero_document": result["numero_document"],
-            "date_document": result["date_document"],
+            "type_document": result.get("type_document"),
+            "fournisseur": result.get("fournisseur"),
+            "numero_document": result.get("numero_document"),
+            "date_document": result.get("date_document"),
             "articles": df.to_dict(orient="records"),
             "validated_at": datetime.now().isoformat()
         }
