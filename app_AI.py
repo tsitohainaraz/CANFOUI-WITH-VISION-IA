@@ -1,5 +1,5 @@
 # ============================================================
-# FACTURES & BDC — OCR IA AVANCÉ (OPENAI CHATGPT VISION)
+# OCR FACTURES & BDC — OPENAI VISION (OPTIMISÉ TOKENS)
 # ============================================================
 
 import streamlit as st
@@ -22,10 +22,10 @@ st.set_page_config(
 )
 
 st.title("🧾 OCR Factures & Bons de Commande")
-st.caption("Analyse intelligente par ChatGPT Vision (OpenAI)")
+st.caption("OpenAI Vision • Prompt optimisé • Suivi tokens réel")
 
 # ============================================================
-# VÉRIFICATION DES SECRETS
+# SECRETS
 # ============================================================
 
 if "OPENAI_API_KEY" not in st.secrets:
@@ -33,7 +33,7 @@ if "OPENAI_API_KEY" not in st.secrets:
     st.stop()
 
 # ============================================================
-# INITIALISATION OPENAI
+# OPENAI CLIENT
 # ============================================================
 
 openai_client = OpenAI(
@@ -42,61 +42,82 @@ openai_client = OpenAI(
 )
 
 # ============================================================
-# PRÉTRAITEMENT IMAGE (OBLIGATOIRE)
+# SUIVI BUDGET / TOKENS
+# ============================================================
+
+BUDGET_USD = 5.0
+USD_PER_1K_TOKENS = 0.003  # estimation gpt-4.1-mini
+TOTAL_BUDGET_TOKENS = int((BUDGET_USD / USD_PER_1K_TOKENS) * 1000)
+
+if "used_tokens" not in st.session_state:
+    st.session_state.used_tokens = 0
+
+# ============================================================
+# BARRE DE CRÉDIT
+# ============================================================
+
+remaining_tokens = TOTAL_BUDGET_TOKENS - st.session_state.used_tokens
+remaining_tokens = max(0, remaining_tokens)
+
+progress = min(st.session_state.used_tokens / TOTAL_BUDGET_TOKENS, 1.0)
+
+st.subheader("🔋 Crédit OpenAI (tokens réels)")
+st.progress(progress)
+
+st.caption(
+    f"Tokens utilisés : {st.session_state.used_tokens:,} / {TOTAL_BUDGET_TOKENS:,} "
+    f"— Restants estimés : {remaining_tokens:,}"
+)
+
+if remaining_tokens < 50_000:
+    st.warning("⚠️ Crédit bientôt épuisé")
+
+# ============================================================
+# PRÉTRAITEMENT IMAGE (VISION SAFE)
 # ============================================================
 
 def prepare_image_for_openai(image_bytes: bytes) -> str:
-    """
-    Prépare une image compatible OpenAI Vision
-    → retourne une DATA URL base64
-    """
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
-
-    MAX_SIZE = (1600, 1600)
-    img.thumbnail(MAX_SIZE)
+    img.thumbnail((1600, 1600))
 
     buffer = BytesIO()
     img.save(buffer, format="JPEG", quality=75, optimize=True)
 
-    image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    return f"data:image/jpeg;base64,{image_b64}"
+    b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    return f"data:image/jpeg;base64,{b64}"
 
 # ============================================================
-# ANALYSE FACTURE / BDC
+# PROMPT OPTIMISÉ (–20 % TOKENS)
 # ============================================================
 
-def extract_facture_bdc(image_bytes: bytes) -> dict:
+PROMPT_OPTIMISE = """
+Analyse un document commercial scanné à Madagascar.
 
-    image_data_url = prepare_image_for_openai(image_bytes)
+Type possible :
+- FACTURE
+- BDC ULYS
+- BDC LEADER PRICE
+- BDC S2M / SUPERMARKI
+- AUTRE BDC
 
-    prompt = """
-Tu es un expert en analyse de factures et bons de commande à Madagascar.
+Règles :
+- Ignore prix, montants, TVA, EAN, PCB, codes
+- Regroupe lignes cassées
+- Corrige erreurs OCR évidentes
+- Ne commente rien
 
-À partir de l'image fournie :
+Extraire si visible :
+- type_document
+- fournisseur
+- numero_document
+- date_document
 
-1. Identifie le type de document :
-   - Facture
-   - BDC ULYS
-   - BDC S2M
-   - BDC SUPERMARCHÉ
-   - Autre BDC
+Articles :
+Pour chaque ligne valide :
+- designation
+- qte
 
-2. Extrais si visible :
-   - fournisseur
-   - numero_document
-   - date_document
-
-3. Analyse le tableau des articles.
-   Ignore les prix, montants, TVA, EAN, PCB, codes internes.
-
-4. Pour chaque ligne d'article, extrais :
-   - Désignation
-   - Qté
-
-5. Regroupe les lignes cassées.
-6. Corrige les erreurs OCR évidentes.
-
-Retourne STRICTEMENT un JSON valide, sans texte autour :
+Retourne UNIQUEMENT ce JSON valide :
 
 {
   "type_document": "",
@@ -105,12 +126,19 @@ Retourne STRICTEMENT un JSON valide, sans texte autour :
   "date_document": "",
   "articles": [
     {
-      "Désignation": "",
-      "Qté": ""
+      "designation": "",
+      "qte": ""
     }
   ]
 }
 """
+
+# ============================================================
+# EXTRACTION PAR OPENAI VISION
+# ============================================================
+
+def extract_facture_bdc(image_bytes: bytes) -> dict:
+    image_url = prepare_image_for_openai(image_bytes)
 
     response = openai_client.responses.create(
         model="gpt-4.1-mini",
@@ -118,16 +146,25 @@ Retourne STRICTEMENT un JSON valide, sans texte autour :
             {
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": prompt},
-                    {"type": "input_image", "image_url": image_data_url}
+                    {"type": "input_text", "text": PROMPT_OPTIMISE},
+                    {"type": "input_image", "image_url": image_url}
                 ]
             }
         ],
         temperature=0,
-        max_output_tokens=1200
+        max_output_tokens=1000
     )
 
-    return json.loads(response.output_text)
+    usage = response.usage
+
+    return {
+        "data": json.loads(response.output_text),
+        "usage": {
+            "input_tokens": usage["input_tokens"],
+            "output_tokens": usage["output_tokens"],
+            "total_tokens": usage["total_tokens"]
+        }
+    }
 
 # ============================================================
 # UPLOAD DOCUMENT
@@ -150,19 +187,33 @@ if uploaded_file:
     with st.spinner("Analyse du document par IA…"):
         result = extract_facture_bdc(image_bytes)
 
+    data = result["data"]
+    usage = result["usage"]
+
+    # MAJ TOKENS
+    st.session_state.used_tokens += usage["total_tokens"]
+
     st.success("✅ Analyse terminée")
+
+    # ========================================================
+    # INFOS DOCUMENT
+    # ========================================================
 
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(f"**📄 Type :** {result.get('type_document','')}")
-        st.markdown(f"**🏢 Fournisseur :** {result.get('fournisseur','')}")
+        st.markdown(f"**📄 Type :** {data.get('type_document','')}")
+        st.markdown(f"**🏢 Fournisseur :** {data.get('fournisseur','')}")
     with col2:
-        st.markdown(f"**🧾 Numéro :** {result.get('numero_document','')}")
-        st.markdown(f"**📅 Date :** {result.get('date_document','')}")
+        st.markdown(f"**🧾 Numéro :** {data.get('numero_document','')}")
+        st.markdown(f"**📅 Date :** {data.get('date_document','')}")
+
+    # ========================================================
+    # TABLE ARTICLES
+    # ========================================================
 
     st.subheader("📦 Articles détectés")
 
-    df = pd.DataFrame(result.get("articles", []))
+    df = pd.DataFrame(data.get("articles", []))
 
     df = st.data_editor(
         df,
@@ -170,12 +221,21 @@ if uploaded_file:
         use_container_width=True
     )
 
+    st.caption(
+        f"🧮 Dernier scan : {usage['total_tokens']} tokens "
+        f"(entrée {usage['input_tokens']} / sortie {usage['output_tokens']})"
+    )
+
+    # ========================================================
+    # VALIDATION
+    # ========================================================
+
     if st.button("✅ Valider les données"):
         output = {
-            "type_document": result.get("type_document"),
-            "fournisseur": result.get("fournisseur"),
-            "numero_document": result.get("numero_document"),
-            "date_document": result.get("date_document"),
+            "type_document": data.get("type_document"),
+            "fournisseur": data.get("fournisseur"),
+            "numero_document": data.get("numero_document"),
+            "date_document": data.get("date_document"),
             "articles": df.to_dict(orient="records"),
             "validated_at": datetime.now().isoformat()
         }
@@ -187,4 +247,4 @@ if uploaded_file:
 # FOOTER
 # ============================================================
 
-st.caption("⚡ Powered by OpenAI Vision — Factures & BDC intelligents")
+st.caption("⚡ OpenAI Vision • Prompt optimisé • Suivi tokens réel")
