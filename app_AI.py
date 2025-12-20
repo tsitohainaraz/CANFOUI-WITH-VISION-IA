@@ -2111,64 +2111,47 @@ if st.button("🔒 Déconnexion sécurisée",
     logout()
 
 # ============================================================
-# FOOTER TECH — VERSION STABLE STREAMLIT
+# FOOTER - SOLUTION STREAMLIT NATIVE
 # ============================================================
+st.markdown("---")
 
-from datetime import datetime
-
-username = st.session_state.get("username", "Utilisateur")
-
-footer_html = f"""
-<div style="
-    text-align: center;
-    color: {PALETTE['text_medium']};
-    font-size: 0.9rem;
-    padding: 2rem;
-    background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
-    border-radius: 20px;
-    margin-top: 3rem;
-    border-top: 1px solid {PALETTE['border']};
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.03);
-">
-
-    <div style="display: flex; justify-content: center; gap: 30px; margin-bottom: 15px;">
-        <div style="text-align: center;">
-            <div style="font-size: 1.6rem;">🤖</div>
-            <div style="font-size: 0.75rem; color: #64748b;">AI Vision</div>
-        </div>
-        <div style="text-align: center;">
-            <div style="font-size: 1.6rem;">⚡</div>
-            <div style="font-size: 0.75rem; color: #64748b;">Fast Processing</div>
-        </div>
-        <div style="text-align: center;">
-            <div style="font-size: 1.6rem;">🔒</div>
-            <div style="font-size: 0.75rem; color: #64748b;">Secure Cloud</div>
-        </div>
-    </div>
-
-    <p style="margin: 8px 0;">
-        <strong style="
-            background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['tech_blue']} 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        ">
-            {BRAND_TITLE}
-        </strong>
-        • Système IA V3.0 • © {datetime.now().strftime('%Y')}
-    </p>
-
-    <div style="margin-top: 15px; font-size: 0.8rem; color: #94a3b8;">
-        <div style="display: inline-flex; align-items: center; gap: 6px;">
-            <span style="width:8px;height:8px;background:#10B981;border-radius:50%;display:inline-block;"></span>
-            Système actif • Session :
-            <strong>{username}</strong>
-            • {datetime.now().strftime('%H:%M:%S')}
-        </div>
-    </div>
-
-</div>
-"""
-
-st.markdown(footer_html, unsafe_allow_html=True)
-
+# Créer un conteneur stylé
+with st.container():
+    # Espacement
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+    
+    # Première ligne : Icônes
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("<center>🤖</center>", unsafe_allow_html=True)
+        st.markdown("<center><small style='color: #64748b;'>AI Vision</small></center>", unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("<center>⚡</center>", unsafe_allow_html=True)
+        st.markdown("<center><small style='color: #64748b;'>Fast Processing</small></center>", unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("<center>🔒</center>", unsafe_allow_html=True)
+        st.markdown("<center><small style='color: #64748b;'>Secure Cloud</small></center>", unsafe_allow_html=True)
+    
+    # Deuxième ligne : Titre
+    st.markdown(f"""
+    <center style='margin: 15px 0;'>
+        <span style='font-weight: 700; color: {PALETTE["primary_dark"]};'>{BRAND_TITLE}</span>
+        <span style='color: #64748b;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
+    </center>
+    """, unsafe_allow_html=True)
+    
+    # Troisième ligne : Statut
+    st.markdown(f"""
+    <center style='font-size: 0.8rem; color: #94a3b8;'>
+        <span style='color: #10B981;'>●</span> 
+        Système actif • Session : 
+        <strong>{st.session_state.username}</strong>
+        • {datetime.now().strftime("%H:%M:%S")}
+    </center>
+    """, unsafe_allow_html=True)
+    
+    # Espacement final
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
