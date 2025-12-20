@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# CSS — DESIGN INSPIRE CHAN FOUI & FILS
+# CSS — THEME CHAN FOUI & FILS
 # ============================================================
 
 st.markdown("""
@@ -26,36 +26,25 @@ st.markdown("""
     font-family: Inter, system-ui, sans-serif;
 }
 
-/* Carte générique */
+/* Carte */
 .card {
     background: #FFFFFF;
     border-radius: 22px;
-    padding: 2.8rem;
-    margin-bottom: 2.2rem;
+    padding: 2.5rem;
+    margin-bottom: 2rem;
     box-shadow: 0 10px 30px rgba(39, 65, 74, 0.12);
 }
 
-/* HEADER */
+/* Header */
 .header {
     text-align: center;
-    padding-top: 3rem;
-    padding-bottom: 3rem;
+    padding-top: 2.5rem;
+    padding-bottom: 2.5rem;
 }
 
-.logo-container {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 1.4rem;
-}
-
-.logo-img {
-    height: 130px;
-    max-width: 100%;
-    object-fit: contain;
-}
-
+/* Titre */
 .app-title {
-    font-size: 2.4rem;
+    font-size: 2.3rem;
     font-weight: 800;
     letter-spacing: 1px;
     color: #1A1A1A;
@@ -72,7 +61,7 @@ st.markdown("""
     background-color: #27414A;
     color: white;
     border-radius: 14px;
-    padding: 18px 32px;
+    padding: 18px 34px;
     font-size: 18px;
     font-weight: 700;
     border: none;
@@ -88,21 +77,21 @@ st.markdown("""
     transform: translateY(-1px);
 }
 
-/* Cache uploader Streamlit natif */
+/* Cache uploader Streamlit */
 [data-testid="stFileUploader"] section {
     display: none;
 }
 
-/* Barre de progression */
+/* Progress bar */
 .stProgress > div > div > div {
-    height: 22px;
+    height: 20px;
     border-radius: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# HEADER AVEC LOGO (AUTO-DETECTION)
+# HEADER + LOGO (AUTO-DETECTION)
 # ============================================================
 
 st.markdown('<div class="card header">', unsafe_allow_html=True)
@@ -111,15 +100,13 @@ logo_paths = [
     "CF_LOGOS.png",
     "assets/CF_LOGOS.png",
     "static/CF_LOGOS.png",
-    "images/CF_LOGOS.png"
+    "images/CF_LOGOS.png",
 ]
 
 logo_found = False
 for path in logo_paths:
     if os.path.exists(path):
-        st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-        st.image(path, class_="logo-img")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.image(path, width=220)
         logo_found = True
         break
 
@@ -135,13 +122,13 @@ st.markdown(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# BOUTON IMPORT (UX PRO)
+# BOUTON IMPORT DOCUMENT
 # ============================================================
 
 st.markdown('<div class="card" style="text-align:center;">', unsafe_allow_html=True)
 
 st.markdown("""
-<label class="upload-btn" for="file_uploader">
+<label class="upload-btn" for="file_upload">
 📤 Importer un document
 </label>
 """, unsafe_allow_html=True)
@@ -149,14 +136,14 @@ st.markdown("""
 uploaded_file = st.file_uploader(
     "",
     type=["jpg", "jpeg", "png"],
-    key="file_uploader",
+    key="file_upload",
     label_visibility="collapsed"
 )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AVEC PROGRESSION (SIMULATION)
+# TRAITEMENT + PROGRESSION
 # ============================================================
 
 if uploaded_file:
@@ -168,21 +155,22 @@ if uploaded_file:
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("### 🤖 Analyse du document")
+
     progress = st.progress(0)
     status = st.empty()
 
     steps = [
-        (15, "📥 Fichier chargé"),
-        (40, "🧠 Analyse OCR"),
-        (70, "📊 Extraction des données"),
-        (90, "📘 Standardisation"),
+        (15, "📥 Document chargé"),
+        (40, "🧠 Lecture OCR"),
+        (65, "📊 Extraction des lignes"),
+        (85, "📘 Standardisation produits"),
         (100, "✅ Analyse terminée"),
     ]
 
-    for p, msg in steps:
-        time.sleep(0.25)
-        progress.progress(p)
-        status.info(msg)
+    for value, message in steps:
+        time.sleep(0.3)
+        progress.progress(value)
+        status.info(message)
 
     st.success("Votre fichier a été analysé avec succès")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -191,4 +179,4 @@ if uploaded_file:
 # FOOTER
 # ============================================================
 
-st.caption("© CHAN FOUI & FILS — Scanner Pro • Design inspiré du logo")
+st.caption("© CHAN FOUI & FILS — Scanner Pro • Interface professionnelle")
