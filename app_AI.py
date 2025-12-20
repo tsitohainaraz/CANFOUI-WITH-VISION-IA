@@ -62,12 +62,12 @@ if "duplicate_rows" not in st.session_state:
     st.session_state.duplicate_rows = []
 if "data_for_sheets" not in st.session_state:
     st.session_state.data_for_sheets = None
-if "edited_df" not in st.session_state:
-    st.session_state.edited_df = None
-if "raw_data_df" not in st.session_state:
-    st.session_state.raw_data_df = None
-if "standardized_data_df" not in st.session_state:
-    st.session_state.standardized_data_df = None
+if "edited_standardized_df" not in st.session_state:
+    st.session_state.edited_standardized_df = None
+if "export_triggered" not in st.session_state:
+    st.session_state.export_triggered = False
+if "export_status" not in st.session_state:
+    st.session_state.export_status = None
 if "image_preview_visible" not in st.session_state:
     st.session_state.image_preview_visible = False
 if "document_scanned" not in st.session_state:
@@ -120,6 +120,7 @@ def logout():
     st.session_state.detected_document_type = None
     st.session_state.image_preview_visible = False
     st.session_state.document_scanned = False
+    st.session_state.export_triggered = False
     st.rerun()
 
 # ============================================================
@@ -773,7 +774,7 @@ def map_client(client: str) -> str:
 # ============================================================
 # FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS
 # ============================================================
-def prepare_facture_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = False) -> List[List[str]]:
+def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
     """Prépare les lignes pour les factures (9 colonnes)"""
     rows = []
     
@@ -786,15 +787,11 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = 
         magasin = data.get("adresse_livraison", "")
         
         for _, row in articles_df.iterrows():
-            if use_raw:
-                article = str(row.get("designation_brute", "")).strip()
-            else:
-                # Utiliser la colonne designation_standard
-                article = str(row.get("designation_standard", "")).strip()
-                if not article:  # Fallback si la colonne n'existe pas
-                    article = str(row.get("designation_brute", "")).strip()
+            article = str(row.get("designation_standard", "")).strip()
+            if not article:
+                article = str(row.get("Article", "")).strip()
             
-            quantite = format_quantity(row.get("quantite", ""))
+            quantite = format_quantity(row.get("quantite", row.get("Quantité", "")))
             
             rows.append([
                 mois,
@@ -814,7 +811,7 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = 
         st.error(f"❌ Erreur lors de la préparation des données facture: {str(e)}")
         return []
 
-def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = False) -> List[List[str]]:
+def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
     """Prépare les lignes pour les BDC (8 colonnes)"""
     rows = []
     
@@ -827,15 +824,11 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = Fals
         magasin = data.get("adresse_livraison", "")
         
         for _, row in articles_df.iterrows():
-            if use_raw:
-                article = str(row.get("designation_brute", "")).strip()
-            else:
-                # Utiliser la colonne designation_standard
-                article = str(row.get("designation_standard", "")).strip()
-                if not article:  # Fallback si la colonne n'existe pas
-                    article = str(row.get("designation_brute", "")).strip()
+            article = str(row.get("designation_standard", "")).strip()
+            if not article:
+                article = str(row.get("Article", "")).strip()
             
-            quantite = format_quantity(row.get("quantite", ""))
+            quantite = format_quantity(row.get("quantite", row.get("Quantité", "")))
             
             rows.append([
                 mois,
@@ -854,28 +847,16 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = Fals
         st.error(f"❌ Erreur lors de la préparation des données BDC: {str(e)}")
         return []
 
-def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame, use_raw: bool = False) -> List[List[str]]:
+def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
     """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document"""
     if "FACTURE" in document_type.upper():
-        return prepare_facture_rows(data, articles_df, use_raw)
+        return prepare_facture_rows(data, articles_df)
     else:
-        return prepare_bdc_rows(data, articles_df, use_raw)
+        return prepare_bdc_rows(data, articles_df)
 
 # ============================================================
 # FONCTIONS DE DÉTECTION DE DOUBLONS
 # ============================================================
-def generate_document_hash(document_type: str, extracted_data: dict) -> str:
-    """Génère un hash unique pour un document"""
-    if "FACTURE" in document_type.upper():
-        key_data = f"{document_type}_{extracted_data.get('numero_facture', '')}_{extracted_data.get('client', '')}"
-    else:
-        key_data = f"{document_type}_{extracted_data.get('numero', '')}_{extracted_data.get('client', '')}"
-    
-    if 'date' in extracted_data:
-        key_data += f"_{extracted_data['date']}"
-    
-    return hashlib.md5(key_data.encode()).hexdigest()
-
 def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
     """Vérifie si un document existe déjà dans Google Sheets"""
     try:
@@ -926,58 +907,6 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
     except Exception as e:
         st.error(f"❌ Erreur lors de la vérification des doublons: {str(e)}")
         return False, []
-
-def display_duplicate_warning(document_type: str, extracted_data: dict, duplicates: List[Dict]):
-    """Affiche un avertissement pour les doublons détectés"""
-    st.markdown('<div class="duplicate-box">', unsafe_allow_html=True)
-    
-    st.markdown(f'### ⚠️ DOUBLON DÉTECTÉ')
-    
-    if "FACTURE" in document_type.upper():
-        st.markdown(f"""
-        **Document identique déjà présent dans la base :**
-        - **Type :** {document_type}
-        - **Numéro de facture :** {extracted_data.get('numero_facture', 'Non détecté')}
-        - **Client :** {extracted_data.get('client', 'Non détecté')}
-        """)
-    else:
-        st.markdown(f"""
-        **Document identique déjà présent dans la base :**
-        - **Type :** {document_type}
-        - **Numéro BDC :** {extracted_data.get('numero', 'Non détecté')}
-        - **Client :** {extracted_data.get('client', 'Non détecté')}
-        """)
-    
-    st.markdown("**Enregistrements similaires trouvés :**")
-    for dup in duplicates:
-        st.markdown(f"- Ligne {dup['row_number']} : {dup['match_type']}")
-    
-    st.markdown("**Que souhaitez-vous faire ?**")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("✅ Écraser et mettre à jour", key="overwrite_duplicate_main", 
-                    use_container_width=True, type="primary"):
-            st.session_state.duplicate_action = "overwrite"
-            st.session_state.duplicate_rows = [d['row_number'] for d in duplicates]
-            st.rerun()
-    
-    with col2:
-        if st.button("📝 Ajouter comme nouveau", key="add_new_duplicate_main", 
-                    use_container_width=True):
-            st.session_state.duplicate_action = "add_new"
-            st.rerun()
-    
-    with col3:
-        if st.button("❌ Ne pas importer", key="skip_duplicate_main", 
-                    use_container_width=True):
-            st.session_state.duplicate_action = "skip"
-            st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    return False
 
 # ============================================================
 # GOOGLE SHEETS FUNCTIONS
@@ -1072,8 +1001,7 @@ def find_table_range(worksheet, num_columns=9):
             return "A2:H2"
 
 def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
-                         duplicate_action: str = None, duplicate_rows: List[int] = None,
-                         use_raw: bool = False):
+                         duplicate_action: str = None, duplicate_rows: List[int] = None):
     """Sauvegarde les données dans Google Sheets"""
     try:
         ws = get_worksheet(document_type)
@@ -1082,7 +1010,7 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.error("❌ Impossible de se connecter à Google Sheets")
             return False, "Erreur de connexion"
         
-        new_rows = prepare_rows_for_sheet(document_type, data, articles_df, use_raw)
+        new_rows = prepare_rows_for_sheet(document_type, data, articles_df)
         
         if not new_rows:
             st.warning("⚠️ Aucune donnée à enregistrer")
@@ -1104,8 +1032,8 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.warning("⏸️ Import annulé - Document ignoré")
             return True, "Document ignoré (doublon)"
         
-        data_type = "brutes" if use_raw else "standardisées"
-        st.info(f"📋 **Aperçu des données {data_type} à enregistrer:**")
+        # Afficher l'aperçu des données à enregistrer
+        st.info(f"📋 **Aperçu des données à enregistrer:**")
         
         # Définir les colonnes selon le type de document
         if "FACTURE" in document_type.upper():
@@ -1134,7 +1062,7 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             elif duplicate_action == "add_new":
                 action_msg = "ajoutée(s) comme nouvelle(s)"
             
-            st.success(f"✅ {len(new_rows)} ligne(s) {data_type} {action_msg} avec succès dans Google Sheets!")
+            st.success(f"✅ {len(new_rows)} ligne(s) {action_msg} avec succès dans Google Sheets!")
             
             # Utiliser le type normalisé pour l'URL
             normalized_type = normalize_document_type(document_type)
@@ -1142,7 +1070,7 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.markdown(f'<div class="info-box">🔗 <a href="{sheet_url}" target="_blank">Ouvrir Google Sheets</a></div>', unsafe_allow_html=True)
             
             st.balloons()
-            return True, f"{len(new_rows)} lignes {data_type} {action_msg}"
+            return True, f"{len(new_rows)} lignes {action_msg}"
             
         except Exception as e:
             st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
@@ -1157,8 +1085,8 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
                 
                 ws.update('A1', all_data)
                 
-                st.success(f"✅ {len(new_rows)} ligne(s) {data_type} enregistrée(s) avec méthode alternative!")
-                return True, f"{len(new_rows)} lignes {data_type} enregistrées (méthode alternative)"
+                st.success(f"✅ {len(new_rows)} ligne(s) enregistrée(s) avec méthode alternative!")
+                return True, f"{len(new_rows)} lignes enregistrées (méthode alternative)"
                 
             except Exception as e2:
                 st.error(f"❌ Échec de la méthode alternative: {str(e2)}")
@@ -1235,6 +1163,8 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.duplicate_action = None
     st.session_state.image_preview_visible = True
     st.session_state.document_scanned = True
+    st.session_state.export_triggered = False
+    st.session_state.export_status = None
     
     # Barre de progression
     progress_container = st.empty()
@@ -1271,29 +1201,20 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             st.session_state.show_results = True
             st.session_state.processing = False
             
-            # Préparer les dataframes
+            # Préparer les données standardisées
             if "articles" in result:
-                # Données brutes
-                raw_data = []
-                for article in result["articles"]:
-                    raw_data.append({
-                        "designation_brute": article.get("article", ""),
-                        "quantite": article.get("quantite", 0)
-                    })
-                st.session_state.raw_data_df = pd.DataFrame(raw_data)
-                
-                # Données standardisées
                 std_data = []
                 for article in result["articles"]:
                     raw_name = article.get("article", "")
                     std_name = standardize_product_name(raw_name)
                     std_data.append({
-                        "designation_brute": raw_name,
-                        "designation_standard": std_name,
-                        "quantite": article.get("quantite", 0),
-                        "standardise": raw_name.upper() != std_name.upper()
+                        "Article": std_name,
+                        "Quantité": article.get("quantite", 0),
+                        "standardisé": raw_name.upper() != std_name.upper()
                     })
-                st.session_state.standardized_data_df = pd.DataFrame(std_data)
+                
+                # Créer le dataframe standardisé pour l'édition
+                st.session_state.edited_standardized_df = pd.DataFrame(std_data)
             
             progress_container.empty()
             st.rerun()
@@ -1390,62 +1311,42 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # TABLEAU BRUT
+    # TABLEAU STANDARDISÉ ÉDITABLE
     # ========================================================
-    if st.session_state.raw_data_df is not None and not st.session_state.raw_data_df.empty:
+    if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>📄 Données extraites (brutes)</h4>', unsafe_allow_html=True)
-        st.dataframe(st.session_state.raw_data_df, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ========================================================
-    # TABLEAU STANDARDISÉ
-    # ========================================================
-    if st.session_state.standardized_data_df is not None and not st.session_state.standardized_data_df.empty:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>📘 Données standardisées</h4>', unsafe_allow_html=True)
+        st.markdown('<h4>📘 Données standardisées (éditable)</h4>', unsafe_allow_html=True)
         
-        # Appliquer le style pour les cellules non standardisées
-        def highlight_non_standardized(row):
-            if not row["standardise"]:
-                return ['background-color: #FFD6D6'] * len(row)
-            return [''] * len(row)
-        
-        styled_df = st.session_state.standardized_data_df.style.apply(highlight_non_standardized, axis=1)
-        st.dataframe(styled_df, use_container_width=True)
-        
-        st.markdown("🔴 **Les lignes en rouge ne sont pas reconnues dans le référentiel**")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Éditeur de données pour les articles
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>🛒 Articles détectés (éditable)</h4>', unsafe_allow_html=True)
-        
-        # Préparer le dataframe pour l'édition
-        edit_df = st.session_state.standardized_data_df[["designation_standard", "quantite"]].copy()
-        edit_df.columns = ["article", "quantite"]
-        
+        # Éditeur de données avec possibilité d'ajouter des lignes
         edited_df = st.data_editor(
-            edit_df,
+            st.session_state.edited_standardized_df,
             num_rows="dynamic",
             column_config={
-                "article": st.column_config.TextColumn("Article", width="large"),
-                "quantite": st.column_config.NumberColumn("Quantité", min_value=0)
+                "Article": st.column_config.TextColumn(
+                    "Article",
+                    width="large",
+                    help="Modifiez ou ajoutez de nouveaux articles manuellement"
+                ),
+                "Quantité": st.column_config.NumberColumn(
+                    "Quantité",
+                    min_value=0,
+                    help="Quantité de l'article"
+                ),
+                "standardisé": st.column_config.CheckboxColumn(
+                    "Standardisé",
+                    help="Coché si l'article a été standardisé automatiquement"
+                )
             },
             use_container_width=True,
-            key="articles_editor_main"
+            key="standardized_data_editor"
         )
         
-        # Mettre à jour le dataframe standardisé avec les modifications
-        if not edited_df.empty:
-            for idx, row in edited_df.iterrows():
-                if idx < len(st.session_state.standardized_data_df):
-                    st.session_state.standardized_data_df.at[idx, 'designation_standard'] = row['article']
-                    st.session_state.standardized_data_df.at[idx, 'quantite'] = row['quantite']
+        # Mettre à jour le dataframe édité
+        st.session_state.edited_standardized_df = edited_df
         
-        # Statistiques
+        # Afficher les statistiques
         total_items = len(edited_df)
-        total_qty = edited_df["quantite"].sum() if not edited_df.empty else 0
+        total_qty = edited_df["Quantité"].sum() if not edited_df.empty else 0
         
         col_stat1, col_stat2 = st.columns(2)
         with col_stat1:
@@ -1462,132 +1363,136 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # VÉRIFICATION DES DOUBLONS
+    # BOUTON D'EXPORT PAR DÉFAUT
     # ========================================================
-    if not st.session_state.duplicate_check_done:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>🔍 Vérification des doublons</h4>', unsafe_allow_html=True)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<h4>📤 Export vers Google Sheets</h4>', unsafe_allow_html=True)
+    
+    # Bouton d'export par défaut
+    if st.button("📤 Exporter vers Google Sheets", 
+                use_container_width=True, 
+                type="primary",
+                key="export_button"):
         
-        if st.button("🔎 Vérifier si le document existe déjà", use_container_width=True, key="check_duplicates_main"):
-            with st.spinner("Recherche de documents similaires..."):
-                # Utiliser le type de document normalisé
-                normalized_doc_type = normalize_document_type(doc_type)
-                ws = get_worksheet(normalized_doc_type)
+        st.session_state.export_triggered = True
+        st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ========================================================
+    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
+    # ========================================================
+    if st.session_state.export_triggered and st.session_state.export_status is None:
+        with st.spinner("🔍 Vérification des doublons en cours..."):
+            # Normaliser le type de document
+            normalized_doc_type = normalize_document_type(doc_type)
+            
+            # Obtenir la feuille Google Sheets
+            ws = get_worksheet(normalized_doc_type)
+            
+            if ws:
+                # Vérifier les doublons
+                duplicate_found, duplicates = check_for_duplicates(
+                    normalized_doc_type,
+                    st.session_state.data_for_sheets,
+                    ws
+                )
                 
-                if ws:
-                    # Afficher des informations de débogage
-                    st.info(f"📄 Type de document: {doc_type} → {normalized_doc_type}")
-                    
-                    duplicate_found, duplicates = check_for_duplicates(
-                        normalized_doc_type,
-                        data_for_sheets,
-                        ws
-                    )
-                    
-                    if not duplicate_found:
-                        st.success("✅ Aucun doublon trouvé - Le document est unique")
-                        st.session_state.duplicate_found = False
-                        st.session_state.duplicate_check_done = True
-                        st.rerun()
-                    else:
-                        st.session_state.duplicate_found = True
-                        st.session_state.duplicate_rows = [d['row_number'] for d in duplicates]
-                        st.session_state.duplicate_check_done = True
-                        st.rerun()
+                if not duplicate_found:
+                    st.session_state.duplicate_found = False
+                    st.session_state.export_status = "no_duplicates"
+                    st.rerun()
                 else:
-                    st.error("❌ Impossible de vérifier les doublons - Connexion échouée")
-                    # Réinitialiser pour permettre une nouvelle tentative
-                    st.session_state.duplicate_check_done = False
+                    st.session_state.duplicate_found = True
+                    st.session_state.duplicate_rows = [d['row_number'] for d in duplicates]
+                    st.session_state.export_status = "duplicates_found"
+                    st.rerun()
+            else:
+                st.error("❌ Impossible de vérifier les doublons - Connexion Google Sheets échouée")
+                st.session_state.export_status = "error"
+    
+    # ========================================================
+    # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
+    # ========================================================
+    if st.session_state.export_status == "duplicates_found":
+        st.markdown('<div class="duplicate-box">', unsafe_allow_html=True)
+        
+        st.markdown(f'### ⚠️ DOUBLON DÉTECTÉ')
+        
+        if "FACTURE" in doc_type.upper():
+            st.markdown(f"""
+            **Document identique déjà présent dans la base :**
+            - **Type :** {doc_type}
+            - **Numéro de facture :** {st.session_state.data_for_sheets.get('numero_facture', 'Non détecté')}
+            - **Client :** {st.session_state.data_for_sheets.get('client', 'Non détecté')}
+            """)
+        else:
+            st.markdown(f"""
+            **Document identique déjà présent dans la base :**
+            - **Type :** {doc_type}
+            - **Numéro BDC :** {st.session_state.data_for_sheets.get('numero', 'Non détecté')}
+            - **Client :** {st.session_state.data_for_sheets.get('client', 'Non détecté')}
+            """)
+        
+        st.markdown(f"**{len(st.session_state.duplicate_rows)} document(s) similaire(s) trouvé(s).**")
+        st.markdown("**Que souhaitez-vous faire ?**")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("✅ Écraser et mettre à jour", 
+                        key="overwrite_duplicate", 
+                        use_container_width=True, 
+                        type="primary"):
+                st.session_state.duplicate_action = "overwrite"
+                st.session_state.export_status = "ready_to_export"
+                st.rerun()
+        
+        with col2:
+            if st.button("📝 Ajouter comme nouveau", 
+                        key="add_new_duplicate", 
+                        use_container_width=True):
+                st.session_state.duplicate_action = "add_new"
+                st.session_state.export_status = "ready_to_export"
+                st.rerun()
+        
+        with col3:
+            if st.button("❌ Ne pas importer", 
+                        key="skip_duplicate", 
+                        use_container_width=True):
+                st.session_state.duplicate_action = "skip"
+                st.session_state.export_status = "ready_to_export"
+                st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # GESTION DES DOUBLONS DÉTECTÉS
+    # EXPORT EFFECTIF DES DONNÉES
     # ========================================================
-    if st.session_state.duplicate_check_done and st.session_state.duplicate_found:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>⚠️ Gestion des doublons</h4>', unsafe_allow_html=True)
+    if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
+        if st.session_state.export_status == "no_duplicates":
+            st.session_state.duplicate_action = "add_new"
         
-        display_duplicate_warning(
-            doc_type,
-            data_for_sheets,
-            [{'row_number': row, 'match_type': 'Document identique'} for row in st.session_state.duplicate_rows]
-        )
+        # Préparer le dataframe pour l'export
+        export_df = st.session_state.edited_standardized_df.copy()
         
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ========================================================
-    # EXPORT VERS GOOGLE SHEETS (DEUX BOUTONS)
-    # ============================================================
-    if (st.session_state.duplicate_check_done and not st.session_state.duplicate_found) or \
-       (st.session_state.duplicate_check_done and st.session_state.duplicate_action):
-        
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>📤 Export vers Google Sheets</h4>', unsafe_allow_html=True)
-        
-        action = None
-        if st.session_state.duplicate_action:
-            action = st.session_state.duplicate_action
-        
-        # Deux boutons côte à côte
-        col_export1, col_export2 = st.columns(2)
-        
-        with col_export1:
-            if st.button("📄 Enregistrer données BRUTES", 
-                        use_container_width=True, 
-                        type="primary", 
-                        key="export_raw_data_main"):
-                try:
-                    success, message = save_to_google_sheets(
-                        doc_type,
-                        st.session_state.data_for_sheets,
-                        st.session_state.raw_data_df,
-                        duplicate_action=action,
-                        duplicate_rows=st.session_state.duplicate_rows if action == "overwrite" else None,
-                        use_raw=True
-                    )
-                    
-                    if success:
-                        st.success("✅ Données brutes enregistrées avec succès!")
-                        
-                except Exception as e:
-                    st.error(f"❌ Erreur lors de l'enregistrement des données brutes: {str(e)}")
-        
-        with col_export2:
-            if st.button("✨ Enregistrer données STANDARDISÉES", 
-                        use_container_width=True, 
-                        type="primary", 
-                        key="export_standardized_data_main"):
-                try:
-                    # Utiliser directement la colonne designation_standard
-                    export_std_df = st.session_state.standardized_data_df[["designation_standard", "quantite"]].copy()
-                    # Ne pas renommer, garder "designation_standard" pour la fonction prepare_rows_for_sheet
-                    
-                    success, message = save_to_google_sheets(
-                        doc_type,
-                        st.session_state.data_for_sheets,
-                        export_std_df,
-                        duplicate_action=action,
-                        duplicate_rows=st.session_state.duplicate_rows if action == "overwrite" else None,
-                        use_raw=False  # Utiliser designation_standard
-                    )
-                    
-                    if success:
-                        st.success("✅ Données standardisées enregistrées avec succès!")
-                        
-                except Exception as e:
-                    st.error(f"❌ Erreur lors de l'enregistrement des données standardisées: {str(e)}")
-        
-        # Explication des deux options
-        st.markdown("""
-        <div class="info-box">
-        <strong>ℹ️ Différence entre les deux exports :</strong><br>
-        • <strong>Données brutes :</strong> Les articles exactement comme détectés par l'IA<br>
-        • <strong>Données standardisées :</strong> Les articles corrigés et normalisés selon le référentiel Chan Foui
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("</div>", unsafe_allow_html=True)
+        try:
+            success, message = save_to_google_sheets(
+                doc_type,
+                st.session_state.data_for_sheets,
+                export_df,
+                duplicate_action=st.session_state.duplicate_action,
+                duplicate_rows=st.session_state.duplicate_rows if st.session_state.duplicate_action == "overwrite" else None
+            )
+            
+            if success:
+                st.session_state.export_status = "completed"
+            else:
+                st.session_state.export_status = "error"
+                
+        except Exception as e:
+            st.error(f"❌ Erreur lors de l'export: {str(e)}")
+            st.session_state.export_status = "error"
     
     # ========================================================
     # BOUTONS UNIQUES DE NAVIGATION
@@ -1611,6 +1516,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.duplicate_action = None
                 st.session_state.image_preview_visible = False
                 st.session_state.document_scanned = False
+                st.session_state.export_triggered = False
+                st.session_state.export_status = None
                 st.rerun()
         
         with col_nav2:
@@ -1628,6 +1535,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.duplicate_action = None
                 st.session_state.image_preview_visible = True
                 st.session_state.document_scanned = True
+                st.session_state.export_triggered = False
+                st.session_state.export_status = None
                 st.rerun()
 
 # ============================================================
@@ -1648,7 +1557,7 @@ st.markdown(f"""
     <p><strong>{BRAND_TITLE}</strong> • Chanfoui IA V2 • © {datetime.now().strftime("%Y")}</p>
     <p style="font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.8;">
         Connecté en tant que <strong>{st.session_state.username}</strong> • 
-        Système OpenAI Vision • Double export (brute + standardisée)
+        Système OpenAI Vision • Export automatique avec vérification de doublons
     </p>
 </div>
 """, unsafe_allow_html=True)
