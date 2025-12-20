@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# CSS — DESIGN CHAN FOUI & FILS + BOUTON UPLOAD
+# CSS — DESIGN PRO + LOGO MIS EN AVANT
 # ============================================================
 
 st.markdown("""
@@ -28,33 +28,57 @@ st.markdown("""
 /* Carte générique */
 .card {
     background: #FFFFFF;
-    border-radius: 18px;
-    padding: 2.2rem;
-    margin-bottom: 2rem;
-    box-shadow: 0 6px 22px rgba(39, 65, 74, 0.12);
+    border-radius: 22px;
+    padding: 2.8rem;
+    margin-bottom: 2.2rem;
+    box-shadow: 0 10px 30px rgba(39, 65, 74, 0.12);
 }
 
-/* Header */
+/* HEADER */
 .header {
     text-align: center;
+    padding-top: 3rem;
+    padding-bottom: 3rem;
 }
 
-.logo {
-    height: 100px;
-    margin-bottom: 1rem;
+.logo-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1.2rem;
 }
 
-/* Bouton upload custom */
+.logo-img {
+    height: 130px;
+    max-width: 100%;
+    object-fit: contain;
+}
+
+.app-title {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: #1A1A1A;
+}
+
+.app-subtitle {
+    margin-top: 0.4rem;
+    font-size: 1.05rem;
+    color: #555;
+}
+
+/* Bouton upload */
 .upload-btn {
     background-color: #27414A;
     color: white;
-    border-radius: 12px;
-    padding: 16px 26px;
+    border-radius: 14px;
+    padding: 18px 32px;
     font-size: 18px;
     font-weight: 700;
     border: none;
     cursor: pointer;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     transition: all 0.2s ease;
 }
 
@@ -63,34 +87,42 @@ st.markdown("""
     transform: translateY(-1px);
 }
 
-/* Cache UI uploader Streamlit */
+/* Cache le uploader natif */
 [data-testid="stFileUploader"] section {
     display: none;
 }
 
-/* Progress bar */
+/* Barre de progression */
 .stProgress > div > div > div {
     height: 22px;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# HEADER
+# HEADER AVEC LOGO (VISIBLE & CENTRÉ)
 # ============================================================
 
 st.markdown('<div class="card header">', unsafe_allow_html=True)
+
 try:
-    st.image("CF_LOGOS.png", class_="logo")
+    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
+    st.image("assets/CF_LOGOS.png", class_="logo-img")
+    st.markdown('</div>', unsafe_allow_html=True)
 except:
-    st.markdown("🍷")
-st.markdown("## **CHAN FOUI & FILS**")
-st.caption("Scanner intelligent • Factures & Bons de Commande")
+    st.markdown("🍷", unsafe_allow_html=True)
+
+st.markdown('<div class="app-title">CHAN FOUI & FILS</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="app-subtitle">Scanner intelligent • Factures & Bons de Commande</div>',
+    unsafe_allow_html=True
+)
+
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# BOUTON UPLOAD (FAUX BOUTON, VRAI FILE UPLOADER)
+# BOUTON IMPORT
 # ============================================================
 
 st.markdown('<div class="card" style="text-align:center;">', unsafe_allow_html=True)
@@ -111,14 +143,12 @@ uploaded_file = st.file_uploader(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT + PROGRESSION
+# SIMULATION ANALYSE (DESIGN)
 # ============================================================
 
 if uploaded_file:
-    image_bytes = uploaded_file.read()
-
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.image(Image.open(BytesIO(image_bytes)), use_container_width=True)
+    st.image(Image.open(uploaded_file), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -127,11 +157,11 @@ if uploaded_file:
     status = st.empty()
 
     for p, msg in [
-        (10, "📥 Fichier chargé"),
-        (35, "🧠 OCR & analyse IA"),
-        (65, "📊 Extraction des données"),
-        (85, "📘 Standardisation"),
-        (100, "✅ Analyse terminée avec succès"),
+        (15, "📥 Fichier chargé"),
+        (40, "🧠 Analyse OCR"),
+        (70, "📊 Extraction des données"),
+        (90, "📘 Standardisation"),
+        (100, "✅ Analyse terminée"),
     ]:
         time.sleep(0.25)
         progress.progress(p)
@@ -144,4 +174,4 @@ if uploaded_file:
 # FOOTER
 # ============================================================
 
-st.caption("© CHAN FOUI & FILS — Scanner Pro • UX Bouton")
+st.caption("© CHAN FOUI & FILS — Scanner Pro")
