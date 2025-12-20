@@ -1,5 +1,5 @@
 # ============================================================
-# OCR FACTURES & BDC — OPENAI VISION (VERSION FINALE UX)
+# OCR FACTURES & BDC — OPENAI VISION (UX PRO FINALE)
 # ============================================================
 
 import streamlit as st
@@ -9,7 +9,6 @@ import json
 from openai import OpenAI
 from PIL import Image
 from io import BytesIO
-from datetime import datetime
 
 # ============================================================
 # CONFIG STREAMLIT
@@ -20,6 +19,28 @@ st.set_page_config(
     page_icon="🧾",
     layout="centered"
 )
+
+# ============================================================
+# CSS — HIDE FILE UPLOADER DEFAULT + THEME
+# ============================================================
+
+st.markdown("""
+<style>
+/* Cache complètement le file uploader Streamlit */
+[data-testid="stFileUploader"] section {
+    display: none;
+}
+
+/* Progress bar custom spacing */
+.stProgress > div > div > div {
+    height: 20px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ============================================================
+# HEADER
+# ============================================================
 
 st.title("🧾 OCR Factures & Bons de Commande")
 st.caption("OpenAI Vision • Prompt optimisé • Standardisation produits")
@@ -32,34 +53,9 @@ if "OPENAI_API_KEY" not in st.secrets:
     st.error("❌ OPENAI_API_KEY non trouvé dans les secrets Streamlit")
     st.stop()
 
-# ============================================================
-# CLIENT OPENAI
-# ============================================================
-
 client = OpenAI(
     api_key=st.secrets["OPENAI_API_KEY"],
     project=st.secrets.get("OPENAI_PROJECT_ID")
-)
-
-# ============================================================
-# BUDGET / TOKENS (ESTIMATION)
-# ============================================================
-
-BUDGET_USD = 5.0
-USD_PER_1K_TOKENS = 0.003
-TOTAL_BUDGET_TOKENS = int((BUDGET_USD / USD_PER_1K_TOKENS) * 1000)
-
-if "used_tokens" not in st.session_state:
-    st.session_state.used_tokens = 0
-
-remaining_tokens = max(0, TOTAL_BUDGET_TOKENS - st.session_state.used_tokens)
-progress_credit = min(st.session_state.used_tokens / TOTAL_BUDGET_TOKENS, 1.0)
-
-st.subheader("🔋 Crédit OpenAI (estimation)")
-st.progress(progress_credit)
-st.caption(
-    f"Tokens utilisés : {st.session_state.used_tokens:,} / {TOTAL_BUDGET_TOKENS:,} "
-    f"— Restants ≈ {remaining_tokens:,}"
 )
 
 # ============================================================
@@ -67,14 +63,12 @@ st.caption(
 # ============================================================
 
 STANDARD_PRODUCTS = [
-    {"standard": "Côte de Fianar Rouge 75 cl", "aliases": ["vin rouge cote de fianar", "cote de fianara rouge"]},
-    {"standard": "Côte de Fianar Blanc 75 cl", "aliases": ["vin blanc cote de fianar", "cote de fianara blanc"]},
+    {"standard": "Côte de Fianar Rouge 75 cl", "aliases": ["vin rouge cote de fianar"]},
+    {"standard": "Côte de Fianar Blanc 75 cl", "aliases": ["vin blanc cote de fianar"]},
     {"standard": "Côte de Fianar Rosé 75 cl", "aliases": ["vin rose cote de fianar"]},
     {"standard": "Côte de Fianar Gris 75 cl", "aliases": ["vin gris cote de fianar"]},
-    {"standard": "Maroparasy Rouge 75 cl", "aliases": ["vin rouge doux maroparasy"]},
     {"standard": "Blanc doux Maroparasy 75 cl", "aliases": ["vin blanc doux maroparasy"]},
-    {"standard": "Côteau d'Ambalavao Rouge 75 cl", "aliases": ["vin rouge ambalavao"]},
-    {"standard": "Côteau d'Ambalavao Blanc 75 cl", "aliases": ["vin blanc ambalavao"]}
+    {"standard": "Maroparasy Rouge 75 cl", "aliases": ["vin rouge doux maroparasy"]},
 ]
 
 def normalize_designation(raw):
@@ -105,18 +99,17 @@ def image_to_base64(image_bytes):
 PROMPT = """
 Analyse un document commercial scanné à Madagascar.
 
-Types :
+Types possibles :
 - FACTURE
 - BDC ULYS
 - BDC LEADER PRICE
 - BDC S2M / SUPERMARKI
 
-Ignore prix, TVA, montants, codes.
+Ignore prix, montants, TVA, codes.
 Corrige OCR évident. Regroupe lignes cassées.
 Ne commente rien.
 
 Retourne UNIQUEMENT ce JSON :
-
 {
   "type_document": "",
   "fournisseur": "",
@@ -145,22 +138,26 @@ def extract_facture_bdc(image_bytes):
         temperature=0,
         max_output_tokens=1000
     )
-
-    usage = response.usage
-
-    return json.loads(response.output_text), {
-        "total": usage.total_tokens
-    }
+    return json.loads(response.output_text)
 
 # ============================================================
-# ZONE UPLOAD LARGE
+# ZONE UPLOAD — UX PRO (UNE SEULE)
 # ============================================================
 
 st.markdown("""
-<div style="border:2px dashed #4CAF50;border-radius:12px;
-padding:30px;text-align:center;font-size:18px;background:#f9fff9;">
-📤 <b>Importer une facture ou un BDC</b><br>
-<span style="font-size:14px;color:#666;">JPG, JPEG, PNG</span>
+<div style="
+    border:3px dashed #4CAF50;
+    border-radius:16px;
+    padding:50px;
+    text-align:center;
+    font-size:22px;
+    background:#f9fff9;
+    cursor:pointer;
+">
+📤 <b>Importer une facture ou un BDC</b><br><br>
+<span style="font-size:14px;color:#666;">
+Cliquez ou glissez un fichier (JPG, JPEG, PNG)
+</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -171,59 +168,62 @@ uploaded_file = st.file_uploader(
 )
 
 # ============================================================
-# TRAITEMENT
+# TRAITEMENT AVEC PROGRESSION
 # ============================================================
 
 if uploaded_file:
     image_bytes = uploaded_file.read()
+
     st.image(Image.open(BytesIO(image_bytes)), use_container_width=True)
 
-    progress_bar = st.progress(0)
+    progress = st.progress(0)
     status = st.empty()
 
-    progress_bar.progress(10)
+    progress.progress(10)
     status.info("📥 Fichier chargé")
 
-    progress_bar.progress(30)
+    progress.progress(30)
     status.info("🧠 Analyse du document par IA…")
 
-    data, usage = extract_facture_bdc(image_bytes)
+    data = extract_facture_bdc(image_bytes)
 
-    progress_bar.progress(70)
-    status.info("📊 Structuration des données")
+    progress.progress(60)
+    status.info("📊 Extraction des articles")
 
-    st.session_state.used_tokens += usage["total"]
+    df_raw = pd.DataFrame(data.get("articles", []))
 
-    progress_bar.progress(100)
+    progress.progress(85)
+    status.info("📘 Standardisation des produits")
+
+    df_std = df_raw.copy()
+    df_std["designation_standardisee"] = df_std["designation"].apply(normalize_designation)
+
+    progress.progress(100)
     status.success("✅ Votre fichier a été analysé avec succès")
 
     # ========================================================
-    # INFOS DOC
+    # INFOS DOCUMENT
     # ========================================================
 
     st.markdown(f"""
-    **📄 Type :** {data.get('type_document','')}  
-    **🏢 Fournisseur :** {data.get('fournisseur','')}  
-    **🧾 Numéro :** {data.get('numero_document','')}  
-    **📅 Date :** {data.get('date_document','')}
-    """)
+**📄 Type :** {data.get('type_document','')}  
+**🏢 Fournisseur :** {data.get('fournisseur','')}  
+**🧾 Numéro :** {data.get('numero_document','')}  
+**📅 Date :** {data.get('date_document','')}
+""")
 
     # ========================================================
     # TABLEAU OCR BRUT
     # ========================================================
 
-    st.subheader("📦 Articles (OCR brut)")
-    df_raw = pd.DataFrame(data.get("articles", []))
-    df_raw = st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
+    st.subheader("📦 Articles détectés (OCR brut)")
+    st.data_editor(df_raw, num_rows="dynamic", use_container_width=True)
 
     # ========================================================
-    # TABLEAU STANDARDISÉ AVEC WARNING
+    # TABLEAU STANDARDISÉ + WARNING ROUGE
     # ========================================================
 
     st.subheader("📘 Articles standardisés")
-
-    df_std = df_raw.copy()
-    df_std["designation_standardisee"] = df_std["designation"].apply(normalize_designation)
 
     def highlight(row):
         if row["designation_standardisee"] == "❓ Non standardisé":
@@ -237,4 +237,10 @@ if uploaded_file:
     )
 
     if "❓ Non standardisé" in df_std["designation_standardisee"].values:
-        st.warning("⚠️ Certains articles ne sont pas standardisés. Veuillez vérifier.")
+        st.warning("⚠️ Certains articles ne sont pas standardisés. Veuillez les corriger.")
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.caption("⚡ OCR OpenAI Vision • UX Pro • Version finale")
