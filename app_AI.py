@@ -2,6 +2,7 @@ import streamlit as st
 from PIL import Image
 from io import BytesIO
 import time
+import os
 
 # ============================================================
 # CONFIG STREAMLIT
@@ -15,7 +16,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# CSS — DESIGN PRO + LOGO MIS EN AVANT
+# CSS — DESIGN INSPIRE CHAN FOUI & FILS
 # ============================================================
 
 st.markdown("""
@@ -44,7 +45,7 @@ st.markdown("""
 .logo-container {
     display: flex;
     justify-content: center;
-    margin-bottom: 1.2rem;
+    margin-bottom: 1.4rem;
 }
 
 .logo-img {
@@ -87,7 +88,7 @@ st.markdown("""
     transform: translateY(-1px);
 }
 
-/* Cache le uploader natif */
+/* Cache uploader Streamlit natif */
 [data-testid="stFileUploader"] section {
     display: none;
 }
@@ -101,16 +102,28 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# HEADER AVEC LOGO (VISIBLE & CENTRÉ)
+# HEADER AVEC LOGO (AUTO-DETECTION)
 # ============================================================
 
 st.markdown('<div class="card header">', unsafe_allow_html=True)
 
-try:
-    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    st.image("assets/CF_LOGOS.png", class_="logo-img")
-    st.markdown('</div>', unsafe_allow_html=True)
-except:
+logo_paths = [
+    "CF_LOGOS.png",
+    "assets/CF_LOGOS.png",
+    "static/CF_LOGOS.png",
+    "images/CF_LOGOS.png"
+]
+
+logo_found = False
+for path in logo_paths:
+    if os.path.exists(path):
+        st.markdown('<div class="logo-container">', unsafe_allow_html=True)
+        st.image(path, class_="logo-img")
+        st.markdown('</div>', unsafe_allow_html=True)
+        logo_found = True
+        break
+
+if not logo_found:
     st.markdown("🍷", unsafe_allow_html=True)
 
 st.markdown('<div class="app-title">CHAN FOUI & FILS</div>', unsafe_allow_html=True)
@@ -122,7 +135,7 @@ st.markdown(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# BOUTON IMPORT
+# BOUTON IMPORT (UX PRO)
 # ============================================================
 
 st.markdown('<div class="card" style="text-align:center;">', unsafe_allow_html=True)
@@ -143,12 +156,14 @@ uploaded_file = st.file_uploader(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# SIMULATION ANALYSE (DESIGN)
+# TRAITEMENT AVEC PROGRESSION (SIMULATION)
 # ============================================================
 
 if uploaded_file:
+    image_bytes = uploaded_file.read()
+
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.image(Image.open(uploaded_file), use_container_width=True)
+    st.image(Image.open(BytesIO(image_bytes)), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -156,13 +171,15 @@ if uploaded_file:
     progress = st.progress(0)
     status = st.empty()
 
-    for p, msg in [
+    steps = [
         (15, "📥 Fichier chargé"),
         (40, "🧠 Analyse OCR"),
         (70, "📊 Extraction des données"),
         (90, "📘 Standardisation"),
         (100, "✅ Analyse terminée"),
-    ]:
+    ]
+
+    for p, msg in steps:
         time.sleep(0.25)
         progress.progress(p)
         status.info(msg)
@@ -174,4 +191,4 @@ if uploaded_file:
 # FOOTER
 # ============================================================
 
-st.caption("© CHAN FOUI & FILS — Scanner Pro")
+st.caption("© CHAN FOUI & FILS — Scanner Pro • Design inspiré du logo")
