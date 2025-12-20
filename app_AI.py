@@ -68,6 +68,10 @@ if "raw_data_df" not in st.session_state:
     st.session_state.raw_data_df = None
 if "standardized_data_df" not in st.session_state:
     st.session_state.standardized_data_df = None
+if "image_preview_visible" not in st.session_state:
+    st.session_state.image_preview_visible = False
+if "document_scanned" not in st.session_state:
+    st.session_state.document_scanned = False
 
 # ============================================================
 # SYSTÈME D'AUTHENTIFICATION
@@ -114,6 +118,8 @@ def logout():
     st.session_state.ocr_result = None
     st.session_state.show_results = False
     st.session_state.detected_document_type = None
+    st.session_state.image_preview_visible = False
+    st.session_state.document_scanned = False
     st.rerun()
 
 # ============================================================
@@ -306,38 +312,12 @@ st.markdown(f"""
         gap: 8px;
     }}
     
-    .logout-btn {{
-        background: transparent;
-        border: 1px solid white;
-        color: white;
-        padding: 4px 12px;
-        border-radius: 15px;
-        font-size: 0.8rem;
-        margin-left: 10px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }}
-    
-    .logout-btn:hover {{
-        background: white;
-        color: {PALETTE['accent']};
-    }}
-    
     .logo-title-wrapper {{
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 1.2rem;
         margin-bottom: 0.5rem;
-    }}
-    
-    .logo-img {{
-        height: 100px;
-        width: auto;
-        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
-        border-radius: 12px;
-        padding: 8px;
-        background: {PALETTE['card_bg']};
     }}
     
     .brand-title {{
@@ -617,9 +597,9 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
         Pour les articles, standardise: "COTE DE FIANAR" → "Côte de Fianar", "MAROPARASY" → "Maroparasy", "CONS CHAN FOUI" → "Consigne Chan Foui"
         """
         
-        # Appel à l'API OpenAI Vision - CORRECTION ICI
+        # Appel à l'API OpenAI Vision
         response = client.chat.completions.create(
-            model="gpt-4o",  # CORRIGÉ: gpt-4o remplace gpt-4-vision-preview
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",
@@ -647,7 +627,6 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
             json_str = json_match.group()
             try:
                 data = json.loads(json_str)
-                
                 return data
             except json.JSONDecodeError:
                 st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
@@ -810,7 +789,7 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = 
             if use_raw:
                 article = str(row.get("designation_brute", "")).strip()
             else:
-                # MODIFICATION: Utiliser la colonne designation_standard
+                # Utiliser la colonne designation_standard
                 article = str(row.get("designation_standard", "")).strip()
                 if not article:  # Fallback si la colonne n'existe pas
                     article = str(row.get("designation_brute", "")).strip()
@@ -851,7 +830,7 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = Fals
             if use_raw:
                 article = str(row.get("designation_brute", "")).strip()
             else:
-                # MODIFICATION: Utiliser la colonne designation_standard
+                # Utiliser la colonne designation_standard
                 article = str(row.get("designation_standard", "")).strip()
                 if not article:  # Fallback si la colonne n'existe pas
                     article = str(row.get("designation_brute", "")).strip()
@@ -1197,7 +1176,6 @@ st.markdown('<div class="header-container">', unsafe_allow_html=True)
 st.markdown(f'''
 <div class="user-info">
     👤 {st.session_state.username}
-    <button class="logout-btn" onclick="window.location.href='?logout=true'">🚪 Déconnexion</button>
 </div>
 ''', unsafe_allow_html=True)
 
@@ -1215,9 +1193,6 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown(f'<p class="brand-sub">{BRAND_SUB} - Connecté en tant que {st.session_state.username}</p>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
-
-if st.query_params.get("logout"):
-    logout()
 
 # ============================================================
 # ZONE DE TÉLÉCHARGEMENT UNIQUE
@@ -1246,15 +1221,6 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# APERÇU DU DOCUMENT (TOUJOURS VISIBLE)
-# ============================================================
-if st.session_state.uploaded_image:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<h4>👁️ Aperçu du document</h4>', unsafe_allow_html=True)
-    st.image(st.session_state.uploaded_image, use_column_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ============================================================
 # TRAITEMENT AUTOMATIQUE DE L'IMAGE
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
@@ -1267,6 +1233,8 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.duplicate_check_done = False
     st.session_state.duplicate_found = False
     st.session_state.duplicate_action = None
+    st.session_state.image_preview_visible = True
+    st.session_state.document_scanned = True
     
     # Barre de progression
     progress_container = st.empty()
@@ -1314,7 +1282,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
                     })
                 st.session_state.raw_data_df = pd.DataFrame(raw_data)
                 
-                # Données standardisées - AMÉLIORATION: utiliser standardize_product_name
+                # Données standardisées
                 std_data = []
                 for article in result["articles"]:
                     raw_name = article.get("article", "")
@@ -1336,6 +1304,15 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     except Exception as e:
         st.error(f"❌ Erreur lors de l'analyse: {str(e)}")
         st.session_state.processing = False
+
+# ============================================================
+# APERÇU DU DOCUMENT (TOUJOURS VISIBLE SI SCANNÉ)
+# ============================================================
+if st.session_state.uploaded_image and st.session_state.image_preview_visible:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<h4>👁️ Aperçu du document</h4>', unsafe_allow_html=True)
+    st.image(st.session_state.uploaded_image, use_column_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
 # AFFICHAGE DES RÉSULTATS
@@ -1582,7 +1559,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                         type="primary", 
                         key="export_standardized_data_main"):
                 try:
-                    # MODIFICATION: Utiliser directement la colonne designation_standard
+                    # Utiliser directement la colonne designation_standard
                     export_std_df = st.session_state.standardized_data_df[["designation_standard", "quantite"]].copy()
                     # Ne pas renommer, garder "designation_standard" pour la fonction prepare_rows_for_sheet
                     
@@ -1610,44 +1587,48 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         </div>
         """, unsafe_allow_html=True)
         
-        # SUPPRESSION: Retirer les boutons en double de cette section
         st.markdown("</div>", unsafe_allow_html=True)
     
     # ========================================================
     # BOUTONS UNIQUES DE NAVIGATION
     # ============================================================
-    st.markdown("---")
-    col_nav1, col_nav2 = st.columns([1, 1])
-    
-    with col_nav1:
-        if st.button("📄 Scanner un nouveau document", 
-                    use_container_width=True, 
-                    type="secondary",
-                    key="new_doc_main_nav"):
-            st.session_state.uploaded_file = None
-            st.session_state.uploaded_image = None
-            st.session_state.ocr_result = None
-            st.session_state.show_results = False
-            st.session_state.detected_document_type = None
-            st.session_state.duplicate_check_done = False
-            st.session_state.duplicate_found = False
-            st.session_state.duplicate_action = None
-            st.rerun()
-    
-    with col_nav2:
-        if st.button("🔄 Recommencer l'analyse", 
-                    use_container_width=True, 
-                    type="secondary",
-                    key="restart_main_nav"):
-            st.session_state.uploaded_file = None
-            st.session_state.uploaded_image = None
-            st.session_state.ocr_result = None
-            st.session_state.show_results = False
-            st.session_state.detected_document_type = None
-            st.session_state.duplicate_check_done = False
-            st.session_state.duplicate_found = False
-            st.session_state.duplicate_action = None
-            st.rerun()
+    if st.session_state.document_scanned:
+        st.markdown("---")
+        col_nav1, col_nav2 = st.columns([1, 1])
+        
+        with col_nav1:
+            if st.button("📄 Scanner un nouveau document", 
+                        use_container_width=True, 
+                        type="secondary",
+                        key="new_doc_main_nav"):
+                st.session_state.uploaded_file = None
+                st.session_state.uploaded_image = None
+                st.session_state.ocr_result = None
+                st.session_state.show_results = False
+                st.session_state.detected_document_type = None
+                st.session_state.duplicate_check_done = False
+                st.session_state.duplicate_found = False
+                st.session_state.duplicate_action = None
+                st.session_state.image_preview_visible = False
+                st.session_state.document_scanned = False
+                st.rerun()
+        
+        with col_nav2:
+            if st.button("🔄 Recommencer l'analyse", 
+                        use_container_width=True, 
+                        type="secondary",
+                        key="restart_main_nav"):
+                st.session_state.uploaded_file = None
+                st.session_state.uploaded_image = None
+                st.session_state.ocr_result = None
+                st.session_state.show_results = False
+                st.session_state.detected_document_type = None
+                st.session_state.duplicate_check_done = False
+                st.session_state.duplicate_found = False
+                st.session_state.duplicate_action = None
+                st.session_state.image_preview_visible = True
+                st.session_state.document_scanned = True
+                st.rerun()
 
 # ============================================================
 # BOUTON DE DÉCONNEXION (toujours visible)
