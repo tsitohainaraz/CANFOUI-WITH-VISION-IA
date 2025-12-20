@@ -2111,70 +2111,64 @@ if st.button("🔒 Déconnexion sécurisée",
     logout()
 
 # ============================================================
-# FOOTER TECH — Version sécurisée & robuste
+# FOOTER TECH — VERSION STABLE STREAMLIT
 # ============================================================
 
-def render_footer():
-    username = st.session_state.get("username", "Utilisateur")
-    now_year = datetime.now().strftime('%Y')
-    now_time = datetime.now().strftime('%H:%M:%S')
+from datetime import datetime
 
-    footer_html = f"""
-    <div style="
-        text-align: center;
-        color: {PALETTE['text_medium']};
-        font-size: 0.9rem;
-        padding: 2rem;
-        background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
-        border-radius: 20px;
-        margin-top: 3rem;
-        border-top: 1px solid {PALETTE['border']};
-        box-shadow: 0 -4px 20px rgba(0,0,0,0.03);
-    ">
+username = st.session_state.get("username", "Utilisateur")
 
-        <!-- ICONES TECH -->
-        <div style="display: flex; justify-content: center; gap: 30px; margin-bottom: 15px;">
-            <div>
-                <div style="font-size: 1.6rem;">🤖</div>
-                <div style="font-size: 0.75rem; color: #64748b;">AI Vision</div>
-            </div>
-            <div>
-                <div style="font-size: 1.6rem;">⚡</div>
-                <div style="font-size: 0.75rem; color: #64748b;">Fast Processing</div>
-            </div>
-            <div>
-                <div style="font-size: 1.6rem;">🔒</div>
-                <div style="font-size: 0.75rem; color: #64748b;">Secure Cloud</div>
-            </div>
+footer_html = f"""
+<div style="
+    text-align: center;
+    color: {PALETTE['text_medium']};
+    font-size: 0.9rem;
+    padding: 2rem;
+    background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
+    border-radius: 20px;
+    margin-top: 3rem;
+    border-top: 1px solid {PALETTE['border']};
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.03);
+">
+
+    <div style="display: flex; justify-content: center; gap: 30px; margin-bottom: 15px;">
+        <div style="text-align: center;">
+            <div style="font-size: 1.6rem;">🤖</div>
+            <div style="font-size: 0.75rem; color: #64748b;">AI Vision</div>
         </div>
-
-        <!-- BRAND -->
-        <p style="margin: 8px 0;">
-            <strong style="
-                background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['tech_blue']} 100%);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-            ">
-                {BRAND_TITLE}
-            </strong>
-            • Système IA V3.0 • © {now_year}
-        </p>
-
-        <!-- STATUS -->
-        <div style="margin-top: 15px; font-size: 0.8rem; color: #94a3b8;">
-            <div style="display: inline-flex; align-items: center; gap: 6px;">
-                <span style="width:8px;height:8px;background:#10B981;border-radius:50%;display:inline-block;"></span>
-                Système actif • Session :
-                <strong>{username}</strong> • {now_time}
-            </div>
+        <div style="text-align: center;">
+            <div style="font-size: 1.6rem;">⚡</div>
+            <div style="font-size: 0.75rem; color: #64748b;">Fast Processing</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 1.6rem;">🔒</div>
+            <div style="font-size: 0.75rem; color: #64748b;">Secure Cloud</div>
         </div>
     </div>
-    """
 
-    st.markdown(footer_html, unsafe_allow_html=True)
+    <p style="margin: 8px 0;">
+        <strong style="
+            background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['tech_blue']} 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        ">
+            {BRAND_TITLE}
+        </strong>
+        • Système IA V3.0 • © {datetime.now().strftime('%Y')}
+    </p>
 
+    <div style="margin-top: 15px; font-size: 0.8rem; color: #94a3b8;">
+        <div style="display: inline-flex; align-items: center; gap: 6px;">
+            <span style="width:8px;height:8px;background:#10B981;border-radius:50%;display:inline-block;"></span>
+            Système actif • Session :
+            <strong>{username}</strong>
+            • {datetime.now().strftime('%H:%M:%S')}
+        </div>
+    </div>
 
-# 👉 appel unique du footer
-render_footer()
+</div>
+"""
+
+st.markdown(footer_html, unsafe_allow_html=True)
 
