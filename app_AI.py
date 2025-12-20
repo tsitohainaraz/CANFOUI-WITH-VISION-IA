@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# CSS — THEME CHAN FOUI & FILS
+# CSS — DESIGN + BOUTON FILE UPLOADER
 # ============================================================
 
 st.markdown("""
@@ -26,27 +26,26 @@ st.markdown("""
     font-family: Inter, system-ui, sans-serif;
 }
 
-/* Carte */
+/* Carte générique */
 .card {
     background: #FFFFFF;
-    border-radius: 22px;
-    padding: 2.5rem;
+    border-radius: 20px;
+    padding: 2.4rem;
     margin-bottom: 2rem;
-    box-shadow: 0 10px 30px rgba(39, 65, 74, 0.12);
+    box-shadow: 0 8px 24px rgba(39, 65, 74, 0.12);
+    text-align: center;
 }
 
 /* Header */
 .header {
-    text-align: center;
     padding-top: 2.5rem;
     padding-bottom: 2.5rem;
 }
 
 /* Titre */
 .app-title {
-    font-size: 2.3rem;
+    font-size: 2.2rem;
     font-weight: 800;
-    letter-spacing: 1px;
     color: #1A1A1A;
 }
 
@@ -56,42 +55,32 @@ st.markdown("""
     color: #555;
 }
 
-/* Bouton upload */
-.upload-btn {
+/* Transformer file_uploader en bouton */
+[data-testid="stFileUploader"] label {
     background-color: #27414A;
     color: white;
+    padding: 18px 36px;
     border-radius: 14px;
-    padding: 18px 34px;
     font-size: 18px;
     font-weight: 700;
-    border: none;
+    display: inline-block;
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    transition: all 0.2s ease;
 }
 
-.upload-btn:hover {
+[data-testid="stFileUploader"] label:hover {
     background-color: #1F2F35;
-    transform: translateY(-1px);
 }
 
-/* Cache uploader Streamlit */
+/* Supprimer drag & drop zone */
 [data-testid="stFileUploader"] section {
-    display: none;
-}
-
-/* Progress bar */
-.stProgress > div > div > div {
-    height: 20px;
-    border-radius: 12px;
+    background: none;
+    border: none;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# HEADER + LOGO (AUTO-DETECTION)
+# HEADER + LOGO
 # ============================================================
 
 st.markdown('<div class="card header">', unsafe_allow_html=True)
@@ -111,7 +100,7 @@ for path in logo_paths:
         break
 
 if not logo_found:
-    st.markdown("🍷", unsafe_allow_html=True)
+    st.markdown("🍷")
 
 st.markdown('<div class="app-title">CHAN FOUI & FILS</div>', unsafe_allow_html=True)
 st.markdown(
@@ -122,22 +111,14 @@ st.markdown(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# BOUTON IMPORT DOCUMENT
+# BOUTON IMPORTER UN DOCUMENT (OFFICIEL STREAMLIT)
 # ============================================================
 
-st.markdown('<div class="card" style="text-align:center;">', unsafe_allow_html=True)
-
-st.markdown("""
-<label class="upload-btn" for="file_upload">
-📤 Importer un document
-</label>
-""", unsafe_allow_html=True)
+st.markdown('<div class="card">', unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader(
-    "",
-    type=["jpg", "jpeg", "png"],
-    key="file_upload",
-    label_visibility="collapsed"
+    "📤 Importer un document",
+    type=["jpg", "jpeg", "png"]
 )
 
 st.markdown('</div>', unsafe_allow_html=True)
@@ -160,15 +141,15 @@ if uploaded_file:
     status = st.empty()
 
     steps = [
-        (15, "📥 Document chargé"),
-        (40, "🧠 Lecture OCR"),
-        (65, "📊 Extraction des lignes"),
-        (85, "📘 Standardisation produits"),
+        (20, "📥 Document chargé"),
+        (45, "🧠 Lecture OCR"),
+        (70, "📊 Extraction des données"),
+        (90, "📘 Standardisation"),
         (100, "✅ Analyse terminée"),
     ]
 
     for value, message in steps:
-        time.sleep(0.3)
+        time.sleep(0.35)
         progress.progress(value)
         status.info(message)
 
@@ -179,4 +160,4 @@ if uploaded_file:
 # FOOTER
 # ============================================================
 
-st.caption("© CHAN FOUI & FILS — Scanner Pro • Interface professionnelle")
+st.caption("© CHAN FOUI & FILS — Scanner Pro • Version stable")
