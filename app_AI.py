@@ -1,3 +1,5 @@
+[file name]: app_AI(1).py
+[file content begin]
 import streamlit as st
 import re
 import pandas as pd
@@ -38,6 +40,8 @@ if "login_attempts" not in st.session_state:
     st.session_state.login_attempts = 0
 if "locked_until" not in st.session_state:
     st.session_state.locked_until = None
+if "language" not in st.session_state:
+    st.session_state.language = "fr"  # Français par défaut
 
 # Initialisation des états pour l'application principale
 if "uploaded_file" not in st.session_state:
@@ -117,11 +121,104 @@ def logout():
     st.rerun()
 
 # ============================================================
+# TEXTES MULTILINGUES POUR LA PAGE DE CONNEXION
+# ============================================================
+LOGIN_TEXTS = {
+    "fr": {
+        "title": "CHAN FOUI ET FILS",
+        "subtitle": "Système de Scanner Pro - Accès Restreint",
+        "username_label": "👤 Nom d'utilisateur",
+        "username_placeholder": "— Sélectionnez votre nom —",
+        "password_label": "🔒 Code d'accès",
+        "password_placeholder": "Entrez votre code CFFx",
+        "login_button": "🔓 Se connecter",
+        "fill_fields": "⚠️ Veuillez remplir tous les champs",
+        "security_warning": """
+            <strong>⚠️ Sécurité :</strong> Ce système est réservé au personnel autorisé.<br>
+            • Ne partagez pas vos identifiants<br>
+            • Déconnectez-vous après utilisation<br>
+            • 3 tentatives maximum avant verrouillage
+        """,
+        "language_label": "🌐 Langue / Language",
+        "french_option": "Français",
+        "chinese_option": "简体中文 (Chinois simplifié)"
+    },
+    "zh": {
+        "title": "陈富父子酒庄",
+        "subtitle": "专业扫描系统 - 受限访问",
+        "username_label": "👤 用户名",
+        "username_placeholder": "— 请选择您的姓名 —",
+        "password_label": "🔒 访问代码",
+        "password_placeholder": "输入您的 CFFx 代码",
+        "login_button": "🔓 登录",
+        "fill_fields": "⚠️ 请填写所有字段",
+        "security_warning": """
+            <strong>⚠️ 安全提示：</strong> 本系统仅供授权人员使用。<br>
+            • 请勿共享您的登录凭据<br>
+            • 使用后请退出登录<br>
+            • 最多尝试3次，否则账户将被锁定
+        """,
+        "language_label": "🌐 语言 / Language",
+        "french_option": "法语 (Français)",
+        "chinese_option": "简体中文"
+    }
+}
+
+# ============================================================
 # PAGE DE CONNEXION
 # ============================================================
 if not check_authentication():
+    # Sélecteur de langue en haut de la page
     st.markdown("""
     <style>
+        .language-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .language-btn {
+            background: #27414A;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .language-btn:hover {
+            background: #1F2F35;
+            transform: translateY(-2px);
+        }
+        .language-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            min-width: 200px;
+            padding: 10px 0;
+            margin-top: 5px;
+        }
+        .language-option {
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .language-option:hover {
+            background: #F5F5F5;
+        }
+        .language-option.active {
+            background: #E8F4F8;
+            color: #27414A;
+            font-weight: 600;
+        }
         .login-container {
             max-width: 400px;
             margin: 50px auto;
@@ -130,6 +227,7 @@ if not check_authentication():
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             text-align: center;
+            position: relative;
         }
         .login-title {
             color: #27414A;
@@ -196,8 +294,69 @@ if not check_authentication():
             font-size: 0.9rem;
             color: #856404;
         }
+        .language-selector-container {
+            margin-bottom: 20px;
+        }
     </style>
     """, unsafe_allow_html=True)
+    
+    # JavaScript pour gérer le dropdown de langue
+    st.markdown("""
+    <script>
+    function toggleLanguageDropdown() {
+        const dropdown = document.getElementById('languageDropdown');
+        dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    }
+    
+    function selectLanguage(lang) {
+        // Envoyer la sélection à Streamlit
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'selected_language';
+        input.value = lang;
+        document.body.appendChild(input);
+        
+        // Déclencher un événement pour Streamlit
+        const event = new Event('change');
+        input.dispatchEvent(event);
+        
+        // Fermer le dropdown
+        document.getElementById('languageDropdown').style.display = 'none';
+    }
+    
+    // Fermer le dropdown si on clique ailleurs
+    document.addEventListener('click', function(event) {
+        const dropdown = document.getElementById('languageDropdown');
+        const button = document.querySelector('.language-btn');
+        if (!button.contains(event.target) && !dropdown.contains(event.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Sélecteur de langue simple avec Streamlit
+    st.markdown('<div class="language-selector-container">', unsafe_allow_html=True)
+    
+    # Utiliser un radio button pour sélectionner la langue
+    language = st.radio(
+        LOGIN_TEXTS[st.session_state.language]["language_label"],
+        options=["fr", "zh"],
+        format_func=lambda x: "🇫🇷 Français" if x == "fr" else "🇨🇳 简体中文",
+        horizontal=True,
+        index=0 if st.session_state.language == "fr" else 1,
+        key="language_selector"
+    )
+    
+    # Mettre à jour la langue dans session_state
+    if language != st.session_state.language:
+        st.session_state.language = language
+        st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Récupérer les textes dans la langue sélectionnée
+    texts = LOGIN_TEXTS[st.session_state.language]
     
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     
@@ -206,18 +365,19 @@ if not check_authentication():
     else:
         st.markdown("🍷")
     
-    st.markdown('<h1 class="login-title">CHAN FOUI ET FILS</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="login-subtitle">Système de Scanner Pro - Accès Restreint</p>', unsafe_allow_html=True)
+    st.markdown(f'<h1 class="login-title">{texts["title"]}</h1>', unsafe_allow_html=True)
+    st.markdown(f'<p class="login-subtitle">{texts["subtitle"]}</p>', unsafe_allow_html=True)
     
     username = st.selectbox(
-        "👤 Nom d'utilisateur",
+        texts["username_label"],
         options=[""] + list(AUTHORIZED_USERS.keys()),
-        format_func=lambda x: "— Sélectionnez votre nom —" if x == "" else x,
+        format_func=lambda x: texts["username_placeholder"] if x == "" else x,
         key="login_username"
     )
-    password = st.text_input("🔒 Code d'accès", type="password", placeholder="Entrez votre code CFFx", key="login_password")
+    password = st.text_input(texts["password_label"], type="password", 
+                            placeholder=texts["password_placeholder"], key="login_password")
     
-    if st.button("🔓 Se connecter", use_container_width=True, key="login_button"):
+    if st.button(texts["login_button"], use_container_width=True, key="login_button"):
         if username and password:
             success, message = login(username, password)
             if success:
@@ -227,14 +387,11 @@ if not check_authentication():
             else:
                 st.error(f"❌ {message}")
         else:
-            st.warning("⚠️ Veuillez remplir tous les champs")
+            st.warning(texts["fill_fields"])
     
-    st.markdown("""
+    st.markdown(f"""
     <div class="security-warning">
-        <strong>⚠️ Sécurité :</strong> Ce système est réservé au personnel autorisé.<br>
-        • Ne partagez pas vos identifiants<br>
-        • Déconnectez-vous après utilisation<br>
-        • 3 tentatives maximum avant verrouillage
+        {texts["security_warning"]}
     </div>
     """, unsafe_allow_html=True)
     
@@ -242,7 +399,7 @@ if not check_authentication():
     st.stop()
 
 # ============================================================
-# APPLICATION PRINCIPALE
+# APPLICATION PRINCIPALE (reste en français comme demandé)
 # ============================================================
 
 # ============================================================
@@ -1663,3 +1820,4 @@ st.markdown(f"""
     </p>
 </div>
 """, unsafe_allow_html=True)
+[file content end]
