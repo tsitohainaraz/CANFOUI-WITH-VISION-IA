@@ -613,11 +613,6 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
             try:
                 data = json.loads(json_str)
                 
-                # Standardiser les noms de produits
-                if "articles" in data:
-                    for article in data["articles"]:
-                        article["article"] = standardize_product_name(article.get("article", ""))
-                
                 return data
             except json.JSONDecodeError:
                 st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
@@ -732,7 +727,7 @@ def map_client(client: str) -> str:
 # ============================================================
 # FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS
 # ============================================================
-def prepare_facture_rows(data: dict, edited_df: pd.DataFrame) -> List[List[str]]:
+def prepare_facture_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = False) -> List[List[str]]:
     """Prépare les lignes pour les factures (9 colonnes)"""
     rows = []
     
@@ -744,8 +739,12 @@ def prepare_facture_rows(data: dict, edited_df: pd.DataFrame) -> List[List[str]]
         nf = data.get("numero_facture", "")
         magasin = data.get("adresse_livraison", "")
         
-        for _, row in edited_df.iterrows():
-            article = str(row.get("article", "")).strip()
+        for _, row in articles_df.iterrows():
+            if use_raw:
+                article = str(row.get("designation_brute", "")).strip()
+            else:
+                article = str(row.get("designation_standard", "")).strip()
+            
             quantite = format_quantity(row.get("quantite", ""))
             
             rows.append([
@@ -766,7 +765,7 @@ def prepare_facture_rows(data: dict, edited_df: pd.DataFrame) -> List[List[str]]
         st.error(f"❌ Erreur lors de la préparation des données facture: {str(e)}")
         return []
 
-def prepare_bdc_rows(data: dict, edited_df: pd.DataFrame) -> List[List[str]]:
+def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = False) -> List[List[str]]:
     """Prépare les lignes pour les BDC (8 colonnes)"""
     rows = []
     
@@ -778,8 +777,12 @@ def prepare_bdc_rows(data: dict, edited_df: pd.DataFrame) -> List[List[str]]:
         nbc = data.get("numero", "")
         magasin = data.get("adresse_livraison", "")
         
-        for _, row in edited_df.iterrows():
-            article = str(row.get("article", "")).strip()
+        for _, row in articles_df.iterrows():
+            if use_raw:
+                article = str(row.get("designation_brute", "")).strip()
+            else:
+                article = str(row.get("designation_standard", "")).strip()
+            
             quantite = format_quantity(row.get("quantite", ""))
             
             rows.append([
@@ -799,12 +802,12 @@ def prepare_bdc_rows(data: dict, edited_df: pd.DataFrame) -> List[List[str]]:
         st.error(f"❌ Erreur lors de la préparation des données BDC: {str(e)}")
         return []
 
-def prepare_rows_for_sheet(document_type: str, data: dict, edited_df: pd.DataFrame) -> List[List[str]]:
+def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame, use_raw: bool = False) -> List[List[str]]:
     """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document"""
     if "FACTURE" in document_type.upper():
-        return prepare_facture_rows(data, edited_df)
+        return prepare_facture_rows(data, articles_df, use_raw)
     else:
-        return prepare_bdc_rows(data, edited_df)
+        return prepare_bdc_rows(data, articles_df, use_raw)
 
 # ============================================================
 # FONCTIONS DE DÉTECTION DE DOUBLONS
@@ -1016,8 +1019,9 @@ def find_table_range(worksheet, num_columns=9):
         else:
             return "A2:H2"
 
-def save_to_google_sheets(document_type: str, data: dict, edited_df: pd.DataFrame, 
-                         duplicate_action: str = None, duplicate_rows: List[int] = None):
+def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
+                         duplicate_action: str = None, duplicate_rows: List[int] = None,
+                         use_raw: bool = False):
     """Sauvegarde les données dans Google Sheets"""
     try:
         ws = get_worksheet(document_type)
@@ -1026,7 +1030,7 @@ def save_to_google_sheets(document_type: str, data: dict, edited_df: pd.DataFram
             st.error("❌ Impossible de se connecter à Google Sheets")
             return False, "Erreur de connexion"
         
-        new_rows = prepare_rows_for_sheet(document_type, data, edited_df)
+        new_rows = prepare_rows_for_sheet(document_type, data, articles_df, use_raw)
         
         if not new_rows:
             st.warning("⚠️ Aucune donnée à enregistrer")
@@ -1048,7 +1052,8 @@ def save_to_google_sheets(document_type: str, data: dict, edited_df: pd.DataFram
             st.warning("⏸️ Import annulé - Document ignoré")
             return True, "Document ignoré (doublon)"
         
-        st.info("📋 **Aperçu des données à enregistrer:**")
+        data_type = "brutes" if use_raw else "standardisées"
+        st.info(f"📋 **Aperçu des données {data_type} à enregistrer:**")
         
         # Définir les colonnes selon le type de document
         if "FACTURE" in document_type.upper():
@@ -1077,7 +1082,7 @@ def save_to_google_sheets(document_type: str, data: dict, edited_df: pd.DataFram
             elif duplicate_action == "add_new":
                 action_msg = "ajoutée(s) comme nouvelle(s)"
             
-            st.success(f"✅ {len(new_rows)} ligne(s) {action_msg} avec succès dans Google Sheets!")
+            st.success(f"✅ {len(new_rows)} ligne(s) {data_type} {action_msg} avec succès dans Google Sheets!")
             
             # Utiliser le type normalisé pour l'URL
             normalized_type = normalize_document_type(document_type)
@@ -1085,7 +1090,7 @@ def save_to_google_sheets(document_type: str, data: dict, edited_df: pd.DataFram
             st.markdown(f'<div class="info-box">🔗 <a href="{sheet_url}" target="_blank">Ouvrir Google Sheets</a></div>', unsafe_allow_html=True)
             
             st.balloons()
-            return True, f"{len(new_rows)} lignes {action_msg}"
+            return True, f"{len(new_rows)} lignes {data_type} {action_msg}"
             
         except Exception as e:
             st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
@@ -1100,8 +1105,8 @@ def save_to_google_sheets(document_type: str, data: dict, edited_df: pd.DataFram
                 
                 ws.update('A1', all_data)
                 
-                st.success(f"✅ {len(new_rows)} ligne(s) enregistrée(s) avec méthode alternative!")
-                return True, f"{len(new_rows)} lignes enregistrées (méthode alternative)"
+                st.success(f"✅ {len(new_rows)} ligne(s) {data_type} enregistrée(s) avec méthode alternative!")
+                return True, f"{len(new_rows)} lignes {data_type} enregistrées (méthode alternative)"
                 
             except Exception as e2:
                 st.error(f"❌ Échec de la méthode alternative: {str(e2)}")
@@ -1410,7 +1415,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             key="articles_editor"
         )
         
-        st.session_state.edited_df = edited_df
+        # Mettre à jour le dataframe standardisé avec les modifications
+        if not edited_df.empty:
+            for idx, row in edited_df.iterrows():
+                if idx < len(st.session_state.standardized_data_df):
+                    st.session_state.standardized_data_df.at[idx, 'designation_standard'] = row['article']
+                    st.session_state.standardized_data_df.at[idx, 'quantite'] = row['quantite']
         
         # Statistiques
         total_items = len(edited_df)
@@ -1486,7 +1496,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # EXPORT VERS GOOGLE SHEETS
+    # EXPORT VERS GOOGLE SHEETS (DEUX BOUTONS)
     # ========================================================
     if (st.session_state.duplicate_check_done and not st.session_state.duplicate_found) or \
        (st.session_state.duplicate_check_done and st.session_state.duplicate_action):
@@ -1498,53 +1508,85 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         if st.session_state.duplicate_action:
             action = st.session_state.duplicate_action
         
-        if st.button("💾 Enregistrer dans Google Sheets", use_container_width=True, key="save_to_sheets"):
-            try:
-                success, message = save_to_google_sheets(
-                    doc_type,
-                    st.session_state.data_for_sheets,
-                    st.session_state.edited_df,
-                    duplicate_action=action,
-                    duplicate_rows=st.session_state.duplicate_rows if action == "overwrite" else None
-                )
-                
-                if success:
-                    # Réinitialiser les états
-                    st.session_state.duplicate_check_done = False
-                    st.session_state.duplicate_found = False
-                    st.session_state.duplicate_action = None
-                    st.session_state.duplicate_rows = []
+        # Deux boutons côte à côte
+        col_export1, col_export2 = st.columns(2)
+        
+        with col_export1:
+            if st.button("📄 Enregistrer données BRUTES", use_container_width=True, type="primary", key="save_raw"):
+                try:
+                    success, message = save_to_google_sheets(
+                        doc_type,
+                        st.session_state.data_for_sheets,
+                        st.session_state.raw_data_df,
+                        duplicate_action=action,
+                        duplicate_rows=st.session_state.duplicate_rows if action == "overwrite" else None,
+                        use_raw=True
+                    )
                     
-                    # Options après enregistrement
-                    st.markdown('<div class="info-box">', unsafe_allow_html=True)
-                    st.markdown("**Enregistrement terminé. Que souhaitez-vous faire ?**")
+                    if success:
+                        st.success("✅ Données brutes enregistrées avec succès!")
+                        
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de l'enregistrement des données brutes: {str(e)}")
+        
+        with col_export2:
+            if st.button("✨ Enregistrer données STANDARDISÉES", use_container_width=True, type="primary", key="save_standardized"):
+                try:
+                    # Préparer le dataframe pour l'export standardisé
+                    export_std_df = st.session_state.standardized_data_df[["designation_standard", "quantite"]].copy()
+                    export_std_df.columns = ["designation_brute", "quantite"]
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("📄 Scanner un nouveau document", use_container_width=True):
-                            st.session_state.uploaded_file = None
-                            st.session_state.uploaded_image = None
-                            st.session_state.ocr_result = None
-                            st.session_state.show_results = False
-                            st.session_state.detected_document_type = None
-                            st.rerun()
+                    success, message = save_to_google_sheets(
+                        doc_type,
+                        st.session_state.data_for_sheets,
+                        export_std_df,
+                        duplicate_action=action,
+                        duplicate_rows=st.session_state.duplicate_rows if action == "overwrite" else None,
+                        use_raw=False
+                    )
                     
-                    with col2:
-                        if st.button("🔄 Recommencer", use_container_width=True):
-                            st.session_state.uploaded_file = None
-                            st.session_state.uploaded_image = None
-                            st.session_state.ocr_result = None
-                            st.session_state.show_results = False
-                            st.session_state.detected_document_type = None
-                            st.session_state.duplicate_check_done = False
-                            st.session_state.duplicate_found = False
-                            st.session_state.duplicate_action = None
-                            st.rerun()
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-                
-            except Exception as e:
-                st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
+                    if success:
+                        st.success("✅ Données standardisées enregistrées avec succès!")
+                        
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de l'enregistrement des données standardisées: {str(e)}")
+        
+        # Explication des deux options
+        st.markdown("""
+        <div class="info-box">
+        <strong>ℹ️ Différence entre les deux exports :</strong><br>
+        • <strong>Données brutes :</strong> Les articles exactement comme détectés par l'IA<br>
+        • <strong>Données standardisées :</strong> Les articles corrigés et normalisés selon le référentiel Chan Foui
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Options après enregistrement
+        st.markdown("---")
+        col_reset1, col_reset2 = st.columns(2)
+        
+        with col_reset1:
+            if st.button("📄 Scanner un nouveau document", use_container_width=True, type="secondary"):
+                st.session_state.uploaded_file = None
+                st.session_state.uploaded_image = None
+                st.session_state.ocr_result = None
+                st.session_state.show_results = False
+                st.session_state.detected_document_type = None
+                st.session_state.duplicate_check_done = False
+                st.session_state.duplicate_found = False
+                st.session_state.duplicate_action = None
+                st.rerun()
+        
+        with col_reset2:
+            if st.button("🔄 Recommencer l'analyse", use_container_width=True, type="secondary"):
+                st.session_state.uploaded_file = None
+                st.session_state.uploaded_image = None
+                st.session_state.ocr_result = None
+                st.session_state.show_results = False
+                st.session_state.detected_document_type = None
+                st.session_state.duplicate_check_done = False
+                st.session_state.duplicate_found = False
+                st.session_state.duplicate_action = None
+                st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1593,7 +1635,7 @@ st.markdown(f"""
     <p><strong>{BRAND_TITLE}</strong> • Chanfoui IA V2 • © {datetime.now().strftime("%Y")}</p>
     <p style="font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.8;">
         Connecté en tant que <strong>{st.session_state.username}</strong> • 
-        Système OpenAI Vision • Détection automatique des documents
+        Système OpenAI Vision • Double export (brute + standardisée)
     </p>
 </div>
 """, unsafe_allow_html=True)
