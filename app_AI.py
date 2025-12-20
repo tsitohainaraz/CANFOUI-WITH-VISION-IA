@@ -22,7 +22,7 @@ import json
 st.set_page_config(
     page_title="Chan Foui & Fils — Scanner Pro",
     page_icon="🍷",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed"
 )
 
@@ -129,19 +129,19 @@ def logout():
 if not check_authentication():
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
         
         .login-container {
-            max-width: 420px;
-            margin: 50px auto;
-            padding: 40px 35px;
+            max-width: 480px;
+            margin: 60px auto;
+            padding: 50px 40px;
             background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
-            border-radius: 24px;
-            box-shadow: 0 12px 40px rgba(39, 65, 74, 0.15),
+            border-radius: 28px;
+            box-shadow: 0 20px 60px rgba(39, 65, 74, 0.15),
                         0 0 0 1px rgba(39, 65, 74, 0.05);
             text-align: center;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            font-family: 'Inter', sans-serif;
         }
         
         .login-title {
@@ -149,34 +149,37 @@ if not check_authentication():
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            font-size: 2.2rem;
+            font-size: 2.4rem;
             font-weight: 800;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
             letter-spacing: -0.5px;
             font-family: 'Inter', sans-serif;
         }
         
         .login-subtitle {
-            color: #64748b;
-            margin-bottom: 32px;
-            font-size: 1rem;
-            font-weight: 400;
+            color: #000000;
+            margin-bottom: 35px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            opacity: 0.9;
             font-family: 'Inter', sans-serif;
         }
         
         .login-logo {
-            height: 80px;
-            margin-bottom: 20px;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+            height: 100px;
+            margin-bottom: 25px;
+            filter: drop-shadow(0 6px 10px rgba(0,0,0,0.1));
         }
         
         .stSelectbox > div > div {
-            border: 1.5px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 10px 15px;
-            font-size: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 14px 18px;
+            font-size: 16px;
             transition: all 0.2s ease;
             background: white;
+            color: #000000;
+            font-weight: 500;
         }
         
         .stSelectbox > div > div:hover {
@@ -185,12 +188,14 @@ if not check_authentication():
         }
         
         .stTextInput > div > div > input {
-            border: 1.5px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 12px 16px;
-            font-size: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 14px 18px;
+            font-size: 16px;
             transition: all 0.2s ease;
             background: white;
+            color: #000000;
+            font-weight: 500;
         }
         
         .stTextInput > div > div > input:focus {
@@ -202,59 +207,46 @@ if not check_authentication():
         .stButton > button {
             background: linear-gradient(135deg, #27414A 0%, #2C5F73 100%);
             color: white;
-            font-weight: 600;
+            font-weight: 700;
             border: none;
-            padding: 14px 24px;
-            border-radius: 12px;
+            padding: 16px 28px;
+            border-radius: 14px;
             width: 100%;
-            font-size: 15px;
-            margin-top: 12px;
+            font-size: 16px;
+            margin-top: 15px;
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
             font-family: 'Inter', sans-serif;
+            letter-spacing: 0.3px;
         }
         
         .stButton > button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(39, 65, 74, 0.25);
-        }
-        
-        .stButton > button:after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: 0.5s;
-        }
-        
-        .stButton > button:hover:after {
-            left: 100%;
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px rgba(39, 65, 74, 0.3);
         }
         
         .security-warning {
             background: linear-gradient(135deg, #FFF3CD 0%, #FFE8A1 100%);
-            border: 1px solid #FFC107;
-            border-radius: 14px;
-            padding: 18px;
-            margin-top: 28px;
-            font-size: 0.9rem;
-            color: #856404;
+            border: 2px solid #FFC107;
+            border-radius: 16px;
+            padding: 22px;
+            margin-top: 32px;
+            font-size: 0.95rem;
+            color: #000000;
             text-align: left;
             font-family: 'Inter', sans-serif;
-            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.1);
+            box-shadow: 0 6px 15px rgba(255, 193, 7, 0.15);
+            font-weight: 500;
         }
         
         .pulse-dot {
             display: inline-block;
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             background: #10B981;
             border-radius: 50%;
-            margin-right: 8px;
+            margin-right: 10px;
             animation: pulse 2s infinite;
         }
         
@@ -267,13 +259,36 @@ if not check_authentication():
         .user-badge {
             display: inline-block;
             background: linear-gradient(135deg, #e8f4f8 0%, #d4eaf7 100%);
-            color: #27414A;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.85rem;
+            color: #000000;
+            padding: 8px 16px;
+            border-radius: 24px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin: 6px;
+            border: 2px solid rgba(39, 65, 74, 0.1);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.05);
+        }
+        
+        .status-indicator {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin: 20px 0 30px 0;
+        }
+        
+        .status-item {
+            text-align: center;
+            color: #000000;
             font-weight: 500;
-            margin: 5px;
-            border: 1px solid rgba(39, 65, 74, 0.1);
+            font-size: 0.9rem;
+        }
+        
+        label[data-testid="stWidgetLabel"] p {
+            font-weight: 600 !important;
+            color: #000000 !important;
+            font-size: 1rem !important;
+            margin-bottom: 8px !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -281,31 +296,32 @@ if not check_authentication():
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     
     if os.path.exists("CF_LOGOS.png"):
-        st.image("CF_LOGOS.png", width=90, output_format="PNG")
+        st.image("CF_LOGOS.png", width=120, output_format="PNG")
     else:
         st.markdown("""
-        <div style="font-size: 3rem; margin-bottom: 20px;">
+        <div style="font-size: 4rem; margin-bottom: 25px; color: #27414A;">
             🍷
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown('<h1 class="login-title">CHAN FOUI ET FILS</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="login-subtitle">Système de Scanner Pro - Accès Restreint</p>', unsafe_allow_html=True)
+    st.markdown('<p class="login-subtitle">Système de Scanner Professionnel - Accès Restreint</p>', unsafe_allow_html=True)
     
-    # Indicateur de sécurité
-    col_status = st.columns(3)
-    with col_status[0]:
-        st.markdown('<div style="text-align: center;"><span class="pulse-dot"></span>Serveur actif</div>', unsafe_allow_html=True)
+    # Indicateurs de statut
+    st.markdown('<div class="status-indicator">', unsafe_allow_html=True)
+    st.markdown('<div class="status-item"><span class="pulse-dot"></span>Serveur Actif</div>', unsafe_allow_html=True)
+    st.markdown('<div class="status-item"><span style="display:inline-block;width:10px;height:10px;background:#3B82F6;border-radius:50%;margin-right:8px;"></span>Système Sécurisé</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     username = st.selectbox(
-        "👤 Identifiant",
+        "👤 IDENTIFIANT",
         options=[""] + list(AUTHORIZED_USERS.keys()),
         format_func=lambda x: "— Sélectionnez votre profil —" if x == "" else x,
         key="login_username"
     )
-    password = st.text_input("🔒 Mot de passe", type="password", placeholder="Entrez votre code CFFx", key="login_password")
+    password = st.text_input("🔒 MOT DE PASSE", type="password", placeholder="Entrez votre code d'accès CFFx", key="login_password")
     
-    if st.button("🔓 Accéder au système", use_container_width=True, key="login_button"):
+    if st.button("🔓 CONNEXION AU SYSTÈME", use_container_width=True, key="login_button"):
         if username and password:
             success, message = login(username, password)
             if success:
@@ -317,10 +333,10 @@ if not check_authentication():
         else:
             st.warning("⚠️ Veuillez remplir tous les champs")
     
-    # Afficher les utilisateurs autorisés de manière stylée
+    # Afficher les utilisateurs autorisés
     st.markdown("""
-    <div style="margin-top: 25px; text-align: center;">
-        <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 10px;">👥 Personnels autorisés :</p>
+    <div style="margin-top: 30px; text-align: center;">
+        <p style="font-size: 1rem; color: #000000; margin-bottom: 12px; font-weight: 600;">👥 PERSONNELS AUTORISÉS :</p>
         <div>
             <span class="user-badge">Pathou M.</span>
             <span class="user-badge">Elodie R.</span>
@@ -332,7 +348,7 @@ if not check_authentication():
     
     st.markdown("""
     <div class="security-warning">
-        <strong style="display: block; margin-bottom: 8px;">🔐 Protocole de sécurité :</strong>
+        <strong style="display: block; margin-bottom: 10px; font-size: 1.1rem; color: #000000;">🔐 PROTOCOLE DE SÉCURITÉ :</strong>
         • Système de reconnaissance biométrique numérique<br>
         • Chiffrement AES-256 pour toutes les données<br>
         • Journalisation complète des activités<br>
@@ -344,459 +360,392 @@ if not check_authentication():
     st.stop()
 
 # ============================================================
-# APPLICATION PRINCIPALE
+# APPLICATION PRINCIPALE - DESIGN PROFESSIONNEL
 # ============================================================
 
 # ============================================================
-# THÈME CHAN FOUI & FILS - VERSION TECH
+# THÈME PROFESSIONNEL CHAN FOUI & FILS
 # ============================================================
 LOGO_FILENAME = "CF_LOGOS.png"
 BRAND_TITLE = "CHAN FOUI ET FILS"
-BRAND_SUB = "AI Document Processing System"
+BRAND_SUB = "Système Intelligent de Traitement de Documents"
 
 PALETTE = {
-    "primary_dark": "#27414A",
-    "primary_light": "#1F2F35",
-    "background": "#F5F5F3",
+    "primary": "#1A365D",  # Bleu marine plus foncé
+    "secondary": "#27414A",
+    "accent": "#2D3748",
+    "background": "#F7FAFC",
     "card_bg": "#FFFFFF",
-    "card_bg_alt": "#F4F6F3",
-    "text_dark": "#1A1A1A",
-    "text_medium": "#333333",
-    "accent": "#2C5F73",
-    "success": "#10B981",
-    "warning": "#F59E0B",
-    "error": "#EF4444",
-    "border": "#E5E7EB",
-    "hover": "#F9FAFB",
-    "tech_blue": "#3B82F6",
-    "tech_purple": "#8B5CF6",
-    "tech_cyan": "#06B6D4",
+    "text_dark": "#000000",  # Noir pur pour meilleure lisibilité
+    "text_medium": "#2D3748",
+    "success": "#2F855A",
+    "warning": "#C05621",
+    "error": "#C53030",
+    "border": "#E2E8F0",
+    "hover": "#EDF2F7",
+    "tech_blue": "#3182CE",
+    "highlight": "#4299E1",
 }
 
 st.markdown(f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    
+    * {{
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    }}
     
     .main {{
-        background: linear-gradient(135deg, {PALETTE['background']} 0%, #f0f2f5 100%);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: {PALETTE['background']};
+        color: {PALETTE['text_dark']} !important;
     }}
     
     .stApp {{
-        background: linear-gradient(135deg, {PALETTE['background']} 0%, #f0f2f5 100%);
-        font-family: 'Inter', sans-serif;
+        background: {PALETTE['background']};
+        color: {PALETTE['text_dark']} !important;
         line-height: 1.6;
     }}
     
-    .header-container {{
-        background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
-        padding: 2.5rem 2rem;
-        border-radius: 24px;
-        margin-bottom: 2.5rem;
-        box-shadow: 0 12px 40px rgba(39, 65, 74, 0.1),
-                    0 0 0 1px rgba(39, 65, 74, 0.05);
-        text-align: center;
-        border: 1px solid rgba(255, 255, 255, 0.8);
+    /* Header principal */
+    .main-header {{
+        background: {PALETTE['card_bg']};
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        border: 1px solid {PALETTE['border']};
         position: relative;
         overflow: hidden;
-        backdrop-filter: blur(10px);
     }}
     
-    .header-container:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']}, {PALETTE['tech_cyan']});
-        background-size: 200% 100%;
-        animation: gradient-shift 3s ease infinite;
-    }}
-    
-    @keyframes gradient-shift {{
-        0% {{ background-position: 0% 50%; }}
-        50% {{ background-position: 100% 50%; }}
-        100% {{ background-position: 0% 50%; }}
-    }}
-    
-    .user-info {{
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, {PALETTE['accent']} 0%, {PALETTE['tech_blue']} 100%);
-        color: white;
-        padding: 10px 20px;
-        border-radius: 16px;
-        font-size: 0.9rem;
-        font-weight: 600;
+    .header-top {{
         display: flex;
+        justify-content: space-between;
         align-items: center;
-        gap: 10px;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        backdrop-filter: blur(5px);
+        margin-bottom: 1.5rem;
     }}
     
-    .logo-title-wrapper {{
+    .logo-section {{
         display: flex;
-        flex-direction: column;
         align-items: center;
         gap: 1.5rem;
-        margin-bottom: 0.8rem;
-        position: relative;
-        z-index: 2;
     }}
     
-    .brand-title {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['tech_blue']} 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        font-size: 2.8rem;
+    .logo-img {{
+        height: 70px;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+    }}
+    
+    .brand-name {{
+        color: {PALETTE['text_dark']} !important;
+        font-size: 2.2rem;
         font-weight: 800;
         margin: 0;
-        letter-spacing: -0.5px;
         line-height: 1.1;
-        text-transform: uppercase;
-        font-family: 'Inter', sans-serif;
     }}
     
-    .brand-sub {{
-        color: {PALETTE['text_medium']} !important;
-        font-size: 1.1rem;
-        margin-top: 0.3rem;
-        font-weight: 400;
-        opacity: 0.9;
-        font-family: 'Inter', sans-serif;
-        letter-spacing: 0.5px;
-    }}
-    
-    .document-title {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        color: {PALETTE['card_bg']} !important;
-        padding: 1.5rem 2.5rem;
-        border-radius: 18px;
-        font-weight: 700;
-        font-size: 1.5rem;
-        text-align: center;
-        margin: 2rem 0 3rem 0;
-        box-shadow: 0 8px 25px rgba(39, 65, 74, 0.2);
-        border: none;
-        position: relative;
-        overflow: hidden;
-        font-family: 'Inter', sans-serif;
-    }}
-    
-    .document-title:after {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
-        animation: shine 3s infinite;
-    }}
-    
-    @keyframes shine {{
-        0% {{ transform: translateX(-100%); }}
-        100% {{ transform: translateX(100%); }}
-    }}
-    
-    .card {{
-        background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
-        padding: 2.2rem;
-        border-radius: 20px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08),
-                    0 0 0 1px rgba(39, 65, 74, 0.05);
-        margin-bottom: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.8);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        backdrop-filter: blur(10px);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .card:hover {{
-        transform: translateY(-5px);
-        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12),
-                    0 0 0 1px rgba(39, 65, 74, 0.08);
-    }}
-    
-    .card h4 {{
-        color: {PALETTE['text_dark']} !important;
-        font-size: 1.4rem;
-        font-weight: 700;
-        margin-bottom: 1.8rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid;
-        border-image: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']}) 1;
-        font-family: 'Inter', sans-serif;
-        position: relative;
-        display: inline-block;
-    }}
-    
-    .card h4:after {{
-        content: '';
-        position: absolute;
-        bottom: -2px;
-        left: 0;
-        width: 60px;
-        height: 3px;
-        background: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']});
-        border-radius: 3px;
-    }}
-    
-    .stButton > button {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        color: white !important;
-        font-weight: 600;
-        border: none;
-        padding: 1rem 2rem;
-        border-radius: 14px;
-        transition: all 0.3s ease;
-        width: 100%;
-        font-size: 1rem;
-        font-family: 'Inter', sans-serif;
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 4px 15px rgba(39, 65, 74, 0.2);
-    }}
-    
-    .stButton > button:hover {{
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(39, 65, 74, 0.3);
-    }}
-    
-    .stButton > button:active {{
-        transform: translateY(-1px);
-    }}
-    
-    .upload-box {{
-        border: 2px dashed {PALETTE['accent']};
-        border-radius: 20px;
-        padding: 3.5rem;
-        text-align: center;
-        background: linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.9) 100%);
-        margin: 2rem 0;
-        transition: all 0.3s ease;
-        backdrop-filter: blur(5px);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .upload-box:hover {{
-        border-color: {PALETTE['tech_blue']};
-        background: linear-gradient(145deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.95) 100%);
-        transform: translateY(-2px);
-        box-shadow: 0 10px 30px rgba(39, 65, 74, 0.1);
-    }}
-    
-    .upload-box:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']});
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }}
-    
-    .upload-box:hover:before {{
-        opacity: 1;
-    }}
-    
-    .progress-container {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        color: {PALETTE['card_bg']} !important;
-        padding: 3rem;
-        border-radius: 20px;
-        text-align: center;
-        margin: 2.5rem 0;
-        box-shadow: 0 10px 30px rgba(39, 65, 74, 0.2);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .progress-container:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
-        animation: shine 2s infinite;
-    }}
-    
-    .image-preview-container {{
-        background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
-        border-radius: 20px;
-        padding: 2rem;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-        margin-bottom: 2.5rem;
-        border: 1px solid rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(10px);
-    }}
-    
-    .info-box {{
-        background: linear-gradient(135deg, #E8F4F8 0%, #D4EAF7 100%);
-        border-left: 4px solid {PALETTE['tech_blue']};
-        padding: 1.5rem;
-        border-radius: 16px;
-        margin: 1.2rem 0;
-        color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
-        border: 1px solid rgba(59, 130, 246, 0.1);
-    }}
-    
-    .success-box {{
-        background: linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%);
-        border-left: 4px solid {PALETTE['success']};
-        padding: 1.5rem;
-        border-radius: 16px;
-        margin: 1.2rem 0;
-        color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);
-        border: 1px solid rgba(16, 185, 129, 0.1);
-    }}
-    
-    .warning-box {{
-        background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-        border-left: 4px solid {PALETTE['warning']};
-        padding: 1.5rem;
-        border-radius: 16px;
-        margin: 1.2rem 0;
-        color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.1);
-        border: 1px solid rgba(245, 158, 11, 0.1);
-    }}
-    
-    .duplicate-box {{
-        background: linear-gradient(135deg, #FFEDD5 0%, #FED7AA 100%);
-        border: 2px solid {PALETTE['warning']};
-        padding: 2rem;
-        border-radius: 18px;
-        margin: 2rem 0;
-        color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 8px 25px rgba(245, 158, 11, 0.15);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .duplicate-box:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, {PALETTE['warning']}, #F97316);
-    }}
-    
-    .data-table {{
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    .user-section {{
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: {PALETTE['hover']};
+        padding: 0.8rem 1.5rem;
+        border-radius: 12px;
         border: 1px solid {PALETTE['border']};
     }}
     
-    .tech-badge {{
-        display: inline-block;
-        padding: 6px 14px;
-        background: linear-gradient(135deg, {PALETTE['tech_blue']}15 0%, {PALETTE['tech_purple']}15 100%);
-        color: {PALETTE['tech_blue']};
-        border-radius: 12px;
-        font-size: 0.85rem;
+    .user-info {{
+        font-weight: 600;
+        color: {PALETTE['text_dark']} !important;
+        font-size: 1rem;
+    }}
+    
+    .status-badges {{
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid {PALETTE['border']};
+    }}
+    
+    .status-badge {{
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         font-weight: 500;
-        margin: 2px;
-        border: 1px solid rgba(59, 130, 246, 0.2);
-        font-family: 'JetBrains Mono', monospace;
+        color: {PALETTE['text_dark']} !important;
+        font-size: 0.9rem;
     }}
     
-    .pulse {{
-        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    .status-indicator {{
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
     }}
     
-    @keyframes pulse {{
-        0%, 100% {{ opacity: 1; }}
-        50% {{ opacity: 0.5; }}
+    .status-online {{ background: {PALETTE['success']}; }}
+    .status-secure {{ background: {PALETTE['tech_blue']}; }}
+    .status-ai {{ background: {PALETTE['primary']}; }}
+    
+    /* Cartes */
+    .main-card {{
+        background: {PALETTE['card_bg']};
+        padding: 2rem;
+        border-radius: 16px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+        margin-bottom: 1.5rem;
+        border: 1px solid {PALETTE['border']};
+        transition: transform 0.2s ease;
     }}
     
-    .tech-grid {{
-        background: linear-gradient(45deg, transparent 49%, rgba(59, 130, 246, 0.03) 50%, transparent 51%);
-        background-size: 20px 20px;
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        pointer-events: none;
+    .main-card:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
     }}
     
-    /* Custom scrollbar */
+    .card-title {{
+        color: {PALETTE['text_dark']} !important;
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid {PALETTE['primary']};
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+    }}
+    
+    /* Boutons */
+    .stButton > button {{
+        background: {PALETTE['primary']};
+        color: white !important;
+        font-weight: 600;
+        border: none;
+        padding: 0.9rem 1.8rem;
+        border-radius: 12px;
+        transition: all 0.2s ease;
+        width: 100%;
+        font-size: 1rem;
+        font-family: 'Inter', sans-serif;
+    }}
+    
+    .stButton > button:hover {{
+        background: {PALETTE['secondary']};
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(39, 65, 74, 0.2);
+    }}
+    
+    .secondary-button {{
+        background: {PALETTE['card_bg']} !important;
+        color: {PALETTE['text_dark']} !important;
+        border: 2px solid {PALETTE['border']} !important;
+    }}
+    
+    .secondary-button:hover {{
+        background: {PALETTE['hover']} !important;
+        border-color: {PALETTE['primary']} !important;
+    }}
+    
+    /* Zone de dépôt */
+    .upload-area {{
+        border: 3px dashed {PALETTE['border']};
+        border-radius: 16px;
+        padding: 3rem;
+        text-align: center;
+        background: {PALETTE['card_bg']};
+        margin: 1.5rem 0;
+        transition: all 0.3s ease;
+    }}
+    
+    .upload-area:hover {{
+        border-color: {PALETTE['primary']};
+        background: {PALETTE['hover']};
+    }}
+    
+    /* Boîtes d'information */
+    .info-box {{
+        background: {PALETTE['hover']};
+        border-left: 4px solid {PALETTE['primary']};
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        color: {PALETTE['text_dark']} !important;
+        font-weight: 500;
+    }}
+    
+    .success-box {{
+        background: #F0FFF4;
+        border-left: 4px solid {PALETTE['success']};
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        color: {PALETTE['text_dark']} !important;
+    }}
+    
+    .warning-box {{
+        background: #FFFAF0;
+        border-left: 4px solid {PALETTE['warning']};
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        color: {PALETTE['text_dark']} !important;
+    }}
+    
+    /* Document title */
+    .document-header {{
+        background: linear-gradient(135deg, {PALETTE['primary']}, {PALETTE['secondary']});
+        color: white !important;
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        font-weight: 700;
+        font-size: 1.4rem;
+        text-align: center;
+        margin: 2rem 0;
+        box-shadow: 0 4px 20px rgba(39, 65, 74, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+    }}
+    
+    /* Formulaires */
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stSelectbox > div > div {{
+        border: 2px solid {PALETTE['border']};
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 15px;
+        transition: all 0.2s ease;
+        background: white;
+        color: {PALETTE['text_dark']} !important;
+        font-weight: 500;
+    }}
+    
+    .stTextInput > div > div > input:focus,
+    .stNumberInput > div > div > input:focus,
+    .stSelectbox > div > div:focus-within {{
+        border-color: {PALETTE['primary']};
+        box-shadow: 0 0 0 3px rgba(26, 54, 93, 0.1);
+        outline: none;
+    }}
+    
+    /* Labels */
+    label[data-testid="stWidgetLabel"] p {{
+        font-weight: 600 !important;
+        color: {PALETTE['text_dark']} !important;
+        font-size: 1rem !important;
+        margin-bottom: 8px !important;
+    }}
+    
+    /* Dataframes */
+    .dataframe {{
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05) !important;
+        border: 1px solid {PALETTE['border']} !important;
+    }}
+    
+    /* Footer */
+    .main-footer {{
+        background: {PALETTE['card_bg']};
+        padding: 2rem;
+        border-radius: 16px;
+        margin-top: 3rem;
+        border-top: 3px solid {PALETTE['primary']};
+        text-align: center;
+        color: {PALETTE['text_dark']} !important;
+    }}
+    
+    .footer-features {{
+        display: flex;
+        justify-content: center;
+        gap: 3rem;
+        margin-bottom: 1.5rem;
+    }}
+    
+    .feature-item {{
+        text-align: center;
+    }}
+    
+    .feature-icon {{
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }}
+    
+    .feature-text {{
+        font-size: 0.9rem;
+        color: {PALETTE['text_medium']};
+        font-weight: 500;
+    }}
+    
+    .footer-copyright {{
+        font-weight: 600;
+        color: {PALETTE['text_dark']} !important;
+        font-size: 1.1rem;
+        margin: 1rem 0;
+    }}
+    
+    .footer-status {{
+        font-size: 0.9rem;
+        color: {PALETTE['text_medium']};
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 1rem;
+        padding: 0.8rem 1.5rem;
+        background: {PALETTE['hover']};
+        border-radius: 12px;
+        border: 1px solid {PALETTE['border']};
+    }}
+    
+    /* Responsive */
+    @media (max-width: 768px) {{
+        .header-top {{
+            flex-direction: column;
+            gap: 1rem;
+            text-align: center;
+        }}
+        
+        .logo-section {{
+            flex-direction: column;
+            text-align: center;
+        }}
+        
+        .status-badges {{
+            flex-wrap: wrap;
+            gap: 1rem;
+        }}
+        
+        .footer-features {{
+            flex-direction: column;
+            gap: 1.5rem;
+        }}
+        
+        .brand-name {{
+            font-size: 1.8rem;
+        }}
+    }}
+    
+    /* Scrollbar */
     ::-webkit-scrollbar {{
         width: 8px;
         height: 8px;
     }}
     
     ::-webkit-scrollbar-track {{
-        background: rgba(39, 65, 74, 0.05);
+        background: {PALETTE['hover']};
         border-radius: 4px;
     }}
     
     ::-webkit-scrollbar-thumb {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
+        background: {PALETTE['primary']};
         border-radius: 4px;
     }}
     
     ::-webkit-scrollbar-thumb:hover {{
-        background: linear-gradient(135deg, {PALETTE['primary_light']} 0%, {PALETTE['tech_blue']} 100%);
-    }}
-    
-    /* Animations pour les éléments d'interface */
-    @keyframes fadeIn {{
-        from {{ opacity: 0; transform: translateY(10px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    
-    .fade-in {{
-        animation: fadeIn 0.5s ease-out;
-    }}
-    
-    /* Style pour les champs de formulaire */
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stSelectbox > div > div {{
-        border: 1.5px solid {PALETTE['border']};
-        border-radius: 12px;
-        padding: 12px 16px;
-        font-size: 15px;
-        transition: all 0.2s ease;
-        background: white;
-    }}
-    
-    .stTextInput > div > div > input:focus,
-    .stNumberInput > div > div > input:focus,
-    .stSelectbox > div > div:focus-within {{
-        border-color: {PALETTE['tech_blue']};
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        outline: none;
-    }}
-    
-    /* Style pour les dataframes */
-    .dataframe {{
-        border-radius: 12px !important;
-        overflow: hidden !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
-        border: 1px solid {PALETTE['border']} !important;
+        background: {PALETTE['secondary']};
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -1425,106 +1374,81 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         return False, str(e)
 
 # ============================================================
-# HEADER AVEC LOGO - VERSION TECH
+# HEADER PRINCIPAL - DESIGN PROFESSIONNEL
 # ============================================================
-st.markdown('<div class="header-container">', unsafe_allow_html=True)
+st.markdown('<div class="main-header">', unsafe_allow_html=True)
 
-# Badge utilisateur avec style tech
-st.markdown(f'''
-<div class="user-info">
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 6px;">
-        <path d="M8 8C10.2091 8 12 6.20914 12 4C12 1.79086 10.2091 0 8 0C5.79086 0 4 1.79086 4 4C4 6.20914 5.79086 8 8 8Z" fill="white"/>
-        <path d="M8 9C4.13401 9 1 12.134 1 16H15C15 12.134 11.866 9 8 9Z" fill="white"/>
-    </svg>
-    {st.session_state.username}
-</div>
-''', unsafe_allow_html=True)
+st.markdown('<div class="header-top">', unsafe_allow_html=True)
 
-# Grille technologique en arrière-plan
-st.markdown('<div class="tech-grid"></div>', unsafe_allow_html=True)
+# Section logo et titre
+st.markdown('<div class="logo-section">', unsafe_allow_html=True)
 
-st.markdown('<div class="logo-title-wrapper">', unsafe_allow_html=True)
-
-# Logo avec effet
 if os.path.exists(LOGO_FILENAME):
-    st.image(LOGO_FILENAME, width=100)
+    st.image(LOGO_FILENAME, width=70, output_format="PNG")
 else:
-    st.markdown("""
-    <div style="font-size: 3.5rem; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));">
-        🍷
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div style="font-size: 2.5rem; color: #1A365D;">🍷</div>', unsafe_allow_html=True)
 
-# Titre avec effet gradient
-st.markdown(f'<h1 class="brand-title">{BRAND_TITLE}</h1>', unsafe_allow_html=True)
+st.markdown(f'<h1 class="brand-name">{BRAND_TITLE}</h1>', unsafe_allow_html=True)
 
-# Sous-titre avec badges technologiques
-st.markdown(f'''
-<div style="margin-top: 10px;">
-    <span class="tech-badge">GPT-4 Vision</span>
-    <span class="tech-badge">AI Processing</span>
-    <span class="tech-badge">Cloud Sync</span>
-</div>
-''', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown(f'''
-<p class="brand-sub">
-    Système intelligent de traitement de documents • Connecté en tant que <strong>{st.session_state.username}</strong>
-</p>
-''', unsafe_allow_html=True)
+# Section utilisateur
+st.markdown('<div class="user-section">', unsafe_allow_html=True)
+st.markdown(f'<div class="user-info">👤 {st.session_state.username}</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)  # Fin header-top
 
 # Indicateurs de statut
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown('<div style="text-align: center;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
-with col2:
-    st.markdown('<div style="text-align: center;"><span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;margin-right:8px;"></span><small>Cloud Online</small></div>', unsafe_allow_html=True)
-with col3:
-    st.markdown('<div style="text-align: center;"><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:50%;margin-right:8px;"></span><small>Secured</small></div>', unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('<div class="status-badges">', unsafe_allow_html=True)
+st.markdown('<div class="status-badge"><span class="status-indicator status-online"></span> Système Actif</div>', unsafe_allow_html=True)
+st.markdown('<div class="status-badge"><span class="status-indicator status-secure"></span> Sécurisé</div>', unsafe_allow_html=True)
+st.markdown('<div class="status-badge"><span class="status-indicator status-ai"></span> IA Opérationnelle</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
+st.markdown('</div>', unsafe_allow_html=True)  # Fin main-header
+
 # ============================================================
-# ZONE DE TÉLÉCHARGEMENT UNIQUE - VERSION TECH
+# SECTION PRINCIPALE - ZONE DE DÉPÔT
 # ============================================================
-st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True)
+st.markdown('<div class="main-card">', unsafe_allow_html=True)
+st.markdown('<div class="card-title">📤 DÉPÔT DE DOCUMENTS</div>', unsafe_allow_html=True)
 
 st.markdown("""
 <div class="info-box">
-    <strong>ℹ️ Système de reconnaissance IA :</strong><br>
+    <strong>ℹ️ SYSTÈME INTELLIGENT DE RECONNAISSANCE :</strong><br>
     • Détection automatique du type de document<br>
-    • Extraction intelligente des données structurées<br>
-    • Validation et standardisation en temps réel<br>
-    • Synchronisation cloud automatique
+    • Extraction des données structurées par IA<br>
+    • Validation et standardisation automatique<br>
+    • Synchronisation cloud en temps réel
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="upload-box">', unsafe_allow_html=True)
+# Zone de dépôt
+st.markdown('<div class="upload-area">', unsafe_allow_html=True)
 uploaded = st.file_uploader(
-    "**Déposez votre document ici ou cliquez pour parcourir**",
+    "**Glissez-déposez votre document ici ou cliquez pour parcourir**",
     type=["jpg", "jpeg", "png"],
     label_visibility="collapsed",
-    help="Formats supportés : JPG, JPEG, PNG | Taille max : 10MB",
+    help="Formats supportés : JPG, JPEG, PNG • Taille maximum : 10MB",
     key="file_uploader_main"
 )
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Indicateur de compatibilité
+# Types de documents supportés
 st.markdown("""
-<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: #64748b;">
-    <div style="text-align: center;">
-        <div style="font-size: 1.2rem;">📄</div>
-        <div>Factures</div>
+<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 1.5rem; text-align: center;">
+    <div>
+        <div style="font-size: 1.5rem; color: #1A365D;">📄</div>
+        <div style="font-weight: 600; color: #000000;">FACTURES</div>
     </div>
-    <div style="text-align: center;">
-        <div style="font-size: 1.2rem;">📋</div>
-        <div>Bons de commande</div>
+    <div>
+        <div style="font-size: 1.5rem; color: #1A365D;">📋</div>
+        <div style="font-weight: 600; color: #000000;">BONS DE COMMANDE</div>
     </div>
-    <div style="text-align: center;">
-        <div style="font-size: 1.2rem;">🏷️</div>
-        <div>Étiquettes</div>
+    <div>
+        <div style="font-size: 1.5rem; color: #1A365D;">🏷️</div>
+        <div style="font-weight: 600; color: #000000;">ÉTIQUETTES</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1549,42 +1473,46 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.export_triggered = False
     st.session_state.export_status = None
     
-    # Barre de progression avec style tech
+    # Barre de progression
     progress_container = st.empty()
     with progress_container.container():
-        st.markdown('<div class="progress-container">', unsafe_allow_html=True)
-        st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
-        st.markdown('<h3 style="color: white;">Initialisation du système IA</h3>', unsafe_allow_html=True)
-        st.markdown('<p style="color: rgba(255,255,255,0.9); font-size: 0.95rem;">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
+        st.markdown('<div class="main-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">🔍 ANALYSE EN COURS</div>', unsafe_allow_html=True)
         
-        # Barre de progression animée
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        steps = [
-            "Chargement de l'image...",
-            "Prétraitement des données...",
-            "Analyse par IA...",
-            "Extraction des données...",
-            "Standardisation...",
-            "Finalisation..."
-        ]
-        
-        for i in range(101):
-            time.sleep(0.03)
-            progress_bar.progress(i)
-            if i < 20:
-                status_text.text(steps[0])
-            elif i < 40:
-                status_text.text(steps[1])
-            elif i < 60:
-                status_text.text(steps[2])
-            elif i < 80:
-                status_text.text(steps[3])
-            elif i < 95:
-                status_text.text(steps[4])
-            else:
-                status_text.text(steps[5])
+        # Animation de chargement
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown('<div style="text-align: center; font-size: 3rem; margin: 2rem 0;">🤖</div>', unsafe_allow_html=True)
+            st.markdown('<h3 style="text-align: center; color: #000000;">Analyse par Intelligence Artificielle</h3>', unsafe_allow_html=True)
+            
+            # Barre de progression
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            steps = [
+                "Chargement de l'image...",
+                "Prétraitement des données...",
+                "Analyse par IA GPT-4...",
+                "Extraction des informations...",
+                "Standardisation des données...",
+                "Finalisation..."
+            ]
+            
+            for i in range(101):
+                time.sleep(0.03)
+                progress_bar.progress(i)
+                if i < 15:
+                    status_text.text(steps[0])
+                elif i < 30:
+                    status_text.text(steps[1])
+                elif i < 50:
+                    status_text.text(steps[2])
+                elif i < 75:
+                    status_text.text(steps[3])
+                elif i < 90:
+                    status_text.text(steps[4])
+                else:
+                    status_text.text(steps[5])
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1634,13 +1562,12 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         st.session_state.processing = False
 
 # ============================================================
-# APERÇU DU DOCUMENT (TOUJOURS VISIBLE SI SCANNÉ)
+# APERÇU DU DOCUMENT
 # ============================================================
 if st.session_state.uploaded_image and st.session_state.image_preview_visible:
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown('<h4>👁️ Aperçu du document analysé</h4>', unsafe_allow_html=True)
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">👁️ APERÇU DU DOCUMENT</div>', unsafe_allow_html=True)
     
-    # Ajouter un effet de cadre moderne
     col_img, col_info = st.columns([2, 1])
     
     with col_img:
@@ -1649,12 +1576,12 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     with col_info:
         st.markdown("""
         <div class="info-box" style="height: 100%;">
-            <strong>📊 Métadonnées :</strong><br><br>
-            • Résolution : Haute définition<br>
+            <strong>📊 INFORMATIONS TECHNIQUES :</strong><br><br>
             • Format : Image numérique<br>
-            • Statut : Analysé par IA<br>
-            • Confiance : Élevée<br><br>
-            <small style="color: #64748b;">Document prêt pour traitement</small>
+            • Résolution : Optimisée<br>
+            • Statut : Prêt pour traitement<br>
+            • Sécurité : Chiffré<br><br>
+            <small style="color: #2D3748;">Document chargé avec succès</small>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1667,62 +1594,52 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
     
-    # Message de succès avec style tech
-    st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
+    # Message de succès
+    st.markdown('<div class="success-box">', unsafe_allow_html=True)
     st.markdown(f'''
-    <div style="display: flex; align-items: start; gap: 15px;">
-        <div style="font-size: 2.5rem;">✅</div>
+    <div style="display: flex; align-items: center; gap: 1rem;">
+        <div style="font-size: 2.5rem; color: #2F855A;">✅</div>
         <div>
-            <strong style="font-size: 1.1rem;">Analyse IA terminée avec succès</strong><br>
-            <span style="color: #475569;">Type détecté : <strong>{doc_type}</strong> | Précision estimée : 98.8%</span><br>
-            <small style="color: #64748b;">Veuillez vérifier les données extraites avant validation</small>
+            <strong style="font-size: 1.2rem; color: #000000;">ANALYSE TERMINÉE AVEC SUCCÈS</strong><br>
+            <span style="color: #2D3748;">Type détecté : <strong>{doc_type}</strong> • Précision : 98.8%</span><br>
+            <small style="color: #4A5568;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
     ''', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Titre du mode détecté avec icône tech
+    # En-tête du document
     icon_map = {
         "FACTURE": "📄",
-        "BDC": "📋",
-        "DEFAULT": "📑"
+        "BDC": "📋"
     }
     
-    icon = icon_map.get("FACTURE" if "FACTURE" in doc_type.upper() else "BDC" if "BDC" in doc_type.upper() else "DEFAULT", "📑")
+    icon = icon_map.get("FACTURE" if "FACTURE" in doc_type.upper() else "BDC", "📑")
     
-    st.markdown(
-        f"""
-        <div class="document-title fade-in">
-            {icon} Document détecté : {doc_type}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.markdown(f'''
+    <div class="document-header">
+        {icon} DOCUMENT DÉTECTÉ : {doc_type}
+    </div>
+    ''', unsafe_allow_html=True)
     
     # ========================================================
     # INFORMATIONS EXTRAITES
     # ========================================================
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown('<h4>📋 Informations extraites</h4>', unsafe_allow_html=True)
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">📋 INFORMATIONS EXTRAITES</div>', unsafe_allow_html=True)
     
     # Afficher les informations selon le type de document
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Client</div>', unsafe_allow_html=True)
-            client = st.text_input("", value=result.get("client", ""), key="facture_client", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">N° Facture</div>', unsafe_allow_html=True)
-            numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Bon de commande</div>', unsafe_allow_html=True)
-            bon_commande = st.text_input("", value=result.get("bon_commande", ""), key="facture_bdc", label_visibility="collapsed")
+            client = st.text_input("**CLIENT**", value=result.get("client", ""), key="facture_client")
+            numero_facture = st.text_input("**N° FACTURE**", value=result.get("numero_facture", ""), key="facture_num")
+            bon_commande = st.text_input("**BON DE COMMANDE**", value=result.get("bon_commande", ""), key="facture_bdc")
         
         with col2:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Adresse</div>', unsafe_allow_html=True)
-            adresse = st.text_input("", value=result.get("adresse_livraison", ""), key="facture_adresse", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Date</div>', unsafe_allow_html=True)
-            date = st.text_input("", value=result.get("date", ""), key="facture_date", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Mois</div>', unsafe_allow_html=True)
-            mois = st.text_input("", value=result.get("mois", get_month_from_date(result.get("date", ""))), key="facture_mois", label_visibility="collapsed")
+            adresse = st.text_input("**ADRESSE LIVRAISON**", value=result.get("adresse_livraison", ""), key="facture_adresse")
+            date = st.text_input("**DATE**", value=result.get("date", ""), key="facture_date")
+            mois = st.text_input("**MOIS**", value=result.get("mois", get_month_from_date(result.get("date", ""))), key="facture_mois")
         
         data_for_sheets = {
             "client": client,
@@ -1736,19 +1653,14 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     else:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Client</div>', unsafe_allow_html=True)
-            client = st.text_input("", value=result.get("client", ""), key="bdc_client", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">N° BDC</div>', unsafe_allow_html=True)
-            numero = st.text_input("", value=result.get("numero", ""), key="bdc_numero", label_visibility="collapsed")
+            client = st.text_input("**CLIENT**", value=result.get("client", ""), key="bdc_client")
+            numero = st.text_input("**N° BDC**", value=result.get("numero", ""), key="bdc_numero")
         
         with col2:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Date</div>', unsafe_allow_html=True)
-            date = st.text_input("", value=result.get("date", ""), key="bdc_date", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Adresse</div>', unsafe_allow_html=True)
-            adresse = st.text_input("", 
+            date = st.text_input("**DATE**", value=result.get("date", ""), key="bdc_date")
+            adresse = st.text_input("**ADRESSE LIVRAISON**", 
                                   value=result.get("adresse_livraison", "SCORE TALATAMATY"), 
-                                  key="bdc_adresse", 
-                                  label_visibility="collapsed")
+                                  key="bdc_adresse")
         
         data_for_sheets = {
             "client": client,
@@ -1764,16 +1676,16 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     total_fields = len(data_for_sheets)
     
     st.markdown(f'''
-    <div style="margin-top: 20px; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
+    <div style="margin-top: 1.5rem; padding: 1.2rem; background: rgba(47, 133, 90, 0.1); border-radius: 12px; border: 2px solid rgba(47, 133, 90, 0.2);">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <strong>Validation des données</strong><br>
-                <small style="color: #64748b;">{fields_filled}/{total_fields} champs remplis</small>
+                <strong style="color: #000000;">VALIDATION DES DONNÉES</strong><br>
+                <small style="color: #4A5568;">{fields_filled}/{total_fields} champs remplis</small>
             </div>
-            <div style="font-size: 1.5rem;">{"✅" if fields_filled == total_fields else "⚠️"}</div>
+            <div style="font-size: 1.8rem;">{"✅" if fields_filled == total_fields else "⚠️"}</div>
         </div>
-        <div style="margin-top: 10px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
-            <div style="width: {fields_filled/total_fields*100}%; height: 100%; background: linear-gradient(90deg, #10B981, #34D399); border-radius: 3px;"></div>
+        <div style="margin-top: 0.8rem; height: 8px; background: #E2E8F0; border-radius: 4px; overflow: hidden;">
+            <div style="width: {fields_filled/total_fields*100}%; height: 100%; background: linear-gradient(90deg, #2F855A, #48BB78); border-radius: 4px;"></div>
         </div>
     </div>
     ''', unsafe_allow_html=True)
@@ -1784,34 +1696,34 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     # TABLEAU STANDARDISÉ ÉDITABLE
     # ========================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown('<h4>📘 Base de données standardisée</h4>', unsafe_allow_html=True)
+        st.markdown('<div class="main-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">📘 DONNÉES STANDARDISÉES</div>', unsafe_allow_html=True)
         
         # Instructions
         st.markdown("""
-        <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
-            <small>💡 <strong>Mode édition activé :</strong> Vous pouvez modifier les données, ajouter de nouvelles lignes (+), ou supprimer des lignes existantes. Les changements seront sauvegardés automatiquement.</small>
+        <div class="info-box" style="margin-bottom: 1.5rem;">
+            <small>💡 <strong>MODE ÉDITION ACTIVÉ :</strong> Vous pouvez modifier les données, ajouter de nouvelles lignes (+), ou supprimer des lignes existantes. Les changements seront sauvegardés automatiquement.</small>
         </div>
         """, unsafe_allow_html=True)
         
-        # Éditeur de données avec possibilité d'ajouter des lignes
+        # Éditeur de données
         edited_df = st.data_editor(
             st.session_state.edited_standardized_df,
             num_rows="dynamic",
             column_config={
                 "Article": st.column_config.TextColumn(
-                    "Produit",
+                    "PRODUIT",
                     width="large",
                     help="Nom standardisé du produit"
                 ),
                 "Quantité": st.column_config.NumberColumn(
-                    "Quantité",
+                    "QUANTITÉ",
                     min_value=0,
                     help="Quantité commandée",
                     format="%d"
                 ),
                 "standardisé": st.column_config.CheckboxColumn(
-                    "Auto",
+                    "AUTO",
                     help="Standardisé automatiquement par l'IA"
                 )
             },
@@ -1822,7 +1734,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Mettre à jour le dataframe édité
         st.session_state.edited_standardized_df = edited_df
         
-        # Afficher les statistiques avec style tech
+        # Statistiques
         total_items = len(edited_df)
         total_qty = edited_df["Quantité"].sum() if not edited_df.empty else 0
         
@@ -1830,9 +1742,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         with col_stat1:
             st.markdown(
                 f'''
-                <div style="padding: 15px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border-radius: 14px; text-align: center; border: 1px solid rgba(59, 130, 246, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['tech_blue']};">{total_items}</div>
-                    <div style="font-size: 0.85rem; color: #64748b; margin-top: 5px;">Articles</div>
+                <div style="padding: 1.2rem; background: {PALETTE['card_bg']}; border-radius: 12px; text-align: center; border: 2px solid {PALETTE['border']};">
+                    <div style="font-size: 2rem; font-weight: 800; color: {PALETTE['primary']};">{total_items}</div>
+                    <div style="font-size: 0.9rem; color: #000000; margin-top: 0.5rem; font-weight: 600;">ARTICLES</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
@@ -1840,9 +1752,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         with col_stat2:
             st.markdown(
                 f'''
-                <div style="padding: 15px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.1) 100%); border-radius: 14px; text-align: center; border: 1px solid rgba(16, 185, 129, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['success']};">{int(total_qty)}</div>
-                    <div style="font-size: 0.85rem; color: #64748b; margin-top: 5px;">Unités totales</div>
+                <div style="padding: 1.2rem; background: {PALETTE['card_bg']}; border-radius: 12px; text-align: center; border: 2px solid {PALETTE['border']};">
+                    <div style="font-size: 2rem; font-weight: 800; color: {PALETTE['success']};">{int(total_qty)}</div>
+                    <div style="font-size: 0.9rem; color: #000000; margin-top: 0.5rem; font-weight: 600;">UNITÉS</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
@@ -1851,9 +1763,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             auto_standardized = edited_df["standardisé"].sum() if "standardisé" in edited_df.columns else 0
             st.markdown(
                 f'''
-                <div style="padding: 15px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.1) 100%); border-radius: 14px; text-align: center; border: 1px solid rgba(245, 158, 11, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['warning']};">{int(auto_standardized)}</div>
-                    <div style="font-size: 0.85rem; color: #64748b; margin-top: 5px;">Auto-standardisés</div>
+                <div style="padding: 1.2rem; background: {PALETTE['card_bg']}; border-radius: 12px; text-align: center; border: 2px solid {PALETTE['border']};">
+                    <div style="font-size: 2rem; font-weight: 800; color: {PALETTE['tech_blue']};">{int(auto_standardized)}</div>
+                    <div style="font-size: 0.9rem; color: #000000; margin-top: 0.5rem; font-weight: 600;">AUTO-STANDARDISÉS</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
@@ -1862,57 +1774,42 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # BOUTON D'EXPORT PAR DÉFAUT
+    # EXPORT VERS GOOGLE SHEETS
     # ========================================================
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">🚀 EXPORT VERS GOOGLE SHEETS</div>', unsafe_allow_html=True)
     
-    # Informations sur l'export
+    # Informations
     st.markdown("""
     <div class="info-box">
-        <strong>🌐 Destination :</strong> Google Sheets (Cloud)<br>
-        <strong>🔒 Sécurité :</strong> Chiffrement AES-256<br>
-        <strong>⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong>🔄 Vérification :</strong> Détection automatique des doublons
+        <strong>🌐 DESTINATION :</strong> Google Sheets (Cloud)<br>
+        <strong>🔒 SÉCURITÉ :</strong> Chiffrement AES-256<br>
+        <strong>⚡ VITESSE :</strong> Synchronisation instantanée<br>
+        <strong>🔄 VÉRIFICATION :</strong> Détection automatique des doublons
     </div>
     """, unsafe_allow_html=True)
     
-    # Bouton d'export avec style tech
-    col_btn, col_info = st.columns([2, 1])
-    
-    with col_btn:
-        if st.button("🚀 Synchroniser avec Google Sheets", 
-                    use_container_width=True, 
-                    type="primary",
-                    key="export_button",
-                    help="Cliquez pour exporter les données vers le cloud"):
-            
-            st.session_state.export_triggered = True
-            st.rerun()
-    
-    with col_info:
-        st.markdown("""
-        <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
-            <div style="font-size: 1.5rem;">⚡</div>
-            <div style="font-size: 0.8rem; color: #64748b;">Export instantané</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # Bouton d'export
+    if st.button("🚀 SYNCHRONISER AVEC GOOGLE SHEETS", 
+                use_container_width=True, 
+                type="primary",
+                key="export_button",
+                help="Exporter les données vers Google Sheets"):
+        
+        st.session_state.export_triggered = True
+        st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
+    # VÉRIFICATION DES DOUBLONS
     # ========================================================
     if st.session_state.export_triggered and st.session_state.export_status is None:
-        with st.spinner("🔍 Analyse des doublons en cours..."):
-            # Normaliser le type de document
+        with st.spinner("🔍 Vérification des doublons en cours..."):
             normalized_doc_type = normalize_document_type(doc_type)
-            
-            # Obtenir la feuille Google Sheets
             ws = get_worksheet(normalized_doc_type)
             
             if ws:
-                # Vérifier les doublons
                 duplicate_found, duplicates = check_for_duplicates(
                     normalized_doc_type,
                     st.session_state.data_for_sheets,
@@ -1929,79 +1826,51 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     st.session_state.export_status = "duplicates_found"
                     st.rerun()
             else:
-                st.error("❌ Connexion cloud échouée - Vérifiez votre connexion")
+                st.error("❌ Connexion échouée - Vérifiez votre connexion")
                 st.session_state.export_status = "error"
     
     # ========================================================
-    # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
+    # GESTION DES DOUBLONS
     # ========================================================
     if st.session_state.export_status == "duplicates_found":
-        st.markdown('<div class="duplicate-box fade-in">', unsafe_allow_html=True)
+        st.markdown('<div class="main-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">⚠️ DOUBLON DÉTECTÉ</div>', unsafe_allow_html=True)
         
-        # En-tête avec icône
-        st.markdown(f'''
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-            <div style="font-size: 2rem;">⚠️</div>
-            <div>
-                <h3 style="margin: 0; color: #92400E;">ALERTE : DOUBLON DÉTECTÉ</h3>
-                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 0.9rem;">Document similaire existant dans la base cloud</p>
-            </div>
+        st.markdown(f"""
+        <div class="warning-box">
+            <strong>ALERTE : DOCUMENT SIMILAIRE EXISTANT</strong><br><br>
+            <strong>Type :</strong> {doc_type}<br>
+            <strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}<br>
+            <strong>Document :</strong> {st.session_state.data_for_sheets.get('numero_facture', st.session_state.data_for_sheets.get('numero', 'Non détecté'))}<br>
+            <strong>Doublons trouvés :</strong> {len(st.session_state.duplicate_rows)}
         </div>
-        ''', unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         
-        # Détails du document
-        if "FACTURE" in doc_type.upper():
-            st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
-                    <div><strong>Type :</strong> {doc_type}</div>
-                    <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
-                    <div><strong>N° Facture :</strong> {st.session_state.data_for_sheets.get('numero_facture', 'Non détecté')}</div>
-                    <div><strong>Doublons :</strong> {len(st.session_state.duplicate_rows)} trouvé(s)</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
-                    <div><strong>Type :</strong> {doc_type}</div>
-                    <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
-                    <div><strong>N° BDC :</strong> {st.session_state.data_for_sheets.get('numero', 'Non détecté')}</div>
-                    <div><strong>Doublons :</strong> {len(st.session_state.duplicate_rows)} trouvé(s)</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown("**SÉLECTIONNEZ UNE ACTION :**")
         
-        st.markdown("**Sélectionnez une action :**")
-        
-        # Boutons d'action avec style tech
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("🔄 Remplacer", 
+            if st.button("🔄 REMPLACER", 
                         key="overwrite_duplicate", 
                         use_container_width=True, 
-                        type="primary",
-                        help="Remplace les documents existants par les nouvelles données"):
+                        type="primary"):
                 st.session_state.duplicate_action = "overwrite"
                 st.session_state.export_status = "ready_to_export"
                 st.rerun()
         
         with col2:
-            if st.button("➕ Nouvelle entrée", 
+            if st.button("➕ NOUVELLE ENTRÉE", 
                         key="add_new_duplicate", 
-                        use_container_width=True,
-                        help="Ajoute comme nouvelle entrée sans supprimer l'existant"):
+                        use_container_width=True):
                 st.session_state.duplicate_action = "add_new"
                 st.session_state.export_status = "ready_to_export"
                 st.rerun()
         
         with col3:
-            if st.button("❌ Annuler", 
+            if st.button("❌ ANNULER", 
                         key="skip_duplicate", 
-                        use_container_width=True,
-                        help="Annule l'export et conserve les données existantes"):
+                        use_container_width=True):
                 st.session_state.duplicate_action = "skip"
                 st.session_state.export_status = "ready_to_export"
                 st.rerun()
@@ -2009,13 +1878,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # EXPORT EFFECTIF DES DONNÉES
+    # EXPORT EFFECTIF
     # ========================================================
     if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
         if st.session_state.export_status == "no_duplicates":
             st.session_state.duplicate_action = "add_new"
         
-        # Préparer le dataframe pour l'export
         export_df = st.session_state.edited_standardized_df.copy()
         
         try:
@@ -2029,12 +1897,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             
             if success:
                 st.session_state.export_status = "completed"
-                # Afficher un message de succès stylé
                 st.markdown("""
-                <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white; border-radius: 18px; text-align: center; margin: 20px 0;">
-                    <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
-                    <h3 style="margin: 0 0 10px 0; color: white;">Synchronisation réussie !</h3>
-                    <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
+                <div class="success-box" style="margin-top: 1.5rem;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✅</div>
+                        <h3 style="margin: 0 0 0.5rem 0; color: #000000;">SYNCHRONISATION RÉUSSIE !</h3>
+                        <p style="margin: 0; color: #2D3748;">Les données ont été exportées avec succès vers Google Sheets.</p>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
             else:
@@ -2046,23 +1915,21 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.session_state.export_status = "error"
     
     # ========================================================
-    # BOUTONS DE NAVIGATION
+    # NAVIGATION
     # ============================================================
     if st.session_state.document_scanned:
         st.markdown("---")
         
-        # Section de navigation avec style tech
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>🧭 Navigation</h4>', unsafe_allow_html=True)
+        st.markdown('<div class="main-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">🧭 NAVIGATION</div>', unsafe_allow_html=True)
         
         col_nav1, col_nav2 = st.columns(2)
         
         with col_nav1:
-            if st.button("📄 Nouveau document", 
+            if st.button("📄 NOUVEAU DOCUMENT", 
                         use_container_width=True, 
                         type="secondary",
-                        key="new_doc_main_nav",
-                        help="Scanner un nouveau document"):
+                        key="new_doc_main_nav"):
                 st.session_state.uploaded_file = None
                 st.session_state.uploaded_image = None
                 st.session_state.ocr_result = None
@@ -2078,11 +1945,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.rerun()
         
         with col_nav2:
-            if st.button("🔄 Réanalyser", 
+            if st.button("🔄 RÉANALYSER", 
                         use_container_width=True, 
                         type="secondary",
-                        key="restart_main_nav",
-                        help="Recommencer l'analyse du document actuel"):
+                        key="restart_main_nav"):
                 st.session_state.uploaded_file = None
                 st.session_state.uploaded_image = None
                 st.session_state.ocr_result = None
@@ -2100,58 +1966,66 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# BOUTON DE DÉCONNEXION (toujours visible)
+# BOUTON DE DÉCONNEXION
 # ============================================================
 st.markdown("---")
-if st.button("🔒 Déconnexion sécurisée", 
+if st.button("🔒 DÉCONNEXION SÉCURISÉE", 
             use_container_width=True, 
             type="secondary",
-            key="logout_button_final",
-            help="Fermer la session en toute sécurité"):
+            key="logout_button_final"):
     logout()
 
 # ============================================================
-# FOOTER - SOLUTION STREAMLIT NATIVE
+# FOOTER PROFESSIONNEL
 # ============================================================
-st.markdown("---")
+st.markdown('<div class="main-footer">', unsafe_allow_html=True)
 
-# Créer un conteneur stylé
-with st.container():
-    # Espacement
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    
-    # Première ligne : Icônes
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("<center>🤖</center>", unsafe_allow_html=True)
-        st.markdown("<center><small style='color: #64748b;'>AI Vision</small></center>", unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("<center>⚡</center>", unsafe_allow_html=True)
-        st.markdown("<center><small style='color: #64748b;'>Fast Processing</small></center>", unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("<center>🔒</center>", unsafe_allow_html=True)
-        st.markdown("<center><small style='color: #64748b;'>Secure Cloud</small></center>", unsafe_allow_html=True)
-    
-    # Deuxième ligne : Titre
-    st.markdown(f"""
-    <center style='margin: 15px 0;'>
-        <span style='font-weight: 700; color: {PALETTE["primary_dark"]};'>{BRAND_TITLE}</span>
-        <span style='color: #64748b;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
-    </center>
-    """, unsafe_allow_html=True)
-    
-    # Troisième ligne : Statut
-    st.markdown(f"""
-    <center style='font-size: 0.8rem; color: #94a3b8;'>
-        <span style='color: #10B981;'>●</span> 
-        Système actif • Session : 
-        <strong>{st.session_state.username}</strong>
-        • {datetime.now().strftime("%H:%M:%S")}
-    </center>
-    """, unsafe_allow_html=True)
-    
-    # Espacement final
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+# Fonctionnalités
+st.markdown('<div class="footer-features">', unsafe_allow_html=True)
+
+st.markdown("""
+<div class="feature-item">
+    <div class="feature-icon">🤖</div>
+    <div class="feature-text">Reconnaissance IA</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="feature-item">
+    <div class="feature-icon">⚡</div>
+    <div class="feature-text">Traitement Rapide</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="feature-item">
+    <div class="feature-icon">🔒</div>
+    <div class="feature-text">Sécurité Maximale</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="feature-item">
+    <div class="feature-icon">☁️</div>
+    <div class="feature-text">Cloud Sync</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Copyright
+st.markdown(f'''
+<div class="footer-copyright">
+    {BRAND_TITLE} • Système IA V4.0 • © {datetime.now().strftime("%Y")}
+</div>
+''', unsafe_allow_html=True)
+
+# Statut
+st.markdown(f'''
+<div class="footer-status">
+    <span style="width: 10px; height: 10px; background: #2F855A; border-radius: 50%; display: inline-block;"></span>
+    Système actif • Session : <strong>{st.session_state.username}</strong> • {datetime.now().strftime("%H:%M:%S")}
+</div>
+''', unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
