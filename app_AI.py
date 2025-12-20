@@ -577,9 +577,9 @@ def openai_vision_ocr(image_bytes: bytes, document_type: str = None) -> Dict:
             - "CONS CHAN FOUI" → "Consigne Chan Foui"
             """
         
-        # Appel à l'API OpenAI Vision
+        # Appel à l'API OpenAI Vision - CORRECTION ICI: Utilisation de gpt-4o au lieu de gpt-4-vision-preview
         response = client.chat.completions.create(
-            model="gpt-4-vision-preview",
+            model="gpt-4o",  # CORRIGÉ: gpt-4o remplace gpt-4-vision-preview
             messages=[
                 {
                     "role": "user",
