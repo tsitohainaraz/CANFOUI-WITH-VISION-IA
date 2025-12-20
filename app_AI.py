@@ -661,31 +661,63 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
         return None
 
 def standardize_product_name(product_name: str) -> str:
-    """Standardise les noms de produits"""
-    name = product_name.upper()
+    """Standardise les noms de produits en utilisant le tableau de données standardisées"""
+    # Tableau de correspondance pour les produits standardisés
+    STANDARD_PRODUCTS = {
+        "COTE DE FIANAR": "Côte de Fianar",
+        "COTE FIANAR": "Côte de Fianar",
+        "FIANAR": "Côte de Fianar",
+        "CÔTE DE FIANAR": "Côte de Fianar",
+        "CÔTE FIANAR": "Côte de Fianar",
+        "COTE DE FIANAR ROUGE": "Côte de Fianar Rouge 75cl",
+        "COTE DE FIANAR BLANC": "Côte de Fianar Blanc 75cl",
+        "COTE DE FIANAR ROSÉ": "Côte de Fianar Rosé 75cl",
+        "COTE DE FIANAR ROSÉ": "Côte de Fianar Rosé 75cl",
+        "COTE DE FIANAR GRIS": "Côte de Fianar Gris 75cl",
+        "MAROPARASY": "Maroparasy",
+        "MAROPARASY ROUGE": "Maroparasy Rouge 75cl",
+        "MAROPARASY BLANC": "Maroparasy Blanc 75cl",
+        "CONS CHAN FOUI": "Consigne Chan Foui 75cl",
+        "CONSIGNE CHAN FOUI": "Consigne Chan Foui 75cl",
+        "CHAN FOUI": "Consigne Chan Foui 75cl",
+        "CONSIGNE": "Consigne Chan Foui 75cl"
+    }
     
-    if "COTE" in name and "FIANAR" in name:
-        if "ROUGE" in name:
-            return "Côte de Fianar Rouge 75cl"
-        elif "BLANC" in name:
-            return "Côte de Fianar Blanc 75cl"
-        elif "ROSE" in name or "ROSÉ" in name:
-            return "Côte de Fianar Rosé 75cl"
-        elif "GRIS" in name:
-            return "Côte de Fianar Gris 75cl"
-        else:
-            return "Côte de Fianar Rouge 75cl"
-    elif "MAROPARASY" in name:
-        if "BLANC" in name:
-            return "Maroparasy Blanc 75cl"
-        elif "ROUGE" in name:
-            return "Maroparasy Rouge 75cl"
-        else:
-            return "Maroparasy Rouge 75cl"
-    elif "CONS" in name and ("CHAN" in name or "FOUI" in name):
-        return "Consigne Chan Foui 75cl"
-    else:
-        return product_name.title()
+    name = product_name.upper().strip()
+    
+    # Chercher une correspondance exacte d'abord
+    for key, value in STANDARD_PRODUCTS.items():
+        if key == name:
+            return value
+    
+    # Chercher une correspondance partielle
+    for key, value in STANDARD_PRODUCTS.items():
+        if key in name:
+            # Si c'est un produit Côte de Fianar, déterminer le type
+            if "COTE" in key and "FIANAR" in key:
+                if "ROUGE" in name:
+                    return "Côte de Fianar Rouge 75cl"
+                elif "BLANC" in name:
+                    return "Côte de Fianar Blanc 75cl"
+                elif "ROSE" in name or "ROSÉ" in name:
+                    return "Côte de Fianar Rosé 75cl"
+                elif "GRIS" in name:
+                    return "Côte de Fianar Gris 75cl"
+                else:
+                    return "Côte de Fianar Rouge 75cl"
+            elif "MAROPARASY" in key:
+                if "BLANC" in name:
+                    return "Maroparasy Blanc 75cl"
+                elif "ROUGE" in name:
+                    return "Maroparasy Rouge 75cl"
+                else:
+                    return "Maroparasy Rouge 75cl"
+            elif "CONS" in key or "CHAN" in key or "FOUI" in key:
+                return "Consigne Chan Foui 75cl"
+            return value
+    
+    # Si aucune correspondance, retourner le nom original mais en title case
+    return product_name.title()
 
 def clean_text(text: str) -> str:
     """Nettoie le texte"""
@@ -778,7 +810,10 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = 
             if use_raw:
                 article = str(row.get("designation_brute", "")).strip()
             else:
+                # MODIFICATION: Utiliser la colonne designation_standard
                 article = str(row.get("designation_standard", "")).strip()
+                if not article:  # Fallback si la colonne n'existe pas
+                    article = str(row.get("designation_brute", "")).strip()
             
             quantite = format_quantity(row.get("quantite", ""))
             
@@ -816,7 +851,10 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame, use_raw: bool = Fals
             if use_raw:
                 article = str(row.get("designation_brute", "")).strip()
             else:
+                # MODIFICATION: Utiliser la colonne designation_standard
                 article = str(row.get("designation_standard", "")).strip()
+                if not article:  # Fallback si la colonne n'existe pas
+                    article = str(row.get("designation_brute", "")).strip()
             
             quantite = format_quantity(row.get("quantite", ""))
             
@@ -1208,6 +1246,15 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
+# APERÇU DU DOCUMENT (TOUJOURS VISIBLE)
+# ============================================================
+if st.session_state.uploaded_image:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<h4>👁️ Aperçu du document</h4>', unsafe_allow_html=True)
+    st.image(st.session_state.uploaded_image, use_column_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================================
 # TRAITEMENT AUTOMATIQUE DE L'IMAGE
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
@@ -1220,12 +1267,6 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.duplicate_check_done = False
     st.session_state.duplicate_found = False
     st.session_state.duplicate_action = None
-    
-    # Affichage de l'aperçu
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<h4>👁️ Aperçu du document</h4>', unsafe_allow_html=True)
-    st.image(st.session_state.uploaded_image, use_column_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
     
     # Barre de progression
     progress_container = st.empty()
@@ -1273,7 +1314,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
                     })
                 st.session_state.raw_data_df = pd.DataFrame(raw_data)
                 
-                # Données standardisées
+                # Données standardisées - AMÉLIORATION: utiliser standardize_product_name
                 std_data = []
                 for article in result["articles"]:
                     raw_name = article.get("article", "")
@@ -1500,7 +1541,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     
     # ========================================================
     # EXPORT VERS GOOGLE SHEETS (DEUX BOUTONS)
-    # ========================================================
+    # ============================================================
     if (st.session_state.duplicate_check_done and not st.session_state.duplicate_found) or \
        (st.session_state.duplicate_check_done and st.session_state.duplicate_action):
         
@@ -1541,9 +1582,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                         type="primary", 
                         key="export_standardized_data_main"):
                 try:
-                    # Préparer le dataframe pour l'export standardisé
+                    # MODIFICATION: Utiliser directement la colonne designation_standard
                     export_std_df = st.session_state.standardized_data_df[["designation_standard", "quantite"]].copy()
-                    export_std_df.columns = ["designation_brute", "quantite"]
+                    # Ne pas renommer, garder "designation_standard" pour la fonction prepare_rows_for_sheet
                     
                     success, message = save_to_google_sheets(
                         doc_type,
@@ -1551,7 +1592,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                         export_std_df,
                         duplicate_action=action,
                         duplicate_rows=st.session_state.duplicate_rows if action == "overwrite" else None,
-                        use_raw=False
+                        use_raw=False  # Utiliser designation_standard
                     )
                     
                     if success:
@@ -1569,45 +1610,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         </div>
         """, unsafe_allow_html=True)
         
-        # Options après enregistrement
-        st.markdown("---")
-        col_reset1, col_reset2 = st.columns(2)
-        
-        with col_reset1:
-            if st.button("📄 Scanner un nouveau document", 
-                        use_container_width=True, 
-                        type="secondary",
-                        key="new_doc_after_export"):
-                st.session_state.uploaded_file = None
-                st.session_state.uploaded_image = None
-                st.session_state.ocr_result = None
-                st.session_state.show_results = False
-                st.session_state.detected_document_type = None
-                st.session_state.duplicate_check_done = False
-                st.session_state.duplicate_found = False
-                st.session_state.duplicate_action = None
-                st.rerun()
-        
-        with col_reset2:
-            if st.button("🔄 Recommencer l'analyse", 
-                        use_container_width=True, 
-                        type="secondary",
-                        key="restart_after_export"):
-                st.session_state.uploaded_file = None
-                st.session_state.uploaded_image = None
-                st.session_state.ocr_result = None
-                st.session_state.show_results = False
-                st.session_state.detected_document_type = None
-                st.session_state.duplicate_check_done = False
-                st.session_state.duplicate_found = False
-                st.session_state.duplicate_action = None
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        # SUPPRESSION: Retirer les boutons en double de cette section
+        st.markdown("</div>", unsafe_allow_html=True)
     
     # ========================================================
-    # BOUTONS DE NAVIGATION
-    # ========================================================
+    # BOUTONS UNIQUES DE NAVIGATION
+    # ============================================================
     st.markdown("---")
     col_nav1, col_nav2 = st.columns([1, 1])
     
@@ -1663,4 +1671,3 @@ st.markdown(f"""
     </p>
 </div>
 """, unsafe_allow_html=True)
-
