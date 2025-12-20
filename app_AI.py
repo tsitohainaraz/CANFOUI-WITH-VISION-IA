@@ -15,94 +15,60 @@ st.set_page_config(
 )
 
 # ============================================================
-# CSS — DESIGN INSPIRÉ DU LOGO CHAN FOUI & FILS
+# CSS — DESIGN CHAN FOUI & FILS + BOUTON UPLOAD
 # ============================================================
 
 st.markdown("""
 <style>
-/* Fond global */
 .stApp {
     background-color: #F5F5F3;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #1A1A1A;
+    font-family: Inter, system-ui, sans-serif;
 }
 
 /* Carte générique */
 .card {
     background: #FFFFFF;
-    border-radius: 20px;
+    border-radius: 18px;
     padding: 2.2rem;
     margin-bottom: 2rem;
-    box-shadow: 0 6px 22px rgba(39, 65, 74, 0.10);
-    border: 1px solid #D1D5DB;
+    box-shadow: 0 6px 22px rgba(39, 65, 74, 0.12);
 }
 
 /* Header */
 .header {
     text-align: center;
-    padding: 2.5rem 2rem;
 }
 
 .logo {
-    height: 110px;
+    height: 100px;
     margin-bottom: 1rem;
 }
 
-.title {
-    font-size: 2.6rem;
-    font-weight: 800;
-    letter-spacing: 1px;
-    color: #1A1A1A;
-}
-
-.subtitle {
-    font-size: 1.1rem;
-    color: #333333;
-    margin-top: 0.3rem;
-}
-
-/* Upload box */
-.upload-box {
-    border: 3px dashed #2C5F73;
-    border-radius: 20px;
-    padding: 3rem;
-    text-align: center;
-    background: #FFFFFF;
-    transition: all 0.25s ease;
-}
-
-.upload-box:hover {
-    background: #F9FAFB;
-    border-color: #27414A;
-}
-
-.upload-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #27414A;
-}
-
-.upload-sub {
-    color: #333333;
-    font-size: 0.95rem;
-}
-
-/* Progress container */
-.progress-card {
-    background: #27414A;
+/* Bouton upload custom */
+.upload-btn {
+    background-color: #27414A;
     color: white;
-    border-radius: 20px;
-    padding: 2.5rem;
-    text-align: center;
-    box-shadow: 0 6px 24px rgba(39, 65, 74, 0.25);
+    border-radius: 12px;
+    padding: 16px 26px;
+    font-size: 18px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    display: inline-block;
+    transition: all 0.2s ease;
 }
 
-/* Cache UI file_uploader */
+.upload-btn:hover {
+    background-color: #1F2F35;
+    transform: translateY(-1px);
+}
+
+/* Cache UI uploader Streamlit */
 [data-testid="stFileUploader"] section {
     display: none;
 }
 
-/* Barre de progression */
+/* Progress bar */
 .stProgress > div > div > div {
     height: 22px;
     border-radius: 10px;
@@ -111,67 +77,71 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# HEADER AVEC LOGO
+# HEADER
 # ============================================================
 
 st.markdown('<div class="card header">', unsafe_allow_html=True)
-
 try:
     st.image("CF_LOGOS.png", class_="logo")
 except:
     st.markdown("🍷")
-
-st.markdown('<div class="title">CHAN FOUI & FILS</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Scanner Intelligent • Factures & Bons de Commande</div>', unsafe_allow_html=True)
-
+st.markdown("## **CHAN FOUI & FILS**")
+st.caption("Scanner intelligent • Factures & Bons de Commande")
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# UPLOAD DESIGN
+# BOUTON UPLOAD (FAUX BOUTON, VRAI FILE UPLOADER)
 # ============================================================
 
-st.markdown('<div class="card">', unsafe_allow_html=True)
+st.markdown('<div class="card" style="text-align:center;">', unsafe_allow_html=True)
 
 st.markdown("""
-<div class="upload-box">
-    <div class="upload-title">📤 Importer un document</div>
-    <p class="upload-sub">
-        Facture ou Bon de Commande<br>
-        JPG • JPEG • PNG
-    </p>
-</div>
+<label class="upload-btn" for="file_uploader">
+📤 Importer un document
+</label>
 """, unsafe_allow_html=True)
 
-uploaded = st.file_uploader(
+uploaded_file = st.file_uploader(
     "",
     type=["jpg", "jpeg", "png"],
+    key="file_uploader",
     label_visibility="collapsed"
 )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# SIMULATION D’ANALYSE (DESIGN)
+# TRAITEMENT + PROGRESSION
 # ============================================================
 
-if uploaded:
+if uploaded_file:
+    image_bytes = uploaded_file.read()
+
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.image(Image.open(uploaded), use_container_width=True)
+    st.image(Image.open(BytesIO(image_bytes)), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="progress-card">', unsafe_allow_html=True)
-    st.markdown("### 🤖 Analyse du document en cours…")
-
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("### 🤖 Analyse du document")
     progress = st.progress(0)
-    for i in range(0, 101, 10):
-        time.sleep(0.12)
-        progress.progress(i)
+    status = st.empty()
 
-    st.success("✅ Votre fichier a été analysé avec succès")
+    for p, msg in [
+        (10, "📥 Fichier chargé"),
+        (35, "🧠 OCR & analyse IA"),
+        (65, "📊 Extraction des données"),
+        (85, "📘 Standardisation"),
+        (100, "✅ Analyse terminée avec succès"),
+    ]:
+        time.sleep(0.25)
+        progress.progress(p)
+        status.info(msg)
+
+    st.success("Votre fichier a été analysé avec succès")
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.caption("© CHAN FOUI & FILS — Scanner Pro • Design inspiré du logo")
+st.caption("© CHAN FOUI & FILS — Scanner Pro • UX Bouton")
