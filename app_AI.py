@@ -2111,9 +2111,9 @@ if st.button("🔒 Déconnexion sécurisée",
     logout()
 
 # ============================================================
-# FOOTER TECH
+# FOOTER TECH - Version simplifiée
 # ============================================================
-st.markdown(f"""
+footer_html = f"""
 <div style="text-align: center; color: {PALETTE['text_medium']}; font-size: 0.9rem; padding: 2rem; background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%); border-radius: 20px; margin-top: 3rem; border-top: 1px solid {PALETTE['border']}; box-shadow: 0 -4px 20px rgba(0,0,0,0.03);">
     <div style="display: flex; justify-content: center; gap: 30px; margin-bottom: 15px;">
         <div style="text-align: center;">
@@ -2130,13 +2130,15 @@ st.markdown(f"""
         </div>
     </div>
     
-    <p><strong style="background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['tech_blue']} 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{BRAND_TITLE}</strong> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</p>
+    <p><strong style="background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['tech_blue']} 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{BRAND_TITLE}</strong> • Système IA V3.0 • © {datetime.now().strftime('%Y')}</p>
     
     <div style="margin-top: 15px; font-size: 0.8rem; color: #94a3b8;">
         <div style="display: inline-flex; align-items: center; gap: 5px;">
             <span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;"></span>
-            Système actif • Session : <strong>{st.session_state.username}</strong> • {datetime.now().strftime("%H:%M:%S")}
+            Système actif • Session : <strong>{st.session_state.username}</strong> • {datetime.now().strftime('%H:%M:%S')}
         </div>
     </div>
 </div>
-""", unsafe_allow_html=True)
+"""
+
+st.markdown(footer_html, unsafe_allow_html=True)
