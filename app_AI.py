@@ -191,12 +191,23 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
+            color: #000000 !important;  /* Texte en noir */
         }
         
         .stTextInput > div > div > input:focus {
             border-color: #27414A;
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
             outline: none;
+            color: #000000 !important;  /* Texte en noir */
+        }
+        
+        /* Correction pour garantir la visibilité du texte */
+        .stSelectbox > div > div > div > div {
+            color: #000000 !important;
+        }
+        
+        .stSelectbox > div > div > input {
+            color: #000000 !important;
         }
         
         .stButton > button {
@@ -317,18 +328,7 @@ if not check_authentication():
         else:
             st.warning("⚠️ Veuillez remplir tous les champs")
     
-    # Afficher les utilisateurs autorisés de manière stylée
-    st.markdown("""
-    <div style="margin-top: 25px; text-align: center;">
-        <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 10px;">👥 Personnels autorisés :</p>
-        <div>
-            <span class="user-badge">Pathou M.</span>
-            <span class="user-badge">Elodie R.</span>
-            <span class="user-badge">Laetitia C.</span>
-            <span class="user-badge">Admin Cf.</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # NOTE: SUPPRIMÉ - Liste des personnels autorisés sur l'écran de login (point 1)
     
     st.markdown("""
     <div class="security-warning">
@@ -632,6 +632,12 @@ st.markdown(f"""
         animation: shine 2s infinite;
     }}
     
+    /* Correction du point 3 - Texte en noir pour l'initialisation */
+    .progress-text-black {{
+        color: #000000 !important;
+        font-weight: 600;
+    }}
+    
     .image-preview-container {{
         background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
         border-radius: 20px;
@@ -771,16 +777,18 @@ st.markdown(f"""
         animation: fadeIn 0.5s ease-out;
     }}
     
-    /* Style pour les champs de formulaire */
+    /* Style pour les champs de formulaire - Correction point 2 */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
-    .stSelectbox > div > div {{
+    .stSelectbox > div > div,
+    .stSelectbox > div > div > input {{
         border: 1.5px solid {PALETTE['border']};
         border-radius: 12px;
         padding: 12px 16px;
         font-size: 15px;
         transition: all 0.2s ease;
         background: white;
+        color: #000000 !important;  /* Texte en noir pour tous les champs */
     }}
     
     .stTextInput > div > div > input:focus,
@@ -789,6 +797,12 @@ st.markdown(f"""
         border-color: {PALETTE['tech_blue']};
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         outline: none;
+        color: #000000 !important;
+    }}
+    
+    /* Correction spécifique pour le selectbox */
+    .stSelectbox > div > div > div > div {{
+        color: #000000 !important;
     }}
     
     /* Style pour les dataframes */
@@ -1555,7 +1569,8 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
         st.markdown('<h3 style="color: white;">Initialisation du système IA</h3>', unsafe_allow_html=True)
-        st.markdown('<p style="color: rgba(255,255,255,0.9); font-size: 0.95rem;">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
+        # Correction point 3 - Texte en noir pour "Analyse en cours avec GPT-4 Vision..."
+        st.markdown('<p class="progress-text-black">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
         
         # Barre de progression animée
         progress_bar = st.progress(0)
@@ -1822,11 +1837,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Mettre à jour le dataframe édité
         st.session_state.edited_standardized_df = edited_df
         
-        # Afficher les statistiques avec style tech
+        # Afficher les statistiques avec style tech - CORRECTION point 4
         total_items = len(edited_df)
         total_qty = edited_df["Quantité"].sum() if not edited_df.empty else 0
+        auto_standardized = edited_df["standardisé"].sum() if "standardisé" in edited_df.columns else 0
         
-        col_stat1, col_stat2, col_stat3 = st.columns(3)
+        col_stat1, col_stat2 = st.columns(2)  # Changé de 3 à 2 colonnes
         with col_stat1:
             st.markdown(
                 f'''
@@ -1838,17 +1854,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 unsafe_allow_html=True
             )
         with col_stat2:
-            st.markdown(
-                f'''
-                <div style="padding: 15px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.1) 100%); border-radius: 14px; text-align: center; border: 1px solid rgba(16, 185, 129, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['success']};">{int(total_qty)}</div>
-                    <div style="font-size: 0.85rem; color: #64748b; margin-top: 5px;">Unités totales</div>
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-        with col_stat3:
-            auto_standardized = edited_df["standardisé"].sum() if "standardisé" in edited_df.columns else 0
             st.markdown(
                 f'''
                 <div style="padding: 15px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.1) 100%); border-radius: 14px; text-align: center; border: 1px solid rgba(245, 158, 11, 0.2);">
@@ -2155,4 +2160,3 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
