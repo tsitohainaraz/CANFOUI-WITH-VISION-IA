@@ -157,7 +157,7 @@ if not check_authentication():
         }
         
         .login-subtitle {
-            color: #64748b;
+            color: #1E293B !important;  /* Texte sombre */
             margin-bottom: 32px;
             font-size: 1rem;
             font-weight: 400;
@@ -177,11 +177,20 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
+            color: #1E293B !important;  /* Texte sombre */
         }
         
         .stSelectbox > div > div:hover {
             border-color: #27414A;
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
+        }
+        
+        /* FORCER LE TEXTE EN NOIR POUR TOUS LES CHAMPS */
+        .stSelectbox input,
+        .stSelectbox div,
+        .stSelectbox span {
+            color: #1E293B !important;
+            fill: #1E293B !important;
         }
         
         .stTextInput > div > div > input {
@@ -191,28 +200,30 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
-            color: #000000 !important;  /* Texte en noir */
+            color: #1E293B !important;  /* Texte sombre */
         }
         
         .stTextInput > div > div > input:focus {
             border-color: #27414A;
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
             outline: none;
-            color: #000000 !important;  /* Texte en noir */
+            color: #1E293B !important;  /* Texte sombre */
         }
         
-        /* Correction pour garantir la visibilité du texte */
-        .stSelectbox > div > div > div > div {
-            color: #000000 !important;
+        /* Correction pour le placeholder */
+        .stTextInput > div > div > input::placeholder {
+            color: #64748b !important;  /* Placeholder en gris */
         }
         
-        .stSelectbox > div > div > input {
-            color: #000000 !important;
+        /* Correction pour les labels */
+        label {
+            color: #1E293B !important;
+            font-weight: 500 !important;
         }
         
         .stButton > button {
             background: linear-gradient(135deg, #27414A 0%, #2C5F73 100%);
-            color: white;
+            color: white !important;
             font-weight: 600;
             border: none;
             padding: 14px 24px;
@@ -253,7 +264,7 @@ if not check_authentication():
             padding: 18px;
             margin-top: 28px;
             font-size: 0.9rem;
-            color: #856404;
+            color: #856404 !important;  /* Texte sombre */
             text-align: left;
             font-family: 'Inter', sans-serif;
             box-shadow: 0 4px 12px rgba(255, 193, 7, 0.1);
@@ -275,16 +286,33 @@ if not check_authentication():
             100% { transform: scale(0.95); opacity: 0.7; }
         }
         
-        .user-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #e8f4f8 0%, #d4eaf7 100%);
-            color: #27414A;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            margin: 5px;
-            border: 1px solid rgba(39, 65, 74, 0.1);
+        /* Styles pour assurer la lisibilité */
+        .text-dark {
+            color: #1E293B !important;
+        }
+        
+        .text-medium {
+            color: #334155 !important;
+        }
+        
+        /* Override pour tous les textes */
+        * {
+            color: #1E293B !important;
+        }
+        
+        /* Exception pour les éléments qui doivent être blancs */
+        .stButton > button,
+        .user-info {
+            color: white !important;
+        }
+        
+        /* Style spécifique pour le dropdown */
+        [data-baseweb="select"] * {
+            color: #1E293B !important;
+        }
+        
+        [data-baseweb="popover"] * {
+            color: #1E293B !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -295,7 +323,7 @@ if not check_authentication():
         st.image("CF_LOGOS.png", width=90, output_format="PNG")
     else:
         st.markdown("""
-        <div style="font-size: 3rem; margin-bottom: 20px;">
+        <div style="font-size: 3rem; margin-bottom: 20px; color: #1E293B !important;">
             🍷
         </div>
         """, unsafe_allow_html=True)
@@ -306,7 +334,50 @@ if not check_authentication():
     # Indicateur de sécurité
     col_status = st.columns(3)
     with col_status[0]:
-        st.markdown('<div style="text-align: center;"><span class="pulse-dot"></span>Serveur actif</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align: center; color: #1E293B !important;"><span class="pulse-dot"></span>Serveur actif</div>', unsafe_allow_html=True)
+    
+    # Injection JavaScript pour forcer les couleurs
+    st.markdown("""
+    <script>
+    // Fonction pour forcer les couleurs sombres
+    function forceDarkText() {
+        // Cibler tous les inputs
+        const inputs = document.querySelectorAll('input, select, textarea, [role="combobox"], [data-baseweb="select"]');
+        inputs.forEach(el => {
+            el.style.color = '#1E293B';
+            el.style.setProperty('color', '#1E293B', 'important');
+            el.style.setProperty('-webkit-text-fill-color', '#1E293B', 'important');
+            
+            // Forcer aussi les enfants
+            const children = el.querySelectorAll('*');
+            children.forEach(child => {
+                child.style.color = '#1E293B';
+                child.style.setProperty('color', '#1E293B', 'important');
+            });
+        });
+        
+        // Cibler tous les textes
+        const textElements = document.querySelectorAll('div, span, p, label, h1, h2, h3, h4, h5, h6');
+        textElements.forEach(el => {
+            const computedColor = window.getComputedStyle(el).color;
+            // Si la couleur est proche du blanc, la changer
+            if (computedColor.includes('255') || computedColor.includes('rgb(255') || computedColor === 'white') {
+                el.style.color = '#1E293B';
+                el.style.setProperty('color', '#1E293B', 'important');
+            }
+        });
+    }
+    
+    // Exécuter immédiatement et régulièrement
+    setTimeout(forceDarkText, 100);
+    setInterval(forceDarkText, 500);
+    
+    // Écouter les changements
+    document.addEventListener('click', forceDarkText);
+    document.addEventListener('input', forceDarkText);
+    document.addEventListener('change', forceDarkText);
+    </script>
+    """, unsafe_allow_html=True)
     
     username = st.selectbox(
         "👤 Identifiant",
@@ -328,11 +399,9 @@ if not check_authentication():
         else:
             st.warning("⚠️ Veuillez remplir tous les champs")
     
-    # NOTE: SUPPRIMÉ - Liste des personnels autorisés sur l'écran de login (point 1)
-    
     st.markdown("""
     <div class="security-warning">
-        <strong style="display: block; margin-bottom: 8px;">🔐 Protocole de sécurité :</strong>
+        <strong style="display: block; margin-bottom: 8px; color: #856404 !important;">🔐 Protocole de sécurité :</strong>
         • Système de reconnaissance biométrique numérique<br>
         • Chiffrement AES-256 pour toutes les données<br>
         • Journalisation complète des activités<br>
@@ -348,7 +417,7 @@ if not check_authentication():
 # ============================================================
 
 # ============================================================
-# THÈME CHAN FOUI & FILS - VERSION TECH
+# THÈME CHAN FOUI & FILS - VERSION TECH AMÉLIORÉE
 # ============================================================
 LOGO_FILENAME = "CF_LOGOS.png"
 BRAND_TITLE = "CHAN FOUI ET FILS"
@@ -360,8 +429,9 @@ PALETTE = {
     "background": "#F5F5F3",
     "card_bg": "#FFFFFF",
     "card_bg_alt": "#F4F6F3",
-    "text_dark": "#1A1A1A",
-    "text_medium": "#333333",
+    "text_dark": "#1A1A1A",        # Couleur de texte principale
+    "text_medium": "#333333",      # Texte secondaire
+    "text_light": "#4B5563",       # Texte tertiaire
     "accent": "#2C5F73",
     "success": "#10B981",
     "warning": "#F59E0B",
@@ -377,15 +447,41 @@ st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400&display=swap');
     
+    /* RÈGLE GLOBALE : AUCUN TEXTE EN BLANC */
+    * {{
+        color: {PALETTE['text_dark']} !important;
+    }}
+    
+    /* Exceptions spécifiques pour les éléments qui DOIVENT être blancs */
+    .stButton > button,
+    .user-info,
+    .document-title,
+    .progress-container h3,
+    .progress-container p:not(.progress-text-dark) {{
+        color: white !important;
+    }}
+    
     .main {{
         background: linear-gradient(135deg, {PALETTE['background']} 0%, #f0f2f5 100%);
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: {PALETTE['text_dark']} !important;
     }}
     
     .stApp {{
         background: linear-gradient(135deg, {PALETTE['background']} 0%, #f0f2f5 100%);
         font-family: 'Inter', sans-serif;
         line-height: 1.6;
+        color: {PALETTE['text_dark']} !important;
+    }}
+    
+    /* Amélioration de la lisibilité */
+    h1, h2, h3, h4, h5, h6 {{
+        color: {PALETTE['text_dark']} !important;
+        font-weight: 700 !important;
+    }}
+    
+    p, span, div:not(.exception) {{
+        color: {PALETTE['text_dark']} !important;
     }}
     
     .header-container {{
@@ -425,7 +521,7 @@ st.markdown(f"""
         top: 20px;
         right: 20px;
         background: linear-gradient(135deg, {PALETTE['accent']} 0%, {PALETTE['tech_blue']} 100%);
-        color: white;
+        color: white !important;
         padding: 10px 20px;
         border-radius: 16px;
         font-size: 0.9rem;
@@ -474,7 +570,7 @@ st.markdown(f"""
     
     .document-title {{
         background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        color: {PALETTE['card_bg']} !important;
+        color: white !important;
         padding: 1.5rem 2.5rem;
         border-radius: 18px;
         font-weight: 700;
@@ -611,7 +707,7 @@ st.markdown(f"""
     
     .progress-container {{
         background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        color: {PALETTE['card_bg']} !important;
+        color: white !important;
         padding: 3rem;
         border-radius: 20px;
         text-align: center;
@@ -632,10 +728,11 @@ st.markdown(f"""
         animation: shine 2s infinite;
     }}
     
-    /* Correction du point 3 - Texte en noir pour l'initialisation */
-    .progress-text-black {{
-        color: #000000 !important;
+    /* Texte en noir dans la barre de progression */
+    .progress-text-dark {{
+        color: {PALETTE['text_dark']} !important;
         font-weight: 600;
+        margin-top: 15px;
     }}
     
     .image-preview-container {{
@@ -718,7 +815,7 @@ st.markdown(f"""
         display: inline-block;
         padding: 6px 14px;
         background: linear-gradient(135deg, {PALETTE['tech_blue']}15 0%, {PALETTE['tech_purple']}15 100%);
-        color: {PALETTE['tech_blue']};
+        color: {PALETTE['tech_blue']} !important;
         border-radius: 12px;
         font-size: 0.85rem;
         font-weight: 500;
@@ -777,18 +874,20 @@ st.markdown(f"""
         animation: fadeIn 0.5s ease-out;
     }}
     
-    /* Style pour les champs de formulaire - Correction point 2 */
+    /* AMÉLIORATION : Style pour les champs de formulaire avec texte sombre */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
     .stSelectbox > div > div,
-    .stSelectbox > div > div > input {{
+    .stSelectbox > div > div > input,
+    .stSelectbox > div > div > div,
+    .stSelectbox > div > div > div > div {{
         border: 1.5px solid {PALETTE['border']};
         border-radius: 12px;
         padding: 12px 16px;
         font-size: 15px;
         transition: all 0.2s ease;
         background: white;
-        color: #000000 !important;  /* Texte en noir pour tous les champs */
+        color: {PALETTE['text_dark']} !important;
     }}
     
     .stTextInput > div > div > input:focus,
@@ -797,12 +896,29 @@ st.markdown(f"""
         border-color: {PALETTE['tech_blue']};
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         outline: none;
-        color: #000000 !important;
+        color: {PALETTE['text_dark']} !important;
     }}
     
-    /* Correction spécifique pour le selectbox */
-    .stSelectbox > div > div > div > div {{
-        color: #000000 !important;
+    /* Placeholder en gris */
+    ::placeholder {{
+        color: {PALETTE['text_light']} !important;
+        opacity: 0.7;
+    }}
+    
+    /* Labels en gras et sombres */
+    label {{
+        color: {PALETTE['text_dark']} !important;
+        font-weight: 600 !important;
+        margin-bottom: 5px;
+        display: block;
+    }}
+    
+    /* Forcer le texte dans les dropdowns */
+    [data-baseweb="select"] *,
+    [data-baseweb="popover"] *,
+    [role="listbox"] *,
+    [role="option"] {{
+        color: {PALETTE['text_dark']} !important;
     }}
     
     /* Style pour les dataframes */
@@ -811,6 +927,55 @@ st.markdown(f"""
         overflow: hidden !important;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
         border: 1px solid {PALETTE['border']} !important;
+    }}
+    
+    /* Amélioration des contrastes pour l'accessibilité */
+    .stAlert {{
+        color: {PALETTE['text_dark']} !important;
+    }}
+    
+    .stSuccess {{
+        background-color: rgba(16, 185, 129, 0.1) !important;
+        color: {PALETTE['text_dark']} !important;
+        border-color: {PALETTE['success']} !important;
+    }}
+    
+    .stError {{
+        background-color: rgba(239, 68, 68, 0.1) !important;
+        color: {PALETTE['text_dark']} !important;
+        border-color: {PALETTE['error']} !important;
+    }}
+    
+    .stWarning {{
+        background-color: rgba(245, 158, 11, 0.1) !important;
+        color: {PALETTE['text_dark']} !important;
+        border-color: {PALETTE['warning']} !important;
+    }}
+    
+    /* Amélioration des badges */
+    .stat-badge {{
+        padding: 15px;
+        border-radius: 14px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 1.8rem;
+        margin-bottom: 5px;
+    }}
+    
+    .stat-label {{
+        font-size: 0.85rem;
+        color: {PALETTE['text_light']} !important;
+        margin-top: 5px;
+    }}
+    
+    /* Animation pour les nouveaux éléments */
+    @keyframes slideIn {{
+        from {{ transform: translateX(-20px); opacity: 0; }}
+        to {{ transform: translateX(0); opacity: 1; }}
+    }}
+    
+    .slide-in {{
+        animation: slideIn 0.3s ease-out;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -1439,9 +1604,9 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         return False, str(e)
 
 # ============================================================
-# HEADER AVEC LOGO - VERSION TECH
+# HEADER AVEC LOGO - VERSION TECH AMÉLIORÉE
 # ============================================================
-st.markdown('<div class="header-container">', unsafe_allow_html=True)
+st.markdown('<div class="header-container slide-in">', unsafe_allow_html=True)
 
 # Badge utilisateur avec style tech
 st.markdown(f'''
@@ -1464,7 +1629,7 @@ if os.path.exists(LOGO_FILENAME):
     st.image(LOGO_FILENAME, width=100)
 else:
     st.markdown("""
-    <div style="font-size: 3.5rem; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));">
+    <div style="font-size: 3.5rem; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); color: #1E293B !important;">
         🍷
     </div>
     """, unsafe_allow_html=True)
@@ -1483,31 +1648,31 @@ st.markdown(f'''
 
 st.markdown(f'''
 <p class="brand-sub">
-    Système intelligent de traitement de documents • Connecté en tant que <strong>{st.session_state.username}</strong>
+    Système intelligent de traitement de documents • Connecté en tant que <strong style="color: {PALETTE['text_dark']} !important;">{st.session_state.username}</strong>
 </p>
 ''', unsafe_allow_html=True)
 
 # Indicateurs de statut
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.markdown('<div style="text-align: center;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: {PALETTE["text_dark"]} !important;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
 with col2:
-    st.markdown('<div style="text-align: center;"><span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;margin-right:8px;"></span><small>Cloud Online</small></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: {PALETTE["text_dark"]} !important;"><span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;margin-right:8px;"></span><small>Cloud Online</small></div>', unsafe_allow_html=True)
 with col3:
-    st.markdown('<div style="text-align: center;"><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:50%;margin-right:8px;"></span><small>Secured</small></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: {PALETTE["text_dark"]} !important;"><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:50%;margin-right:8px;"></span><small>Secured</small></div>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# ZONE DE TÉLÉCHARGEMENT UNIQUE - VERSION TECH
+# ZONE DE TÉLÉCHARGEMENT UNIQUE - VERSION TECH AMÉLIORÉE
 # ============================================================
 st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
 st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True)
 
-st.markdown("""
+st.markdown(f"""
 <div class="info-box">
-    <strong>ℹ️ Système de reconnaissance IA :</strong><br>
+    <strong style="color: {PALETTE['text_dark']} !important;">ℹ️ Système de reconnaissance IA :</strong><br>
     • Détection automatique du type de document<br>
     • Extraction intelligente des données structurées<br>
     • Validation et standardisation en temps réel<br>
@@ -1526,18 +1691,18 @@ uploaded = st.file_uploader(
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Indicateur de compatibilité
-st.markdown("""
-<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: #64748b;">
+st.markdown(f"""
+<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: {PALETTE['text_medium']} !important;">
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem;">📄</div>
+        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">📄</div>
         <div>Factures</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem;">📋</div>
+        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">📋</div>
         <div>Bons de commande</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem;">🏷️</div>
+        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">🏷️</div>
         <div>Étiquettes</div>
     </div>
 </div>
@@ -1568,9 +1733,9 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
-        st.markdown('<h3 style="color: white;">Initialisation du système IA</h3>', unsafe_allow_html=True)
-        # Correction point 3 - Texte en noir pour "Analyse en cours avec GPT-4 Vision..."
-        st.markdown('<p class="progress-text-black">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: white !important;">Initialisation du système IA</h3>', unsafe_allow_html=True)
+        # Texte en noir comme demandé
+        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
         
         # Barre de progression animée
         progress_bar = st.progress(0)
@@ -1662,14 +1827,14 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
         st.image(st.session_state.uploaded_image, use_column_width=True)
     
     with col_info:
-        st.markdown("""
+        st.markdown(f"""
         <div class="info-box" style="height: 100%;">
-            <strong>📊 Métadonnées :</strong><br><br>
+            <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
             • Statut : Analysé par IA<br>
             • Confiance : Élevée<br><br>
-            <small style="color: #64748b;">Document prêt pour traitement</small>
+            <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1686,11 +1851,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
     st.markdown(f'''
     <div style="display: flex; align-items: start; gap: 15px;">
-        <div style="font-size: 2.5rem;">✅</div>
+        <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
-            <strong style="font-size: 1.1rem;">Analyse IA terminée avec succès</strong><br>
-            <span style="color: #475569;">Type détecté : <strong>{doc_type}</strong> | Précision estimée : 98.8%</span><br>
-            <small style="color: #64748b;">Veuillez vérifier les données extraites avant validation</small>
+            <strong style="font-size: 1.1rem; color: {PALETTE['text_dark']} !important;">Analyse IA terminée avec succès</strong><br>
+            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Précision estimée : 98.8%</span><br>
+            <small style="color: {PALETTE['text_light']} !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
     ''', unsafe_allow_html=True)
@@ -1724,19 +1889,19 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Client</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Client</div>', unsafe_allow_html=True)
             client = st.text_input("", value=result.get("client", ""), key="facture_client", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">N° Facture</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">N° Facture</div>', unsafe_allow_html=True)
             numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Bon de commande</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Bon de commande</div>', unsafe_allow_html=True)
             bon_commande = st.text_input("", value=result.get("bon_commande", ""), key="facture_bdc", label_visibility="collapsed")
         
         with col2:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Adresse</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Adresse</div>', unsafe_allow_html=True)
             adresse = st.text_input("", value=result.get("adresse_livraison", ""), key="facture_adresse", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Date</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Date</div>', unsafe_allow_html=True)
             date = st.text_input("", value=result.get("date", ""), key="facture_date", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Mois</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Mois</div>', unsafe_allow_html=True)
             mois = st.text_input("", value=result.get("mois", get_month_from_date(result.get("date", ""))), key="facture_mois", label_visibility="collapsed")
         
         data_for_sheets = {
@@ -1751,15 +1916,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     else:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Client</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Client</div>', unsafe_allow_html=True)
             client = st.text_input("", value=result.get("client", ""), key="bdc_client", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">N° BDC</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">N° BDC</div>', unsafe_allow_html=True)
             numero = st.text_input("", value=result.get("numero", ""), key="bdc_numero", label_visibility="collapsed")
         
         with col2:
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Date</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Date</div>', unsafe_allow_html=True)
             date = st.text_input("", value=result.get("date", ""), key="bdc_date", label_visibility="collapsed")
-            st.markdown('<div style="margin-bottom: 5px; font-weight: 500; color: #475569;">Adresse</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Adresse</div>', unsafe_allow_html=True)
             adresse = st.text_input("", 
                                   value=result.get("adresse_livraison", "SCORE TALATAMATY"), 
                                   key="bdc_adresse", 
@@ -1774,7 +1939,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     
     st.session_state.data_for_sheets = data_for_sheets
     
-    # Indicateur de validation
+    # Indicateur de validation amélioré
     fields_filled = sum([1 for v in data_for_sheets.values() if str(v).strip()])
     total_fields = len(data_for_sheets)
     
@@ -1782,10 +1947,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     <div style="margin-top: 20px; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <strong>Validation des données</strong><br>
-                <small style="color: #64748b;">{fields_filled}/{total_fields} champs remplis</small>
+                <strong style="color: {PALETTE['text_dark']} !important;">Validation des données</strong><br>
+                <small style="color: {PALETTE['text_light']} !important;">{fields_filled}/{total_fields} champs remplis</small>
             </div>
-            <div style="font-size: 1.5rem;">{"✅" if fields_filled == total_fields else "⚠️"}</div>
+            <div style="font-size: 1.5rem; color: {PALETTE['success'] if fields_filled == total_fields else PALETTE['warning']} !important;">{"✅" if fields_filled == total_fields else "⚠️"}</div>
         </div>
         <div style="margin-top: 10px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
             <div style="width: {fields_filled/total_fields*100}%; height: 100%; background: linear-gradient(90deg, #10B981, #34D399); border-radius: 3px;"></div>
@@ -1803,9 +1968,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('<h4>📘 Base de données standardisée</h4>', unsafe_allow_html=True)
         
         # Instructions
-        st.markdown("""
+        st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
-            <small>💡 <strong>Mode édition activé :</strong> Vous pouvez modifier les données, ajouter de nouvelles lignes (+), ou supprimer des lignes existantes. Les changements seront sauvegardés automatiquement.</small>
+            <small style="color: {PALETTE['text_dark']} !important;">💡 <strong>Mode édition activé :</strong> Vous pouvez modifier les données, ajouter de nouvelles lignes (+), ou supprimer des lignes existantes. Les changements seront sauvegardés automatiquement.</small>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1837,18 +2002,17 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Mettre à jour le dataframe édité
         st.session_state.edited_standardized_df = edited_df
         
-        # Afficher les statistiques avec style tech - CORRECTION point 4
+        # Afficher les statistiques avec style tech amélioré - CORRECTION point 4
         total_items = len(edited_df)
-        total_qty = edited_df["Quantité"].sum() if not edited_df.empty else 0
         auto_standardized = edited_df["standardisé"].sum() if "standardisé" in edited_df.columns else 0
         
         col_stat1, col_stat2 = st.columns(2)  # Changé de 3 à 2 colonnes
         with col_stat1:
             st.markdown(
                 f'''
-                <div style="padding: 15px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border-radius: 14px; text-align: center; border: 1px solid rgba(59, 130, 246, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['tech_blue']};">{total_items}</div>
-                    <div style="font-size: 0.85rem; color: #64748b; margin-top: 5px;">Articles</div>
+                <div class="stat-badge" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(59, 130, 246, 0.2);">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['tech_blue']} !important;">{total_items}</div>
+                    <div class="stat-label">Articles</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
@@ -1856,9 +2020,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         with col_stat2:
             st.markdown(
                 f'''
-                <div style="padding: 15px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.1) 100%); border-radius: 14px; text-align: center; border: 1px solid rgba(245, 158, 11, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['warning']};">{int(auto_standardized)}</div>
-                    <div style="font-size: 0.85rem; color: #64748b; margin-top: 5px;">Auto-standardisés</div>
+                <div class="stat-badge" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.1) 100%); border: 1px solid rgba(245, 158, 11, 0.2);">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['warning']} !important;">{int(auto_standardized)}</div>
+                    <div class="stat-label">Auto-standardisés</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
@@ -1873,12 +2037,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
     # Informations sur l'export
-    st.markdown("""
+    st.markdown(f"""
     <div class="info-box">
-        <strong>🌐 Destination :</strong> Google Sheets (Cloud)<br>
-        <strong>🔒 Sécurité :</strong> Chiffrement AES-256<br>
-        <strong>⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong>🔄 Vérification :</strong> Détection automatique des doublons
+        <strong style="color: {PALETTE['text_dark']} !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
+        <strong style="color: {PALETTE['text_dark']} !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
+        <strong style="color: {PALETTE['text_dark']} !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
+        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons
     </div>
     """, unsafe_allow_html=True)
     
@@ -1896,10 +2060,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.rerun()
     
     with col_info:
-        st.markdown("""
+        st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
-            <div style="font-size: 1.5rem;">⚡</div>
-            <div style="font-size: 0.8rem; color: #64748b;">Export instantané</div>
+            <div style="font-size: 1.5rem; color: {PALETTE['tech_blue']} !important;">⚡</div>
+            <div style="font-size: 0.8rem; color: {PALETTE['text_light']} !important;">Export instantané</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1946,10 +2110,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # En-tête avec icône
         st.markdown(f'''
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-            <div style="font-size: 2rem;">⚠️</div>
+            <div style="font-size: 2rem; color: {PALETTE['warning']} !important;">⚠️</div>
             <div>
-                <h3 style="margin: 0; color: #92400E;">ALERTE : DOUBLON DÉTECTÉ</h3>
-                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 0.9rem;">Document similaire existant dans la base cloud</p>
+                <h3 style="margin: 0; color: {PALETTE['text_dark']} !important;">ALERTE : DOUBLON DÉTECTÉ</h3>
+                <p style="margin: 5px 0 0 0; color: {PALETTE['text_light']} !important; font-size: 0.9rem;">Document similaire existant dans la base cloud</p>
             </div>
         </div>
         ''', unsafe_allow_html=True)
@@ -1958,7 +2122,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         if "FACTURE" in doc_type.upper():
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: {PALETTE['text_dark']} !important;">
                     <div><strong>Type :</strong> {doc_type}</div>
                     <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
                     <div><strong>N° Facture :</strong> {st.session_state.data_for_sheets.get('numero_facture', 'Non détecté')}</div>
@@ -1969,7 +2133,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         else:
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: {PALETTE['text_dark']} !important;">
                     <div><strong>Type :</strong> {doc_type}</div>
                     <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
                     <div><strong>N° BDC :</strong> {st.session_state.data_for_sheets.get('numero', 'Non détecté')}</div>
@@ -1978,7 +2142,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             </div>
             """, unsafe_allow_html=True)
         
-        st.markdown("**Sélectionnez une action :**")
+        st.markdown(f'<div style="color: {PALETTE["text_dark"]} !important; margin-bottom: 10px; font-weight: 600;">Sélectionnez une action :</div>', unsafe_allow_html=True)
         
         # Boutons d'action avec style tech
         col1, col2, col3 = st.columns(3)
@@ -2036,9 +2200,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.export_status = "completed"
                 # Afficher un message de succès stylé
                 st.markdown("""
-                <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white; border-radius: 18px; text-align: center; margin: 20px 0;">
+                <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white !important; border-radius: 18px; text-align: center; margin: 20px 0;">
                     <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
-                    <h3 style="margin: 0 0 10px 0; color: white;">Synchronisation réussie !</h3>
+                    <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
                     <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -2116,7 +2280,7 @@ if st.button("🔒 Déconnexion sécurisée",
     logout()
 
 # ============================================================
-# FOOTER - SOLUTION STREAMLIT NATIVE
+# FOOTER - SOLUTION STREAMLIT NATIVE AMÉLIORÉE
 # ============================================================
 st.markdown("---")
 
@@ -2129,31 +2293,31 @@ with st.container():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("<center>🤖</center>", unsafe_allow_html=True)
-        st.markdown("<center><small style='color: #64748b;'>AI Vision</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🤖</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>AI Vision</small></center>", unsafe_allow_html=True)
     
     with col2:
-        st.markdown("<center>⚡</center>", unsafe_allow_html=True)
-        st.markdown("<center><small style='color: #64748b;'>Fast Processing</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>⚡</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Fast Processing</small></center>", unsafe_allow_html=True)
     
     with col3:
-        st.markdown("<center>🔒</center>", unsafe_allow_html=True)
-        st.markdown("<center><small style='color: #64748b;'>Secure Cloud</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🔒</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Secure Cloud</small></center>", unsafe_allow_html=True)
     
     # Deuxième ligne : Titre
     st.markdown(f"""
     <center style='margin: 15px 0;'>
-        <span style='font-weight: 700; color: {PALETTE["primary_dark"]};'>{BRAND_TITLE}</span>
-        <span style='color: #64748b;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
+        <span style='font-weight: 700; color: {PALETTE["primary_dark"]} !important;'>{BRAND_TITLE}</span>
+        <span style='color: {PALETTE["text_light"]} !important;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
     </center>
     """, unsafe_allow_html=True)
     
     # Troisième ligne : Statut
     st.markdown(f"""
-    <center style='font-size: 0.8rem; color: #94a3b8;'>
-        <span style='color: #10B981;'>●</span> 
+    <center style='font-size: 0.8rem; color: {PALETTE['text_light']} !important;'>
+        <span style='color: #10B981 !important;'>●</span> 
         Système actif • Session : 
-        <strong>{st.session_state.username}</strong>
+        <strong style='color: {PALETTE['text_dark']} !important;'>{st.session_state.username}</strong>
         • {datetime.now().strftime("%H:%M:%S")}
     </center>
     """, unsafe_allow_html=True)
