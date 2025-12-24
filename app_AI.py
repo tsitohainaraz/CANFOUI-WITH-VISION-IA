@@ -15,6 +15,414 @@ from dateutil import parser
 from typing import List, Tuple, Dict, Any
 import hashlib
 import json
+import unicodedata
+import jellyfish  # Pour la distance de Jaro-Winkler
+
+# ============================================================
+# STANDARDISATION INTELLIGENTE DES PRODUITS
+# ============================================================
+
+# Liste officielle des produits
+STANDARD_PRODUCTS = [
+    "Côte de Fianar Rouge 75 cl",
+    "Côte de Fianar Rouge 37 cl",
+    "Côte de Fianar Rouge 3L",
+    "Côte de Fianar Blanc 3L",
+    "Côte de Fianar Rosé 3L",
+    "Blanc doux Maroparasy 3L",
+    "Côte de Fianar Blanc 75 cl",
+    "Côte de Fianar Blanc 37 cl",
+    "Côte de Fianar Rosé 75 cl",
+    "Côte de Fianar Rosé 37 cl",
+    "Côte de Fianar Gris 75 cl",
+    "Côte de Fianar Gris 37 cl",
+    "Maroparasy Rouge 75 cl",
+    "Maroparasy Rouge 37 cl",
+    "Blanc doux Maroparasy 75 cl",
+    "Blanc doux Maroparasy 37 cl",
+    "Côteau d'Ambalavao Rouge 75 cl",
+    "Côteau d'Ambalavao Blanc 75 cl",
+    "Côteau d'Ambalavao Rosé 75 cl",
+    "Côteau d'Ambalavao Spécial 75 cl",
+    "Aperao Orange 75 cl",
+    "Aperao Pêche 75 cl",
+    "Aperao Ananas 75 cl",
+    "Aperao Epices 75 cl",
+    "Aperao Ratafia 75 cl",
+    "Aperao Eau de vie 75 cl",
+    "Aperao Eau de vie 37 cl",
+    "Vin de Champêtre 100 cl",
+    "Vin de Champêtre 50 cl",
+    "Jus de raisin Rouge 70 cl",
+    "Jus de raisin Rouge 20 cl",
+    "Jus de raisin Blanc 70 cl",
+    "Jus de raisin Blanc 20 cl",
+    "Sambatra 20 cl"
+]
+
+# Dictionnaire de synonymes et normalisations
+SYNONYMS = {
+    # Marques principales
+    "cote de fianar": "côte de fianar",
+    "cote de fianara": "côte de fianar",
+    "fianara": "fianar",
+    "fianar": "fianar",
+    "coteau": "côteau",
+    "ambalavao": "ambalavao",
+    "coteau d'amb": "côteau d'ambalavao",
+    "coteau d'amb/vao": "côteau d'ambalavao",
+    "maroparasy": "maroparasy",
+    "maroparas": "maroparasy",
+    "aperao": "aperao",
+    "aperitif": "aperitif",
+    "sambatra": "sambatra",
+    "champetre": "champêtre",
+    
+    # Types de vins
+    "vin rouge": "rouge",
+    "vin blanc": "blanc",
+    "vin rose": "rosé",
+    "vin rosé": "rosé",
+    "vin gris": "gris",
+    "rouge doux": "rouge doux",
+    "blanc doux": "blanc doux",
+    
+    # Abréviations communes
+    "btl": "",
+    "bouteille": "",
+    "nu": "",
+    "lp7": "",
+    "cl": "cl",
+    "ml": "ml",
+    "l": "l",
+    
+    # Unités
+    "750ml": "75 cl",
+    "750 ml": "75 cl",
+    "700ml": "70 cl",
+    "700 ml": "70 cl",
+    "370ml": "37 cl",
+    "370 ml": "37 cl",
+    "3000ml": "3l",
+    "3000 ml": "3l",
+    "3 l": "3l",
+    "3l": "3l",
+    "1000ml": "100 cl",
+    "1000 ml": "100 cl",
+    "500ml": "50 cl",
+    "500 ml": "50 cl",
+    "200ml": "20 cl",
+    "200 ml": "20 cl",
+}
+
+# Mapping des équivalences de volume
+VOLUME_EQUIVALENTS = {
+    "750": "75",
+    "750ml": "75",
+    "750 ml": "75",
+    "700": "70",
+    "700ml": "70",
+    "700 ml": "70",
+    "370": "37",
+    "370ml": "37",
+    "370 ml": "37",
+    "300": "3",
+    "3000": "3",
+    "3000ml": "3",
+    "3000 ml": "3",
+    "1000": "100",
+    "1000ml": "100",
+    "1000 ml": "100",
+    "500": "50",
+    "500ml": "50",
+    "500 ml": "50",
+    "200": "20",
+    "200ml": "20",
+    "200 ml": "20",
+}
+
+def preprocess_text(text: str) -> str:
+    """Prétraitement avancé du texte"""
+    # Convertir en minuscules
+    text = text.lower()
+    
+    # Supprimer les accents
+    text = unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii')
+    
+    # Remplacer les apostrophes et tirets
+    text = text.replace("'", " ").replace("-", " ").replace("_", " ")
+    
+    # Supprimer les caractères spéciaux (garder lettres, chiffres, espaces)
+    text = re.sub(r'[^a-z0-9\s]', ' ', text)
+    
+    # Supprimer les espaces multiples
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+
+def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
+    """Extrait et normalise l'information de volume"""
+    from typing import Optional
+    import re
+    
+    # Chercher des motifs de volume
+    volume_patterns = [
+        r'(\d+)\s*cl',
+        r'(\d+)\s*ml',
+        r'(\d+)\s*l',
+        r'(\d+)\s*litre',
+        r'(\d+)\s*litres',
+    ]
+    
+    volume = None
+    text_without_volume = text
+    
+    for pattern in volume_patterns:
+        matches = re.findall(pattern, text)
+        if matches:
+            volume = matches[0]
+            # Normaliser le volume
+            if 'ml' in pattern:
+                # Convertir ml en cl
+                try:
+                    ml = int(volume)
+                    if ml >= 1000:
+                        volume = f"{ml//100}l" if ml % 1000 == 0 else f"{ml/10:.0f} cl"
+                    else:
+                        volume = f"{ml/10:.0f} cl" if ml % 10 == 0 else f"{ml/10:.1f} cl"
+                except:
+                    pass
+            elif 'l' in pattern and 'cl' not in pattern and 'ml' not in pattern:
+                # Convertir litres en cl
+                try:
+                    liters = float(volume)
+                    if liters >= 1:
+                        volume = f"{liters:.0f}l" if liters.is_integer() else f"{liters}l"
+                except:
+                    pass
+            
+            # Supprimer le volume du texte pour faciliter la correspondance
+            text_without_volume = re.sub(pattern, '', text_without_volume)
+            break
+    
+    # Chercher aussi des volumes sans unité spécifique
+    if not volume:
+        match = re.search(r'\b(\d+)\b', text)
+        if match:
+            vol_num = match.group(1)
+            # Deviner l'unité basée sur la valeur
+            if vol_num in VOLUME_EQUIVALENTS:
+                volume = f"{VOLUME_EQUIVALENTS[vol_num]} cl"
+                text_without_volume = re.sub(r'\b' + vol_num + r'\b', '', text_without_volume)
+    
+    return text_without_volume.strip(), volume
+
+def extract_product_features(text: str) -> Dict[str, str]:
+    """Extrait les caractéristiques clés du produit"""
+    from typing import Dict
+    
+    features = {
+        'type': '',
+        'marque': '',
+        'couleur': '',
+        'volume': '',
+        'original': text
+    }
+    
+    # Normaliser le texte
+    normalized = preprocess_text(text)
+    
+    # Extraire le volume
+    text_without_volume, volume = extract_volume_info(normalized)
+    if volume:
+        features['volume'] = volume
+    
+    # Détecter la couleur
+    colors = ['rouge', 'blanc', 'rose', 'gris', 'orange', 'peche', 'ananas', 'epices', 'ratafia']
+    for color in colors:
+        if color in text_without_volume:
+            features['couleur'] = color
+            text_without_volume = text_without_volume.replace(color, '')
+            break
+    
+    # Détecter le type
+    types = ['vin', 'jus', 'aperitif', 'eau de vie', 'cuvee', 'cuvee special', 'special']
+    for type_ in types:
+        if type_ in text_without_volume:
+            features['type'] = type_
+            text_without_volume = text_without_volume.replace(type_, '')
+            break
+    
+    # Détecter la marque
+    marques = [
+        ('cote de fianar', 'côte de fianar'),
+        ('maroparasy', 'maroparasy'),
+        ('coteau d ambalavao', 'côteau d\'ambalavao'),
+        ('ambalavao', 'côteau d\'ambalavao'),
+        ('aperao', 'aperao'),
+        ('champetre', 'vin de champêtre'),
+        ('sambatra', 'sambatra'),
+    ]
+    
+    for marque_pattern, marque_std in marques:
+        if marque_pattern in text_without_volume:
+            features['marque'] = marque_std
+            text_without_volume = text_without_volume.replace(marque_pattern, '')
+            break
+    
+    # Nettoyer le texte restant
+    text_without_volume = re.sub(r'\s+', ' ', text_without_volume).strip()
+    if text_without_volume:
+        features['autres'] = text_without_volume
+    
+    return features
+
+def calculate_similarity_score(features1: Dict, features2: Dict) -> float:
+    """Calcule un score de similarité entre deux ensembles de caractéristiques"""
+    score = 0.0
+    max_score = 0.0
+    
+    # Poids pour chaque caractéristique
+    weights = {
+        'marque': 0.4,
+        'couleur': 0.3,
+        'volume': 0.2,
+        'type': 0.1,
+    }
+    
+    for key, weight in weights.items():
+        if features1.get(key) and features2.get(key):
+            if features1[key] == features2[key]:
+                score += weight
+            # Similarité partielle pour les couleurs (rose/rosé)
+            elif key == 'couleur':
+                if ('rose' in features1[key] and 'rosé' in features2[key]) or \
+                   ('rosé' in features1[key] and 'rose' in features2[key]):
+                    score += weight * 0.8
+        max_score += weight
+    
+    # Bonus pour correspondance exacte du volume
+    if features1.get('volume') and features2.get('volume'):
+        if features1['volume'] == features2['volume']:
+            score += 0.1
+            max_score += 0.1
+    
+    return score / max_score if max_score > 0 else 0.0
+
+def find_best_match(ocr_designation: str, standard_products: List[str]) -> Tuple[Optional[str], float]:
+    """
+    Trouve le meilleur match pour une désignation OCR
+    
+    Returns:
+        Tuple (produit_standard, score_confidence)
+    """
+    from typing import Optional, List
+    
+    # Prétraiter la désignation OCR
+    ocr_features = extract_product_features(ocr_designation)
+    
+    best_match = None
+    best_score = 0.0
+    
+    # Pré-calculer les caractéristiques des produits standards
+    standard_features = []
+    for product in standard_products:
+        std_features = extract_product_features(product)
+        standard_features.append((product, std_features))
+    
+    # Chercher le meilleur match
+    for product, std_features in standard_features:
+        score = calculate_similarity_score(ocr_features, std_features)
+        
+        # Bonus pour correspondance exacte (après normalisation)
+        ocr_normalized = preprocess_text(ocr_designation)
+        std_normalized = preprocess_text(product)
+        
+        # Utiliser Jaro-Winkler pour la similarité textuelle
+        jaro_score = jellyfish.jaro_winkler_similarity(ocr_normalized, std_normalized)
+        
+        # Combiner les scores
+        combined_score = (score * 0.7) + (jaro_score * 0.3)
+        
+        if combined_score > best_score:
+            best_score = combined_score
+            best_match = product
+    
+    # Seuil de confiance minimum
+    if best_score < 0.6:
+        return None, best_score
+    
+    return best_match, best_score
+
+def intelligent_product_matcher(ocr_designation: str) -> Tuple[Optional[str], float, Dict]:
+    """
+    Standardise intelligemment une désignation produit OCR
+    
+    Returns:
+        Tuple (produit_standard, score_confidence, details)
+    """
+    from typing import Optional, Dict, List, Tuple
+    
+    details = {
+        'original': ocr_designation,
+        'features': {},
+        'matches': []
+    }
+    
+    # 1. Extraction des caractéristiques
+    features = extract_product_features(ocr_designation)
+    details['features'] = features
+    
+    # 2. Recherche du meilleur match
+    best_match, confidence = find_best_match(ocr_designation, STANDARD_PRODUCTS)
+    
+    # 3. Calcul des alternatives (top 3)
+    alternatives = []
+    for product in STANDARD_PRODUCTS:
+        product_features = extract_product_features(product)
+        score = calculate_similarity_score(features, product_features)
+        jaro_score = jellyfish.jaro_winkler_similarity(
+            preprocess_text(ocr_designation),
+            preprocess_text(product)
+        )
+        combined_score = (score * 0.7) + (jaro_score * 0.3)
+        
+        if combined_score >= 0.4:  # Seuil bas pour voir les alternatives
+            alternatives.append((product, combined_score))
+    
+    # Trier par score décroissant
+    alternatives.sort(key=lambda x: x[1], reverse=True)
+    details['matches'] = alternatives[:3]  # Top 3 seulement
+    
+    return best_match, confidence, details
+
+# ============================================================
+# FONCTION AMÉLIORÉE DE STANDARDISATION
+# ============================================================
+def standardize_product_name_improved(product_name: str) -> Tuple[str, float, str]:
+    """
+    Standardise le nom du produit avec score de confiance
+    
+    Args:
+        product_name: Nom du produit issu de l'OCR
+        
+    Returns:
+        Tuple (nom_standardisé, score_confiance, status)
+    """
+    if not product_name or not product_name.strip():
+        return "", 0.0, "empty"
+    
+    # Essayer d'abord avec le matching intelligent
+    best_match, confidence, details = intelligent_product_matcher(product_name)
+    
+    if best_match and confidence >= 0.7:
+        return best_match, confidence, "matched"
+    elif best_match and confidence >= 0.6:
+        # Match à confiance moyenne
+        return best_match, confidence, "partial_match"
+    else:
+        # Aucun bon match trouvé
+        return product_name.title(), confidence, "no_match"
 
 # ============================================================
 # CONFIGURATION STREAMLIT
@@ -72,6 +480,62 @@ if "image_preview_visible" not in st.session_state:
     st.session_state.image_preview_visible = False
 if "document_scanned" not in st.session_state:
     st.session_state.document_scanned = False
+if "product_matching_scores" not in st.session_state:
+    st.session_state.product_matching_scores = {}
+
+# ============================================================
+# FONCTION DE NORMALISATION DES PRODUITS (COMPATIBILITÉ)
+# ============================================================
+def standardize_product_name(product_name: str) -> str:
+    """Standardise les noms de produits avec la nouvelle méthode intelligente"""
+    standardized, confidence, status = standardize_product_name_improved(product_name)
+    
+    # Stocker le score de confiance dans la session pour affichage
+    st.session_state.product_matching_scores[product_name] = {
+        'standardized': standardized,
+        'confidence': confidence,
+        'status': status
+    }
+    
+    return standardized
+
+# ============================================================
+# FONCTION D'AFFICHAGE DES DÉTAILS DE MATCHING
+# ============================================================
+def display_matching_details():
+    """Affiche les détails du matching des produits"""
+    if st.session_state.product_matching_scores:
+        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
+        st.markdown('<h4>📊 Détails de la standardisation</h4>', unsafe_allow_html=True)
+        
+        scores_df = []
+        for original, details in st.session_state.product_matching_scores.items():
+            scores_df.append({
+                "Original": original,
+                "Standardisé": details['standardized'],
+                "Confiance": f"{details['confidence']*100:.1f}%",
+                "Statut": details['status']
+            })
+        
+        if scores_df:
+            df = pd.DataFrame(scores_df)
+            st.dataframe(df, use_container_width=True)
+            
+            # Statistiques
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                matched = sum(1 for d in scores_df if d['Statut'] in ['matched', 'partial_match'])
+                st.metric("✅ Matchs", matched)
+            
+            with col2:
+                avg_confidence = np.mean([float(d['Confiance'].replace('%', '')) for d in scores_df])
+                st.metric("📈 Confiance moyenne", f"{avg_confidence:.1f}%")
+            
+            with col3:
+                no_match = sum(1 for d in scores_df if d['Statut'] == 'no_match')
+                st.metric("❌ Non reconnus", no_match)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
 # SYSTÈME D'AUTHENTIFICATION
@@ -121,6 +585,7 @@ def logout():
     st.session_state.image_preview_visible = False
     st.session_state.document_scanned = False
     st.session_state.export_triggered = False
+    st.session_state.product_matching_scores = {}
     st.rerun()
 
 # ============================================================
@@ -1147,65 +1612,6 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
         st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
         return None
 
-def standardize_product_name(product_name: str) -> str:
-    """Standardise les noms de produits en utilisant le tableau de données standardisées"""
-    # Tableau de correspondance pour les produits standardisés
-    STANDARD_PRODUCTS = {
-        "COTE DE FIANAR": "Côte de Fianar",
-        "COTE FIANAR": "Côte de Fianar",
-        "FIANAR": "Côte de Fianar",
-        "CÔTE DE FIANAR": "Côte de Fianar",
-        "CÔTE FIANAR": "Côte de Fianar",
-        "COTE DE FIANAR ROUGE": "Côte de Fianar Rouge 75cl",
-        "COTE DE FIANAR BLANC": "Côte de Fianar Blanc 75cl",
-        "COTE DE FIANAR ROSÉ": "Côte de Fianar Rosé 75cl",
-        "COTE DE FIANAR ROSÉ": "Côte de Fianar Rosé 75cl",
-        "COTE DE FIANAR GRIS": "Côte de Fianar Gris 75cl",
-        "MAROPARASY": "Maroparasy",
-        "MAROPARASY ROUGE": "Maroparasy Rouge 75cl",
-        "MAROPARASY BLANC": "Maroparasy Blanc 75cl",
-        "CONS CHAN FOUI": "Consigne Chan Foui 75cl",
-        "CONSIGNE CHAN FOUI": "Consigne Chan Foui 75cl",
-        "CHAN FOUI": "Consigne Chan Foui 75cl",
-        "CONSIGNE": "Consigne Chan Foui 75cl"
-    }
-    
-    name = product_name.upper().strip()
-    
-    # Chercher une correspondance exacte d'abord
-    for key, value in STANDARD_PRODUCTS.items():
-        if key == name:
-            return value
-    
-    # Chercher une correspondance partielle
-    for key, value in STANDARD_PRODUCTS.items():
-        if key in name:
-            # Si c'est un produit Côte de Fianar, déterminer le type
-            if "COTE" in key and "FIANAR" in key:
-                if "ROUGE" in name:
-                    return "Côte de Fianar Rouge 75cl"
-                elif "BLANC" in name:
-                    return "Côte de Fianar Blanc 75cl"
-                elif "ROSE" in name or "ROSÉ" in name:
-                    return "Côte de Fianar Rosé 75cl"
-                elif "GRIS" in name:
-                    return "Côte de Fianar Gris 75cl"
-                else:
-                    return "Côte de Fianar Rouge 75cl"
-            elif "MAROPARASY" in key:
-                if "BLANC" in name:
-                    return "Maroparasy Blanc 75cl"
-                elif "ROUGE" in name:
-                    return "Maroparasy Rouge 75cl"
-                else:
-                    return "Maroparasy Rouge 75cl"
-            elif "CONS" in key or "CHAN" in key or "FOUI" in key:
-                return "Consigne Chan Foui 75cl"
-            return value
-    
-    # Si aucune correspondance, retourner le nom original mais en title case
-    return product_name.title()
-
 def clean_text(text: str) -> str:
     """Nettoie le texte"""
     text = text.replace("\r", "\n")
@@ -1643,6 +2049,7 @@ st.markdown(f'''
     <span class="tech-badge">GPT-4 Vision</span>
     <span class="tech-badge">AI Processing</span>
     <span class="tech-badge">Cloud Sync</span>
+    <span class="tech-badge">Smart Matching</span>
 </div>
 ''', unsafe_allow_html=True)
 
@@ -1672,10 +2079,10 @@ st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True
 
 st.markdown(f"""
 <div class="info-box">
-    <strong style="color: {PALETTE['text_dark']} !important;">ℹ️ Système de reconnaissance IA :</strong><br>
+    <strong style="color: {PALETTE['text_dark']} !important;">ℹ️ Système de reconnaissance IA avec standardisation intelligente :</strong><br>
     • Détection automatique du type de document<br>
     • Extraction intelligente des données structurées<br>
-    • Validation et standardisation en temps réel<br>
+    • <strong>Standardisation intelligente des produits</strong><br>
     • Synchronisation cloud automatique
 </div>
 """, unsafe_allow_html=True)
@@ -1705,6 +2112,10 @@ st.markdown(f"""
         <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">🏷️</div>
         <div>Étiquettes</div>
     </div>
+    <div style="text-align: center;">
+        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">🤖</div>
+        <div>Smart Matching</div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1727,6 +2138,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.document_scanned = True
     st.session_state.export_triggered = False
     st.session_state.export_status = None
+    st.session_state.product_matching_scores = {}
     
     # Barre de progression avec style tech
     progress_container = st.empty()
@@ -1746,7 +2158,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             "Prétraitement des données...",
             "Analyse par IA...",
             "Extraction des données...",
-            "Standardisation...",
+            "Standardisation intelligente...",
             "Finalisation..."
         ]
         
@@ -1854,7 +2266,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
             <strong style="font-size: 1.1rem; color: {PALETTE['text_dark']} !important;">Analyse IA terminée avec succès</strong><br>
-            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Précision estimée : 98.8%</span><br>
+            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
             <small style="color: {PALETTE['text_light']} !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
@@ -2002,11 +2414,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Mettre à jour le dataframe édité
         st.session_state.edited_standardized_df = edited_df
         
-        # Afficher les statistiques avec style tech amélioré - CORRECTION point 4
+        # Afficher les statistiques avec style tech amélioré
         total_items = len(edited_df)
         auto_standardized = edited_df["standardisé"].sum() if "standardisé" in edited_df.columns else 0
         
-        col_stat1, col_stat2 = st.columns(2)  # Changé de 3 à 2 colonnes
+        col_stat1, col_stat2 = st.columns(2)
         with col_stat1:
             st.markdown(
                 f'''
@@ -2029,6 +2441,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             )
         
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ========================================================
+    # DÉTAILS DE LA STANDARDISATION
+    # ========================================================
+    if st.session_state.product_matching_scores:
+        display_matching_details()
     
     # ========================================================
     # BOUTON D'EXPORT PAR DÉFAUT
@@ -2244,6 +2662,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.document_scanned = False
                 st.session_state.export_triggered = False
                 st.session_state.export_status = None
+                st.session_state.product_matching_scores = {}
                 st.rerun()
         
         with col_nav2:
@@ -2264,6 +2683,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.document_scanned = True
                 st.session_state.export_triggered = False
                 st.session_state.export_status = None
+                st.session_state.product_matching_scores = {}
                 st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
@@ -2324,4 +2744,3 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
