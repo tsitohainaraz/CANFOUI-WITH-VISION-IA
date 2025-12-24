@@ -25,34 +25,25 @@ import jellyfish
 def is_category_line(product_name: str) -> bool:
     """
     Détecte si une ligne est une catégorie (ex: '122111 - VINS ROUGES')
-    
-    Args:
-        product_name: Nom du produit à vérifier
-        
-    Returns:
-        True si c'est une ligne de catégorie, False sinon
     """
     if not product_name or not isinstance(product_name, str):
         return False
     
-    # Convertir en majuscules pour la vérification
     name_upper = product_name.upper()
     
-    # Vérifier les motifs de catégorie
     category_patterns = [
         r'\d{6}\s*-\s*VINS\s+ROUGES',
         r'\d{6}\s*-\s*VINS\s+BLANCS',
         r'\d{6}\s*-\s*VINS\s+ROSES',
         r'\d{6}\s*-\s*LIQUEUR',
         r'\d{6}\s*-\s*CONSIGNE',
-        r'^\d{6}\s*-\s*',  # Code numérique suivi de tiret
+        r'^\d{6}\s*-\s*',
     ]
     
     for pattern in category_patterns:
         if re.search(pattern, name_upper):
             return True
     
-    # Vérifier les mots-clés sans code
     category_keywords = [
         "VINS ROUGES",
         "VINS BLANCS", 
@@ -72,17 +63,10 @@ def is_category_line(product_name: str) -> bool:
 def filter_category_lines(df: pd.DataFrame) -> pd.DataFrame:
     """
     Filtre les lignes de catégorie d'un DataFrame
-    
-    Args:
-        df: DataFrame contenant une colonne 'Produit Brute' ou 'Description'
-        
-    Returns:
-        DataFrame filtré sans les lignes de catégorie
     """
     if df.empty:
         return df
     
-    # Déterminer la colonne à utiliser pour le filtrage
     product_column = None
     for col in ['Produit Brute', 'Description de l\'Article', 'Description', 'article_brut', 'article']:
         if col in df.columns:
@@ -92,26 +76,46 @@ def filter_category_lines(df: pd.DataFrame) -> pd.DataFrame:
     if not product_column:
         return df
     
-    # Appliquer le filtre
     mask = df[product_column].apply(lambda x: not is_category_line(str(x)) if pd.notna(x) else True)
-    filtered_df = df[mask].copy()
+    return df[mask].copy()
+
+def filter_zero_quantity_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filtre et supprime les lignes où la quantité est égale à 0
+    """
+    if df.empty:
+        return df
     
-    return filtered_df
+    if "Quantité" in df.columns:
+        df_copy = df.copy()
+        df_copy["Quantité"] = pd.to_numeric(df_copy["Quantité"], errors='coerce')
+        filtered_df = df_copy[df_copy["Quantité"] > 0].copy()
+        return filtered_df
+    else:
+        return df
+
+def filter_categories_and_zero_quantity(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filtre les catégories ET les lignes avec quantité = 0
+    """
+    if df.empty:
+        return df
+    
+    # Filtrer les catégories
+    df_no_categories = filter_category_lines(df)
+    
+    # Filtrer les quantité = 0
+    df_filtered = filter_zero_quantity_rows(df_no_categories)
+    
+    return df_filtered
 
 def extract_and_format_categories(df: pd.DataFrame) -> pd.DataFrame:
     """
     Extrait et formate les catégories pour un affichage propre
-    
-    Args:
-        df: DataFrame contenant les données brutes
-        
-    Returns:
-        DataFrame avec les catégories formatées
     """
     if df.empty:
         return df
     
-    # Déterminer la colonne à utiliser
     product_column = None
     for col in ['Produit Brute', 'Description de l\'Article', 'Description', 'article_brut', 'article']:
         if col in df.columns:
@@ -121,20 +125,15 @@ def extract_and_format_categories(df: pd.DataFrame) -> pd.DataFrame:
     if not product_column:
         return df
     
-    # Créer une copie pour ne pas modifier l'original
     formatted_df = df.copy()
     
-    # Formatter les noms de catégorie
     def format_category(name):
         if not isinstance(name, str):
             return name
         
         if is_category_line(name):
-            # Nettoyer et formater
             name = name.strip()
-            # Supprimer les espaces multiples
             name = re.sub(r'\s+', ' ', name)
-            # Formater en titre
             parts = name.split(' - ')
             if len(parts) == 2:
                 return f"{parts[0].strip()} - {parts[1].strip().title()}"
@@ -148,17 +147,10 @@ def extract_and_format_categories(df: pd.DataFrame) -> pd.DataFrame:
 def generate_next_category_code(existing_categories: List[str]) -> str:
     """
     Génère le prochain code de catégorie disponible
-    
-    Args:
-        existing_categories: Liste des codes de catégorie existants
-        
-    Returns:
-        Nouveau code de catégorie (ex: '122114')
     """
     if not existing_categories:
-        return "122114"  # Code par défaut
+        return "122114"
     
-    # Extraire les codes numériques des catégories existantes
     codes = []
     for category in existing_categories:
         match = re.search(r'(\d{6})', str(category))
@@ -168,18 +160,15 @@ def generate_next_category_code(existing_categories: List[str]) -> str:
     if not codes:
         return "122114"
     
-    # Trouver le plus grand code et incrémenter
     max_code = max(codes)
     
-    # Générer le prochain code dans la série appropriée
-    if max_code >= 122111 and max_code <= 122119:  # Série Vins
+    if max_code >= 122111 and max_code <= 122119:
         next_code = max_code + 1
-    elif max_code >= 123141 and max_code <= 123149:  # Série Liqueurs
+    elif max_code >= 123141 and max_code <= 123149:
         next_code = max_code + 1
-    elif max_code >= 821111 and max_code <= 821119:  # Série Consigne
+    elif max_code >= 821111 and max_code <= 821119:
         next_code = max_code + 1
     else:
-        # Par défaut, continuer la série Vins
         next_code = 122114
     
     return str(next_code)
@@ -650,9 +639,16 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
     
     return produit_brut, produit_standard, confidence, status
 
-def process_ocr_with_filtering(ocr_result: dict) -> pd.DataFrame:
+# ============================================================
+# NOUVELLE FONCTION DE TRAITEMENT OCR AVEC SUPPRESSION COMPLÈTE DES QUANTITÉS = 0
+# ============================================================
+
+def process_ocr_with_complete_filtering(ocr_result: dict) -> pd.DataFrame:
     """
-    Traite les résultats OCR avec filtrage des catégories
+    Traite les résultats OCR avec filtrage COMPLET:
+    - Supprime les catégories
+    - Supprime les lignes avec quantité = 0
+    - Ne garde que les produits avec quantité > 0
     """
     std_data = []
     
@@ -661,31 +657,37 @@ def process_ocr_with_filtering(ocr_result: dict) -> pd.DataFrame:
             raw_name = article.get("article_brut", article.get("article", ""))
             quantite = article.get("quantite", 0)
             
+            # Vérifier si c'est une catégorie - NE PAS L'AJOUTER DU TOUT
             if is_category_line(raw_name):
-                std_data.append({
-                    "Produit Brute": raw_name,
-                    "Produit Standard": raw_name,
-                    "Quantité": 0,
-                    "Confiance": "0%",
-                    "Auto": False,
-                    "Type": "catégorie"
-                })
-            else:
-                produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
-                
-                std_data.append({
-                    "Produit Brute": produit_brut,
-                    "Produit Standard": produit_standard,
-                    "Quantité": quantite,
-                    "Confiance": f"{confidence*100:.1f}%",
-                    "Auto": confidence >= 0.7,
-                    "Type": "produit"
-                })
+                continue
+            
+            # Vérifier si la quantité est > 0
+            try:
+                qty = float(quantite)
+                if qty <= 0:
+                    continue
+            except:
+                continue
+            
+            # Standardiser seulement les produits avec quantité > 0
+            produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
+            
+            std_data.append({
+                "Produit Brute": produit_brut,
+                "Produit Standard": produit_standard,
+                "Quantité": qty,
+                "Confiance": f"{confidence*100:.1f}%",
+                "Auto": confidence >= 0.7
+            })
     
     return pd.DataFrame(std_data)
 
-def openai_vision_ocr_improved_with_filter(image_bytes: bytes) -> Dict:
-    """Utilise OpenAI Vision pour analyser le document avec filtrage des catégories"""
+# ============================================================
+# FONCTION OCR AVEC FILTRAGE
+# ============================================================
+
+def openai_vision_ocr_improved_with_complete_filter(image_bytes: bytes) -> Dict:
+    """Utilise OpenAI Vision pour analyser le document avec filtrage COMPLET"""
     try:
         client = get_openai_client()
         if not client:
@@ -700,6 +702,7 @@ def openai_vision_ocr_improved_with_filter(image_bytes: bytes) -> Dict:
         1. Extrais TOUTES les lignes du tableau, y compris les catégories comme "122111 - VINS ROUGES".
         2. Pour les lignes de catégorie, mets la quantité à 0.
         3. Pour les produits réels, extrais la quantité exacte.
+        4. NE FILTRE PAS les lignes avec quantité 0 - nous les filtrerons après.
         
         {
             "type_document": "BDC",
@@ -906,6 +909,8 @@ if "document_scanned" not in st.session_state:
     st.session_state.document_scanned = False
 if "product_matching_scores" not in st.session_state:
     st.session_state.product_matching_scores = {}
+if "removed_zero_quantity_count" not in st.session_state:
+    st.session_state.removed_zero_quantity_count = 0
 
 # ============================================================
 # SYSTÈME D'AUTHENTIFICATION
@@ -956,6 +961,7 @@ def logout():
     st.session_state.document_scanned = False
     st.session_state.export_triggered = False
     st.session_state.product_matching_scores = {}
+    st.session_state.removed_zero_quantity_count = 0
     st.rerun()
 
 # ============================================================
@@ -1901,8 +1907,12 @@ def map_client(client: str) -> str:
     else:
         return client
 
-def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les factures (9 colonnes)"""
+# ============================================================
+# NOUVELLES FONCTIONS DE PRÉPARATION AVEC FILTRAGE COMPLET
+# ============================================================
+
+def prepare_facture_rows_with_complete_filter(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
+    """Prépare les lignes pour les factures avec filtrage COMPLET"""
     rows = []
     
     try:
@@ -1913,8 +1923,10 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         nf = data.get("numero_facture", "")
         magasin = data.get("adresse_livraison", "")
         
-        # Filtrer les catégories (lignes avec quantité = 0)
-        articles_to_export = articles_df[articles_df["Quantité"] > 0]
+        # Filtrer les lignes avec quantité > 0
+        articles_to_export = articles_df.copy()
+        articles_to_export["Quantité"] = pd.to_numeric(articles_to_export["Quantité"], errors='coerce')
+        articles_to_export = articles_to_export[articles_to_export["Quantité"] > 0]
         
         for _, row in articles_to_export.iterrows():
             article = str(row.get("Produit Standard", "")).strip()
@@ -1923,17 +1935,23 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
             
             quantite = format_quantity(row.get("Quantité", ""))
             
-            rows.append([
-                mois,
-                client,
-                date,
-                nbc,
-                nf,
-                "",  # Lien (vide par défaut)
-                magasin,
-                article,
-                quantite
-            ])
+            # Vérifier que la quantité n'est pas 0
+            try:
+                qty_value = float(quantite.replace(',', '.'))
+                if qty_value > 0:
+                    rows.append([
+                        mois,
+                        client,
+                        date,
+                        nbc,
+                        nf,
+                        "",  # Lien (vide par défaut)
+                        magasin,
+                        article,
+                        quantite
+                    ])
+            except:
+                continue
         
         return rows
         
@@ -1941,8 +1959,8 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         st.error(f"❌ Erreur lors de la préparation des données facture: {str(e)}")
         return []
 
-def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les BDC (8 colonnes)"""
+def prepare_bdc_rows_with_complete_filter(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
+    """Prépare les lignes pour les BDC avec filtrage COMPLET"""
     rows = []
     
     try:
@@ -1953,8 +1971,10 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
         nbc = data.get("numero", "")
         magasin = data.get("adresse_livraison", "")
         
-        # Filtrer les catégories (lignes avec quantité = 0)
-        articles_to_export = articles_df[articles_df["Quantité"] > 0]
+        # Filtrer les lignes avec quantité > 0
+        articles_to_export = articles_df.copy()
+        articles_to_export["Quantité"] = pd.to_numeric(articles_to_export["Quantité"], errors='coerce')
+        articles_to_export = articles_to_export[articles_to_export["Quantité"] > 0]
         
         for _, row in articles_to_export.iterrows():
             article = str(row.get("Produit Standard", "")).strip()
@@ -1963,16 +1983,22 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
             
             quantite = format_quantity(row.get("Quantité", ""))
             
-            rows.append([
-                mois,
-                client,
-                date,
-                nbc,
-                "",  # Lien (vide par défaut)
-                magasin,
-                article,
-                quantite
-            ])
+            # Vérifier que la quantité n'est pas 0
+            try:
+                qty_value = float(quantite.replace(',', '.'))
+                if qty_value > 0:
+                    rows.append([
+                        mois,
+                        client,
+                        date,
+                        nbc,
+                        "",  # Lien (vide par défaut)
+                        magasin,
+                        article,
+                        quantite
+                    ])
+            except:
+                continue
         
         return rows
         
@@ -1980,12 +2006,12 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
         st.error(f"❌ Erreur lors de la préparation des données BDC: {str(e)}")
         return []
 
-def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document"""
+def prepare_rows_for_sheet_with_complete_filter(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
+    """Prépare les lignes avec filtrage COMPLET (catégories + quantité = 0)"""
     if "FACTURE" in document_type.upper():
-        return prepare_facture_rows(data, articles_df)
+        return prepare_facture_rows_with_complete_filter(data, articles_df)
     else:
-        return prepare_bdc_rows(data, articles_df)
+        return prepare_bdc_rows_with_complete_filter(data, articles_df)
 
 def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
     """Vérifie si un document existe déjà dans Google Sheets"""
@@ -2122,9 +2148,13 @@ def find_table_range(worksheet, num_columns=9):
         else:
             return "A2:H2"
 
-def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
-                         duplicate_action: str = None, duplicate_rows: List[int] = None):
-    """Sauvegarde les données dans Google Sheets"""
+# ============================================================
+# NOUVELLE FONCTION DE SAUVEGARDE AVEC FILTRAGE COMPLET
+# ============================================================
+
+def save_to_google_sheets_with_complete_filter(document_type: str, data: dict, articles_df: pd.DataFrame, 
+                                               duplicate_action: str = None, duplicate_rows: List[int] = None):
+    """Sauvegarde les données dans Google Sheets avec filtrage COMPLET"""
     try:
         ws = get_worksheet(document_type)
         
@@ -2132,10 +2162,11 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.error("❌ Impossible de se connecter à Google Sheets")
             return False, "Erreur de connexion"
         
-        new_rows = prepare_rows_for_sheet(document_type, data, articles_df)
+        # Utiliser la nouvelle fonction avec filtrage COMPLET
+        new_rows = prepare_rows_for_sheet_with_complete_filter(document_type, data, articles_df)
         
         if not new_rows:
-            st.warning("⚠️ Aucune donnée à enregistrer")
+            st.warning("⚠️ Aucune donnée à enregistrer (toutes les quantités sont à 0 ou ligne filtrée)")
             return False, "Aucune donnée"
         
         if duplicate_action == "overwrite" and duplicate_rows:
@@ -2154,7 +2185,8 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.warning("⏸️ Import annulé - Document ignoré")
             return True, "Document ignoré (doublon)"
         
-        st.info(f"📋 **Aperçu des données à enregistrer:**")
+        # Afficher l'aperçu
+        st.info(f"📋 **Aperçu des données à enregistrer ({len(new_rows)} lignes):**")
         
         if "FACTURE" in document_type.upper():
             columns = ["Mois", "Client", "Date", "NBC", "NF", "Lien", "Magasin", "Produit", "Quantité"]
@@ -2164,6 +2196,7 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         preview_df = pd.DataFrame(new_rows, columns=columns)
         st.dataframe(preview_df, use_container_width=True)
         
+        # Table range
         if "FACTURE" in document_type.upper():
             table_range = find_table_range(ws, num_columns=9)
         else:
@@ -2282,6 +2315,7 @@ st.markdown(f"""
     • Détection automatique du type de document<br>
     • Extraction intelligente des données structurées<br>
     • <strong>Standardisation intelligente des produits</strong><br>
+    • <strong>Filtrage automatique : catégories et quantités = 0 supprimées</strong><br>
     • Synchronisation cloud automatique
 </div>
 """, unsafe_allow_html=True)
@@ -2320,7 +2354,7 @@ st.markdown(f"""
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AUTOMATIQUE DE L'IMAGE
+# TRAITEMENT AUTOMATIQUE DE L'IMAGE AVEC FILTRAGE COMPLET
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.uploaded_file = uploaded
@@ -2337,13 +2371,14 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.export_triggered = False
     st.session_state.export_status = None
     st.session_state.product_matching_scores = {}
+    st.session_state.removed_zero_quantity_count = 0
     
     progress_container = st.empty()
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
         st.markdown('<h3 style="color: white !important;">Initialisation du système IA</h3>', unsafe_allow_html=True)
-        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision et filtrage automatique...</p>', unsafe_allow_html=True)
         
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -2354,24 +2389,27 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             "Analyse par IA...",
             "Extraction des données...",
             "Standardisation intelligente...",
+            "Filtrage automatique...",
             "Finalisation..."
         ]
         
         for i in range(101):
             time.sleep(0.03)
             progress_bar.progress(i)
-            if i < 20:
+            if i < 15:
                 status_text.text(steps[0])
-            elif i < 40:
+            elif i < 30:
                 status_text.text(steps[1])
-            elif i < 60:
+            elif i < 45:
                 status_text.text(steps[2])
-            elif i < 80:
+            elif i < 60:
                 status_text.text(steps[3])
-            elif i < 95:
+            elif i < 75:
                 status_text.text(steps[4])
-            else:
+            elif i < 90:
                 status_text.text(steps[5])
+            else:
+                status_text.text(steps[6])
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -2382,8 +2420,8 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         
         img_processed = preprocess_image(image_bytes)
         
-        # Utilisation de la nouvelle fonction OCR avec filtrage
-        result = openai_vision_ocr_improved_with_filter(img_processed)
+        # Utilisation de la NOUVELLE fonction OCR avec filtrage COMPLET
+        result = openai_vision_ocr_improved_with_complete_filter(img_processed)
         
         if result:
             st.session_state.ocr_result = result
@@ -2392,15 +2430,26 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             st.session_state.show_results = True
             st.session_state.processing = False
             
-            # Traiter les données avec la nouvelle fonction de filtrage
-            st.session_state.edited_standardized_df = process_ocr_with_filtering(result)
+            # Traiter les données avec la NOUVELLE fonction de filtrage COMPLET
+            st.session_state.edited_standardized_df = process_ocr_with_complete_filtering(result)
             
-            # Afficher les catégories détectées
-            categories = extract_categories_from_dataframe(st.session_state.edited_standardized_df)
-            if categories:
-                st.info(f"📂 Catégories détectées et filtrées: {len(categories)}")
-                for cat in categories:
-                    st.write(f"• {cat}")
+            # Compter les lignes filtrées
+            if "articles" in result:
+                total_lines = len(result["articles"])
+                kept_lines = len(st.session_state.edited_standardized_df)
+                removed_lines = total_lines - kept_lines
+                st.session_state.removed_zero_quantity_count = removed_lines
+            
+            # Afficher les statistiques
+            if not st.session_state.edited_standardized_df.empty:
+                total_items = len(st.session_state.edited_standardized_df)
+                st.info(f"📊 {total_items} produit(s) détecté(s) avec quantité > 0")
+                if st.session_state.removed_zero_quantity_count > 0:
+                    st.info(f"🗑️ {st.session_state.removed_zero_quantity_count} ligne(s) filtrée(s) (catégories ou quantité = 0)")
+            else:
+                st.warning("⚠️ Aucun produit avec quantité > 0 détecté")
+                if st.session_state.removed_zero_quantity_count > 0:
+                    st.info(f"🗑️ {st.session_state.removed_zero_quantity_count} ligne(s) filtrée(s) (catégories ou quantité = 0)")
             
             progress_container.empty()
             st.rerun()
@@ -2431,7 +2480,7 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
             • Statut : Analysé par IA<br>
-            • Confiance : Élevée<br><br>
+            • Filtrage : Actif<br><br>
             <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
         </div>
         """, unsafe_allow_html=True)
@@ -2451,7 +2500,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
             <strong style="font-size: 1.1rem; color: {PALETTE['text_dark']} !important;">Analyse IA terminée avec succès</strong><br>
-            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
+            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong> | Filtrage : <strong>Complet</strong></span><br>
             <small style="color: {PALETTE['text_light']} !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
@@ -2555,7 +2604,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # TABLEAU STANDARDISÉ ÉDITABLE
+    # TABLEAU STANDARDISÉ ÉDITABLE (SEULEMENT PRODUITS AVEC QUANTITÉ > 0)
     # ========================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
         st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
@@ -2564,14 +2613,20 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
             <small style="color: {PALETTE['text_dark']} !important;">
-            💡 <strong>Mode édition activé :</strong> 
+            💡 <strong>Mode édition activé avec filtrage automatique :</strong> 
+            • Seuls les produits avec quantité > 0 sont affichés<br>
+            • Les catégories (ex: "122111 - VINS ROUGES") sont automatiquement filtrées<br>
+            • Les lignes avec quantité = 0 sont automatiquement supprimées<br>
             • Colonne "Produit Brute" : texte original extrait par l'OCR<br>
             • Colonne "Produit Standard" : standardisé automatiquement (éditable)<br>
-            • Colonne "Auto" : ✓ si la standardisation est automatique et fiable<br>
-            • <strong>Note :</strong> Les lignes de catégorie (ex: "122111 - VINS ROUGES") ne sont pas standardisées et ont quantité 0
+            • Colonne "Auto" : ✓ si la standardisation est automatique et fiable
             </small>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Afficher le nombre de lignes filtrées
+        if st.session_state.removed_zero_quantity_count > 0:
+            st.info(f"🗑️ {st.session_state.removed_zero_quantity_count} ligne(s) filtrée(s) automatiquement (catégories ou quantité = 0)")
         
         edited_df = st.data_editor(
             st.session_state.edited_standardized_df,
@@ -2589,8 +2644,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 ),
                 "Quantité": st.column_config.NumberColumn(
                     "Quantité",
-                    min_value=0,
-                    help="Quantité commandée",
+                    min_value=1,  # Minimum 1 pour éviter les quantités = 0
+                    help="Quantité commandée (minimum 1)",
                     format="%d"
                 ),
                 "Confiance": st.column_config.TextColumn(
@@ -2607,10 +2662,24 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             key="standardized_data_editor"
         )
         
-        st.session_state.edited_standardized_df = edited_df
+        # Filtrer automatiquement les lignes avec quantité = 0 après édition
+        edited_df_copy = edited_df.copy()
+        edited_df_copy["Quantité"] = pd.to_numeric(edited_df_copy["Quantité"], errors='coerce')
+        edited_df_filtered = edited_df_copy[edited_df_copy["Quantité"] > 0].copy()
         
-        total_items = len(edited_df)
-        auto_standardized = edited_df["Auto"].sum() if "Auto" in edited_df.columns else 0
+        # Mettre à jour le dataframe dans session state
+        st.session_state.edited_standardized_df = edited_df_filtered
+        
+        # Vérifier si des lignes ont été filtrées
+        original_count = len(edited_df)
+        filtered_count = len(edited_df_filtered)
+        if original_count > filtered_count:
+            removed_count = original_count - filtered_count
+            st.warning(f"⚠️ {removed_count} ligne(s) avec quantité = 0 ont été automatiquement supprimée(s)")
+        
+        # Afficher les statistiques
+        total_items = filtered_count
+        auto_standardized = edited_df_filtered["Auto"].sum() if "Auto" in edited_df_filtered.columns else 0
         
         col_stat1, col_stat2, col_stat3 = st.columns(3)
         with col_stat1:
@@ -2618,15 +2687,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(59, 130, 246, 0.2);">
                     <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['tech_blue']} !important;">{total_items}</div>
-                    <div class="stat-label">Articles</div>
+                    <div class="stat-label">Produits (Qty > 0)</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
         with col_stat2:
             confiance_values = []
-            for _, row in edited_df.iterrows():
-                if row["Auto"]:
+            for _, row in edited_df_filtered.iterrows():
+                if "Auto" in edited_df_filtered.columns and row["Auto"]:
                     try:
                         confiance = float(row["Confiance"].replace('%', ''))
                         confiance_values.append(confiance)
@@ -2654,71 +2723,33 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 unsafe_allow_html=True
             )
         
-        if st.button("🔄 Re-standardiser tous les produits", 
+        # Bouton pour forcer la re-standardisation avec filtrage
+        if st.button("🔄 Re-standardiser et filtrer tous les produits", 
                     key="restandardize_button",
-                    help="Appliquer la standardisation intelligente à tous les produits"):
+                    help="Appliquer la standardisation intelligente et supprimer les quantités = 0"):
             new_data = []
-            for _, row in edited_df.iterrows():
+            for _, row in edited_df_filtered.iterrows():
                 produit_brut = row["Produit Brute"]
                 
-                if is_category_line(produit_brut):
-                    new_data.append({
-                        "Produit Brute": produit_brut,
-                        "Produit Standard": produit_brut,
-                        "Quantité": row["Quantité"],
-                        "Confiance": "0%",
-                        "Auto": False
-                    })
-                else:
-                    produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(produit_brut)
-                    
+                # Standardiser le produit
+                produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(produit_brut)
+                
+                # Vérifier la quantité
+                quantite = row["Quantité"]
+                if pd.notna(quantite) and float(quantite) > 0:
                     new_data.append({
                         "Produit Brute": produit_brut,
                         "Produit Standard": produit_standard,
-                        "Quantité": row["Quantité"],
+                        "Quantité": quantite,
                         "Confiance": f"{confidence*100:.1f}%",
                         "Auto": confidence >= 0.7
                     })
             
             st.session_state.edited_standardized_df = pd.DataFrame(new_data)
+            st.success(f"✅ {len(new_data)} produit(s) re-standardisé(s) et filtré(s)")
             st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
-    
-    with st.expander("🧪 Tester la standardisation ULYS"):
-        test_examples = [
-            "VIN ROUGE COTE DE FIANAR 3L",
-            "VIN ROUGE COTE DE FIANARA 750ML NU",
-            "VIN BLANC COTE DE FIANAR 3L",
-            "VIN BLANC DOUX MAROPARASY 750ML NU",
-            "VIN BLANC COTE DE FIANARA 750ML NU",
-            "VIN GRIS COTE DE FIANARA 750ML NU",
-            "VIN ROUGE DOUX MAROPARASY 750ML NU",
-            "CONS. CHAN FOUI 75CL",
-            "CONS. CHAN FOUL 75CL",
-            "COTE DE FIANAR 3L",
-            "MAROPARASY 750ML",
-            "VIN ROUGE COTE DE FLANAR 3L",
-        ]
-        
-        if st.button("Tester avec des exemples typiques ULYS"):
-            results = []
-            for example in test_examples:
-                produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(example)
-                results.append({
-                    "Produit Brute": example,
-                    "Produit Standard": produit_standard,
-                    "Confiance": f"{confidence*100:.1f}%",
-                    "Statut": status
-                })
-            
-            test_df = pd.DataFrame(results)
-            st.dataframe(test_df, use_container_width=True)
-            
-            perfect_matches = sum(1 for _, row in test_df.iterrows() 
-                                if float(row["Confiance"].replace('%', '')) >= 85.0 and row["Statut"] == "matched")
-            accuracy = (perfect_matches / len(test_df)) * 100
-            st.success(f"📈 Précision pour ULYS : {accuracy:.1f}%")
     
     # ========================================================
     # BOUTON D'EXPORT PAR DÉFAUT
@@ -2731,7 +2762,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <strong style="color: {PALETTE['text_dark']} !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
         <strong style="color: {PALETTE['text_dark']} !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
         <strong style="color: {PALETTE['text_dark']} !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons
+        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
+        <strong style="color: {PALETTE['text_dark']} !important;">🗑️ Filtrage :</strong> Suppression automatique des quantités = 0
     </div>
     """, unsafe_allow_html=True)
     
@@ -2860,7 +2892,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # EXPORT EFFECTIF DES DONNÉES
+    # EXPORT EFFECTIF DES DONNÉES AVEC FILTRAGE COMPLET
     # ============================================================
     if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
         if st.session_state.export_status == "no_duplicates":
@@ -2869,7 +2901,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         export_df = st.session_state.edited_standardized_df.copy()
         
         try:
-            success, message = save_to_google_sheets(
+            # Utiliser la NOUVELLE fonction de sauvegarde avec filtrage COMPLET
+            success, message = save_to_google_sheets_with_complete_filter(
                 doc_type,
                 st.session_state.data_for_sheets,
                 export_df,
@@ -2924,78 +2957,4 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.export_triggered = False
                 st.session_state.export_status = None
                 st.session_state.product_matching_scores = {}
-                st.rerun()
-        
-        with col_nav2:
-            if st.button("🔄 Réanalyser", 
-                        use_container_width=True, 
-                        type="secondary",
-                        key="restart_main_nav",
-                        help="Recommencer l'analyse du document actuel"):
-                st.session_state.uploaded_file = None
-                st.session_state.uploaded_image = None
-                st.session_state.ocr_result = None
-                st.session_state.show_results = False
-                st.session_state.detected_document_type = None
-                st.session_state.duplicate_check_done = False
-                st.session_state.duplicate_found = False
-                st.session_state.duplicate_action = None
-                st.session_state.image_preview_visible = True
-                st.session_state.document_scanned = True
-                st.session_state.export_triggered = False
-                st.session_state.export_status = None
-                st.session_state.product_matching_scores = {}
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# ============================================================
-# BOUTON DE DÉCONNEXION
-# ============================================================
-st.markdown("---")
-if st.button("🔒 Déconnexion sécurisée", 
-            use_container_width=True, 
-            type="secondary",
-            key="logout_button_final",
-            help="Fermer la session en toute sécurité"):
-    logout()
-
-# ============================================================
-# FOOTER
-# ============================================================
-st.markdown("---")
-
-with st.container():
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🤖</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>AI Vision</small></center>", unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>⚡</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Fast Processing</small></center>", unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🔒</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Secure Cloud</small></center>", unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <center style='margin: 15px 0;'>
-        <span style='font-weight: 700; color: {PALETTE["primary_dark"]} !important;'>{BRAND_TITLE}</span>
-        <span style='color: {PALETTE["text_light"]} !important;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
-    </center>
-    """, unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <center style='font-size: 0.8rem; color: {PALETTE['text_light']} !important;'>
-        <span style='color: #10B981 !important;'>●</span> 
-        Système actif • Session : 
-        <strong style='color: {PALETTE['text_dark']} !important;'>{st.session_state.username}</strong>
-        • {datetime.now().strftime("%H:%M:%S")}
-    </center>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+                st.session_state.
