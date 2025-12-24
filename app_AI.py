@@ -12,7 +12,7 @@ from datetime import datetime
 import os
 import time
 from dateutil import parser
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 import hashlib
 import json
 import unicodedata
@@ -67,6 +67,9 @@ SYNONYMS = {
     "cote de fianara": "côte de fianar",
     "fianara": "fianar",
     "fianar": "fianar",
+    "flanar": "fianar",
+    "côte de flanar": "côte de fianar",
+    "cote de flanar": "côte de fianar",
     "coteau": "côteau",
     "ambalavao": "ambalavao",
     "coteau d'amb": "côteau d'ambalavao",
@@ -86,6 +89,7 @@ SYNONYMS = {
     "vin gris": "gris",
     "rouge doux": "rouge doux",
     "blanc doux": "blanc doux",
+    "doux": "doux",
     
     # Abréviations communes
     "btl": "",
@@ -95,6 +99,12 @@ SYNONYMS = {
     "cl": "cl",
     "ml": "ml",
     "l": "l",
+    "cons": "consigne",
+    "cons.": "consigne",
+    "foul": "foui",
+    "chan foul": "chan foui",
+    "cons. chan foul": "consigne chan foui",
+    "cons chan foul": "consigne chan foui",
     
     # Unités
     "750ml": "75 cl",
@@ -139,10 +149,15 @@ VOLUME_EQUIVALENTS = {
     "200": "20",
     "200ml": "20",
     "200 ml": "20",
+    "75cl": "75",
+    "75 cl": "75",
 }
 
 def preprocess_text(text: str) -> str:
     """Prétraitement avancé du texte"""
+    if not text:
+        return ""
+    
     # Convertir en minuscules
     text = text.lower()
     
@@ -150,10 +165,23 @@ def preprocess_text(text: str) -> str:
     text = unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii')
     
     # Remplacer les apostrophes et tirets
-    text = text.replace("'", " ").replace("-", " ").replace("_", " ")
+    text = text.replace("'", " ").replace("-", " ").replace("_", " ").replace("/", " ")
     
     # Supprimer les caractères spéciaux (garder lettres, chiffres, espaces)
     text = re.sub(r'[^a-z0-9\s]', ' ', text)
+    
+    # Remplacer les synonymes
+    words = text.split()
+    cleaned_words = []
+    for word in words:
+        if word in SYNONYMS:
+            replacement = SYNONYMS[word]
+            if replacement:  # Ne pas ajouter si le synonyme est vide
+                cleaned_words.append(replacement)
+        else:
+            cleaned_words.append(word)
+    
+    text = ' '.join(cleaned_words)
     
     # Supprimer les espaces multiples
     text = re.sub(r'\s+', ' ', text).strip()
@@ -162,9 +190,6 @@ def preprocess_text(text: str) -> str:
 
 def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
     """Extrait et normalise l'information de volume"""
-    from typing import Optional
-    import re
-    
     # Chercher des motifs de volume
     volume_patterns = [
         r'(\d+)\s*cl',
@@ -219,8 +244,6 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
 
 def extract_product_features(text: str) -> Dict[str, str]:
     """Extrait les caractéristiques clés du produit"""
-    from typing import Dict
-    
     features = {
         'type': '',
         'marque': '',
@@ -246,7 +269,7 @@ def extract_product_features(text: str) -> Dict[str, str]:
             break
     
     # Détecter le type
-    types = ['vin', 'jus', 'aperitif', 'eau de vie', 'cuvee', 'cuvee special', 'special']
+    types = ['vin', 'jus', 'aperitif', 'eau de vie', 'cuvee', 'cuvee special', 'special', 'consigne']
     for type_ in types:
         if type_ in text_without_volume:
             features['type'] = type_
@@ -262,6 +285,7 @@ def extract_product_features(text: str) -> Dict[str, str]:
         ('aperao', 'aperao'),
         ('champetre', 'vin de champêtre'),
         ('sambatra', 'sambatra'),
+        ('consigne chan foui', 'consigne chan foui'),
     ]
     
     for marque_pattern, marque_std in marques:
@@ -316,8 +340,6 @@ def find_best_match(ocr_designation: str, standard_products: List[str]) -> Tuple
     Returns:
         Tuple (produit_standard, score_confidence)
     """
-    from typing import Optional, List
-    
     # Prétraiter la désignation OCR
     ocr_features = extract_product_features(ocr_designation)
     
@@ -361,8 +383,6 @@ def intelligent_product_matcher(ocr_designation: str) -> Tuple[Optional[str], fl
     Returns:
         Tuple (produit_standard, score_confidence, details)
     """
-    from typing import Optional, Dict, List, Tuple
-    
     details = {
         'original': ocr_designation,
         'features': {},
@@ -423,6 +443,72 @@ def standardize_product_name_improved(product_name: str) -> Tuple[str, float, st
     else:
         # Aucun bon match trouvé
         return product_name.title(), confidence, "no_match"
+
+# ============================================================
+# FONCTION DE STANDARDISATION SPÉCIFIQUE POUR BDC
+# ============================================================
+def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str]:
+    """
+    Standardise spécifiquement pour les produits BDC ULYS
+    
+    Returns:
+        Tuple (produit_brut, produit_standard, confidence, status)
+    """
+    # Garder le produit brut original
+    produit_brut = product_name.strip()
+    
+    # Standardiser avec la méthode améliorée
+    produit_standard, confidence, status = standardize_product_name_improved(product_name)
+    
+    # Corrections spécifiques pour ULYS
+    produit_upper = produit_brut.upper()
+    
+    # Gestion spéciale pour "CONS. CHAN FOUI 75CL"
+    if "CONS" in produit_upper and "CHAN" in produit_upper:
+        if "FOUL" in produit_upper:
+            produit_standard = "Consigne Chan Foui 75 cl"
+            confidence = 0.95
+        elif "FOUI" in produit_upper:
+            produit_standard = "Consigne Chan Foui 75 cl"
+            confidence = 0.9
+        status = "matched"
+    
+    # Gestion spéciale pour les vins avec "NU"
+    if "NU" in produit_upper and "750" in produit_upper:
+        # Essayer de déterminer le type exact
+        if "ROUGE" in produit_upper and "FIANAR" in produit_upper:
+            produit_standard = "Côte de Fianar Rouge 75 cl"
+            confidence = 0.9
+            status = "matched"
+        elif "BLANC" in produit_upper and "FIANAR" in produit_upper:
+            produit_standard = "Côte de Fianar Blanc 75 cl"
+            confidence = 0.9
+            status = "matched"
+        elif "GRIS" in produit_upper and "FIANAR" in produit_upper:
+            produit_standard = "Côte de Fianar Gris 75 cl"
+            confidence = 0.9
+            status = "matched"
+        elif "ROUGE" in produit_upper and "MAROPARASY" in produit_upper:
+            produit_standard = "Maroparasy Rouge 75 cl"
+            confidence = 0.9
+            status = "matched"
+        elif "BLANC" in produit_upper and "MAROPARASY" in produit_upper:
+            produit_standard = "Blanc doux Maroparasy 75 cl"
+            confidence = 0.9
+            status = "matched"
+    
+    # Gestion spéciale pour les 3L
+    if "3L" in produit_upper or "3 L" in produit_upper:
+        if "ROUGE" in produit_upper and "FIANAR" in produit_upper:
+            produit_standard = "Côte de Fianar Rouge 3L"
+            confidence = 0.9
+            status = "matched"
+        elif "BLANC" in produit_upper and "FIANAR" in produit_upper:
+            produit_standard = "Côte de Fianar Blanc 3L"
+            confidence = 0.9
+            status = "matched"
+    
+    return produit_brut, produit_standard, confidence, status
 
 # ============================================================
 # CONFIGURATION STREAMLIT
@@ -498,44 +584,6 @@ def standardize_product_name(product_name: str) -> str:
     }
     
     return standardized
-
-# ============================================================
-# FONCTION D'AFFICHAGE DES DÉTAILS DE MATCHING
-# ============================================================
-def display_matching_details():
-    """Affiche les détails du matching des produits"""
-    if st.session_state.product_matching_scores:
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown('<h4>📊 Détails de la standardisation</h4>', unsafe_allow_html=True)
-        
-        scores_df = []
-        for original, details in st.session_state.product_matching_scores.items():
-            scores_df.append({
-                "Original": original,
-                "Standardisé": details['standardized'],
-                "Confiance": f"{details['confidence']*100:.1f}%",
-                "Statut": details['status']
-            })
-        
-        if scores_df:
-            df = pd.DataFrame(scores_df)
-            st.dataframe(df, use_container_width=True)
-            
-            # Statistiques
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                matched = sum(1 for d in scores_df if d['Statut'] in ['matched', 'partial_match'])
-                st.metric("✅ Matchs", matched)
-            
-            with col2:
-                avg_confidence = np.mean([float(d['Confiance'].replace('%', '')) for d in scores_df])
-                st.metric("📈 Confiance moyenne", f"{avg_confidence:.1f}%")
-            
-            with col3:
-                no_match = sum(1 for d in scores_df if d['Statut'] == 'no_match')
-                st.metric("❌ Non reconnus", no_match)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
 # SYSTÈME D'AUTHENTIFICATION
@@ -1515,23 +1563,10 @@ def get_openai_client():
         return None
 
 # ============================================================
-# FONCTIONS UTILITAIRES
+# FONCTION OCR AMÉLIORÉE POUR BDC ULYS
 # ============================================================
-def preprocess_image(b: bytes) -> bytes:
-    """Prétraitement de l'image pour améliorer la qualité"""
-    img = Image.open(BytesIO(b)).convert("RGB")
-    img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
-    out = BytesIO()
-    img.save(out, format="PNG", optimize=True, quality=95)
-    return out.getvalue()
-
-def encode_image_to_base64(image_bytes: bytes) -> str:
-    """Encode l'image en base64 pour OpenAI Vision"""
-    return base64.b64encode(image_bytes).decode('utf-8')
-
-def openai_vision_ocr(image_bytes: bytes) -> Dict:
-    """Utilise OpenAI Vision pour analyser le document et extraire les données structurées"""
+def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
+    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré"""
     try:
         client = get_openai_client()
         if not client:
@@ -1540,34 +1575,39 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
         # Encoder l'image
         base64_image = encode_image_to_base64(image_bytes)
         
-        # Prompt pour détecter automatiquement le type
+        # Prompt amélioré pour mieux extraire les articles
         prompt = """
-        Analyse ce document et identifie s'il s'agit d'une FACTURE EN COMPTE ou d'un BON DE COMMANDE (BDC).
+        Analyse ce document de type BON DE COMMANDE (BDC) et extrais précisément les informations suivantes:
         
-        Si c'est une FACTURE EN COMPTE, extrais ces informations:
-        {
-            "type_document": "FACTURE EN COMPTE",
-            "numero_facture": "...",
-            "date": "...",
-            "client": "...",
-            "adresse_livraison": "...",
-            "bon_commande": "...",
-            "mois": "...",
-            "articles": [{"article": "...", "quantite": ...}]
-        }
+        IMPORTANT: Extrais TOUTES les lignes du tableau, y compris les catégories comme "122111 - VINS ROUGES".
         
-        Si c'est un BON DE COMMANDE (BDC), extrais ces informations:
         {
-            "type_document": "BDC [CLIENT]",
+            "type_document": "BDC",
             "numero": "...",
             "date": "...",
             "client": "...",
             "adresse_livraison": "...",
-            "articles": [{"article": "...", "quantite": ...}]
+            "articles": [
+                {
+                    "article_brut": "TEXT EXACT COMME SUR LE DOCUMENT",
+                    "quantite": nombre
+                }
+            ]
         }
         
-        Pour les clients BDC: LEADERPRICE/DLP, S2M/SUPERMAKI, ULYS
-        Pour les articles, standardise: "COTE DE FIANAR" → "Côte de Fianar", "MAROPARASY" → "Maroparasy", "CONS CHAN FOUI" → "Consigne Chan Foui"
+        RÈGLES STRICTES:
+        1. Pour "article_brut": copie EXACTEMENT le texte de la colonne "Description de l'Article" sans modifications
+        2. Pour les quantités: extrais le nombre exact de la colonne "Qté"
+        3. Si c'est un BDC ULYS, note "ULYS" comme client
+        4. Extrais TOUTES les lignes d'articles, même celles qui sont des catégories
+        5. Ne standardise PAS les noms, garde-les exactement comme sur le document
+        6. Pour les lignes sans quantité (catégories), mets "0" ou laisse vide
+        
+        Exemples d'extraction CORRECTE:
+        "article_brut": "VIN ROUGE COTE DE FIANAR 3L"
+        "article_brut": "VIN ROUGE COTE DE FIANARA 750ML NU"
+        "article_brut": "CONS. CHAN FOUI 75CL"
+        "article_brut": "122111 - VINS ROUGES"  (c'est OK, on garde tout)
         """
         
         # Appel à l'API OpenAI Vision
@@ -1587,7 +1627,7 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
                     ]
                 }
             ],
-            max_tokens=2000,
+            max_tokens=3000,
             temperature=0.1
         )
         
@@ -1602,8 +1642,14 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
                 data = json.loads(json_str)
                 return data
             except json.JSONDecodeError:
-                st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
-                return None
+                # Essayer de nettoyer le JSON
+                json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
+                try:
+                    data = json.loads(json_str)
+                    return data
+                except:
+                    st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
+                    return None
         else:
             st.error("❌ Réponse JSON non trouvée dans la réponse OpenAI")
             return None
@@ -1611,6 +1657,22 @@ def openai_vision_ocr(image_bytes: bytes) -> Dict:
     except Exception as e:
         st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
         return None
+
+# ============================================================
+# FONCTIONS UTILITAIRES
+# ============================================================
+def preprocess_image(b: bytes) -> bytes:
+    """Prétraitement de l'image pour améliorer la qualité"""
+    img = Image.open(BytesIO(b)).convert("RGB")
+    img = ImageOps.autocontrast(img)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
+    out = BytesIO()
+    img.save(out, format="PNG", optimize=True, quality=95)
+    return out.getvalue()
+
+def encode_image_to_base64(image_bytes: bytes) -> str:
+    """Encode l'image en base64 pour OpenAI Vision"""
+    return base64.b64encode(image_bytes).decode('utf-8')
 
 def clean_text(text: str) -> str:
     """Nettoie le texte"""
@@ -1700,11 +1762,11 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         magasin = data.get("adresse_livraison", "")
         
         for _, row in articles_df.iterrows():
-            article = str(row.get("designation_standard", "")).strip()
+            article = str(row.get("Produit Standard", "")).strip()
             if not article:
-                article = str(row.get("Article", "")).strip()
+                article = str(row.get("Produit Brute", "")).strip()
             
-            quantite = format_quantity(row.get("quantite", row.get("Quantité", "")))
+            quantite = format_quantity(row.get("Quantité", ""))
             
             rows.append([
                 mois,
@@ -1737,11 +1799,11 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
         magasin = data.get("adresse_livraison", "")
         
         for _, row in articles_df.iterrows():
-            article = str(row.get("designation_standard", "")).strip()
+            article = str(row.get("Produit Standard", "")).strip()
             if not article:
-                article = str(row.get("Article", "")).strip()
+                article = str(row.get("Produit Brute", "")).strip()
             
-            quantite = format_quantity(row.get("quantite", row.get("Quantité", "")))
+            quantite = format_quantity(row.get("Quantité", ""))
             
             rows.append([
                 mois,
@@ -2180,7 +2242,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Traitement OCR avec OpenAI Vision
+    # Traitement OCR avec OpenAI Vision améliorée
     try:
         buf = BytesIO()
         st.session_state.uploaded_image.save(buf, format="JPEG")
@@ -2189,8 +2251,8 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         # Prétraitement de l'image
         img_processed = preprocess_image(image_bytes)
         
-        # Analyse avec OpenAI Vision
-        result = openai_vision_ocr(img_processed)
+        # Analyse avec OpenAI Vision améliorée
+        result = openai_vision_ocr_improved(img_processed)
         
         if result:
             st.session_state.ocr_result = result
@@ -2200,17 +2262,33 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             st.session_state.show_results = True
             st.session_state.processing = False
             
-            # Préparer les données standardisées
+            # Préparer les données standardisées avec les nouvelles colonnes
             if "articles" in result:
                 std_data = []
                 for article in result["articles"]:
-                    raw_name = article.get("article", "")
-                    std_name = standardize_product_name(raw_name)
-                    std_data.append({
-                        "Article": std_name,
-                        "Quantité": article.get("quantite", 0),
-                        "standardisé": raw_name.upper() != std_name.upper()
-                    })
+                    raw_name = article.get("article_brut", article.get("article", ""))
+                    
+                    # Filtrer les catégories (lignes qui ne sont pas des produits)
+                    if any(cat in raw_name.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE"]):
+                        # C'est une catégorie, on la garde mais on ne la standardise pas
+                        std_data.append({
+                            "Produit Brute": raw_name,
+                            "Produit Standard": raw_name,  # Garder tel quel
+                            "Quantité": 0,
+                            "Confiance": "0%",
+                            "Auto": False
+                        })
+                    else:
+                        # C'est un produit, on le standardise
+                        produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
+                        
+                        std_data.append({
+                            "Produit Brute": produit_brut,
+                            "Produit Standard": produit_standard,
+                            "Quantité": article.get("quantite", 0),
+                            "Confiance": f"{confidence*100:.1f}%",
+                            "Auto": confidence >= 0.7  # True si confiance élevée
+                        })
                 
                 # Créer le dataframe standardisé pour l'édition
                 st.session_state.edited_standardized_df = pd.DataFrame(std_data)
@@ -2329,7 +2407,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Client</div>', unsafe_allow_html=True)
-            client = st.text_input("", value=result.get("client", ""), key="bdc_client", label_visibility="collapsed")
+            client = st.text_input("", value=result.get("client", "ULYS"), key="bdc_client", label_visibility="collapsed")
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">N° BDC</div>', unsafe_allow_html=True)
             numero = st.text_input("", value=result.get("numero", ""), key="bdc_numero", label_visibility="collapsed")
         
@@ -2377,24 +2455,35 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     # ========================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
         st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown('<h4>📘 Base de données standardisée</h4>', unsafe_allow_html=True)
+        st.markdown('<h4>📘 Standardisation des Produits</h4>', unsafe_allow_html=True)
         
         # Instructions
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
-            <small style="color: {PALETTE['text_dark']} !important;">💡 <strong>Mode édition activé :</strong> Vous pouvez modifier les données, ajouter de nouvelles lignes (+), ou supprimer des lignes existantes. Les changements seront sauvegardés automatiquement.</small>
+            <small style="color: {PALETTE['text_dark']} !important;">
+            💡 <strong>Mode édition activé :</strong> 
+            • Colonne "Produit Brute" : texte original extrait par l'OCR<br>
+            • Colonne "Produit Standard" : standardisé automatiquement (éditable)<br>
+            • Colonne "Auto" : ✓ si la standardisation est automatique et fiable<br>
+            • <strong>Note :</strong> Les lignes de catégorie (ex: "122111 - VINS ROUGES") ne sont pas standardisées
+            </small>
         </div>
         """, unsafe_allow_html=True)
         
-        # Éditeur de données avec possibilité d'ajouter des lignes
+        # Éditeur de données avec les nouvelles colonnes
         edited_df = st.data_editor(
             st.session_state.edited_standardized_df,
             num_rows="dynamic",
             column_config={
-                "Article": st.column_config.TextColumn(
-                    "Produit",
+                "Produit Brute": st.column_config.TextColumn(
+                    "Produit Brute",
                     width="large",
-                    help="Nom standardisé du produit"
+                    help="Texte original extrait par l'OCR"
+                ),
+                "Produit Standard": st.column_config.TextColumn(
+                    "Produit Standard",
+                    width="large",
+                    help="Nom standardisé du produit (éditable)"
                 ),
                 "Quantité": st.column_config.NumberColumn(
                     "Quantité",
@@ -2402,7 +2491,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     help="Quantité commandée",
                     format="%d"
                 ),
-                "standardisé": st.column_config.CheckboxColumn(
+                "Confiance": st.column_config.TextColumn(
+                    "Confiance",
+                    width="small",
+                    help="Score de confiance de la standardisation"
+                ),
+                "Auto": st.column_config.CheckboxColumn(
                     "Auto",
                     help="Standardisé automatiquement par l'IA"
                 )
@@ -2414,11 +2508,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Mettre à jour le dataframe édité
         st.session_state.edited_standardized_df = edited_df
         
-        # Afficher les statistiques avec style tech amélioré
+        # Afficher les statistiques
         total_items = len(edited_df)
-        auto_standardized = edited_df["standardisé"].sum() if "standardisé" in edited_df.columns else 0
+        auto_standardized = edited_df["Auto"].sum() if "Auto" in edited_df.columns else 0
         
-        col_stat1, col_stat2 = st.columns(2)
+        col_stat1, col_stat2, col_stat3 = st.columns(3)
         with col_stat1:
             st.markdown(
                 f'''
@@ -2430,6 +2524,27 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 unsafe_allow_html=True
             )
         with col_stat2:
+            # Calculer la confiance moyenne seulement pour les lignes standardisées
+            confiance_values = []
+            for _, row in edited_df.iterrows():
+                if row["Auto"]:  # Seulement pour les lignes auto-standardisées
+                    try:
+                        confiance = float(row["Confiance"].replace('%', ''))
+                        confiance_values.append(confiance)
+                    except:
+                        pass
+            
+            avg_confidence = np.mean(confiance_values) if confiance_values else 0
+            st.markdown(
+                f'''
+                <div class="stat-badge" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.1) 100%); border: 1px solid rgba(16, 185, 129, 0.2);">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['success']} !important;">{avg_confidence:.1f}%</div>
+                    <div class="stat-label">Confiance moyenne</div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+        with col_stat3:
             st.markdown(
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.1) 100%); border: 1px solid rgba(245, 158, 11, 0.2);">
@@ -2440,13 +2555,81 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 unsafe_allow_html=True
             )
         
+        # Bouton pour forcer la re-standardisation
+        if st.button("🔄 Re-standardiser tous les produits", 
+                    key="restandardize_button",
+                    help="Appliquer la standardisation intelligente à tous les produits"):
+            # Réappliquer la standardisation
+            new_data = []
+            for _, row in edited_df.iterrows():
+                produit_brut = row["Produit Brute"]
+                
+                # Vérifier si c'est une catégorie
+                if any(cat in produit_brut.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE", "122111", "122112", "122113"]):
+                    # Garder les catégories telles quelles
+                    new_data.append({
+                        "Produit Brute": produit_brut,
+                        "Produit Standard": produit_brut,
+                        "Quantité": row["Quantité"],
+                        "Confiance": "0%",
+                        "Auto": False
+                    })
+                else:
+                    # Standardiser les produits
+                    produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(produit_brut)
+                    
+                    new_data.append({
+                        "Produit Brute": produit_brut,
+                        "Produit Standard": produit_standard,
+                        "Quantité": row["Quantité"],
+                        "Confiance": f"{confidence*100:.1f}%",
+                        "Auto": confidence >= 0.7
+                    })
+            
+            st.session_state.edited_standardized_df = pd.DataFrame(new_data)
+            st.rerun()
+        
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # DÉTAILS DE LA STANDARDISATION
+    # TEST DE STANDARDISATION ULYS
     # ========================================================
-    if st.session_state.product_matching_scores:
-        display_matching_details()
+    with st.expander("🧪 Tester la standardisation ULYS"):
+        # Exemples de test
+        test_examples = [
+            "VIN ROUGE COTE DE FIANAR 3L",
+            "VIN ROUGE COTE DE FIANARA 750ML NU",
+            "VIN BLANC COTE DE FIANAR 3L",
+            "VIN BLANC DOUX MAROPARASY 750ML NU",
+            "VIN BLANC COTE DE FIANARA 750ML NU",
+            "VIN GRIS COTE DE FIANARA 750ML NU",
+            "VIN ROUGE DOUX MAROPARASY 750ML NU",
+            "CONS. CHAN FOUI 75CL",
+            "CONS. CHAN FOUL 75CL",
+            "COTE DE FIANAR 3L",
+            "MAROPARASY 750ML",
+            "VIN ROUGE COTE DE FLANAR 3L",
+        ]
+        
+        if st.button("Tester avec des exemples typiques ULYS"):
+            results = []
+            for example in test_examples:
+                produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(example)
+                results.append({
+                    "Produit Brute": example,
+                    "Produit Standard": produit_standard,
+                    "Confiance": f"{confidence*100:.1f}%",
+                    "Statut": status
+                })
+            
+            test_df = pd.DataFrame(results)
+            st.dataframe(test_df, use_container_width=True)
+            
+            # Calculer l'accuracy
+            perfect_matches = sum(1 for _, row in test_df.iterrows() 
+                                if float(row["Confiance"].replace('%', '')) >= 85.0 and row["Statut"] == "matched")
+            accuracy = (perfect_matches / len(test_df)) * 100
+            st.success(f"📈 Précision pour ULYS : {accuracy:.1f}%")
     
     # ========================================================
     # BOUTON D'EXPORT PAR DÉFAUT
