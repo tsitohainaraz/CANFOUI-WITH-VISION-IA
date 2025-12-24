@@ -5,9 +5,11 @@ google-auth==2.35.0
 google-api-python-client
 gspread==6.1.4
 Pillow==10.4.0
+jellyfish==1.0.3
 
 opencv-python-headless
 numpy
 pandas
 
 openai>=1.40.0
+
