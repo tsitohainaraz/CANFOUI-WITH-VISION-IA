@@ -16,167 +16,13 @@ from typing import List, Tuple, Dict, Any, Optional
 import hashlib
 import json
 import unicodedata
-import jellyfish
-
-# ============================================================
-# FONCTIONS DE FILTRAGE ET GESTION DES CATÉGORIES
-# ============================================================
-
-def is_category_line(product_name: str) -> bool:
-    """
-    Détecte si une ligne est une catégorie (ex: '122111 - VINS ROUGES')
-    """
-    if not product_name or not isinstance(product_name, str):
-        return False
-    
-    name_upper = product_name.upper()
-    
-    category_patterns = [
-        r'\d{6}\s*-\s*VINS\s+ROUGES',
-        r'\d{6}\s*-\s*VINS\s+BLANCS',
-        r'\d{6}\s*-\s*VINS\s+ROSES',
-        r'\d{6}\s*-\s*LIQUEUR',
-        r'\d{6}\s*-\s*CONSIGNE',
-        r'^\d{6}\s*-\s*',
-    ]
-    
-    for pattern in category_patterns:
-        if re.search(pattern, name_upper):
-            return True
-    
-    category_keywords = [
-        "VINS ROUGES",
-        "VINS BLANCS", 
-        "VINS ROSES",
-        "LIQUEUR",
-        "CONSIGNE",
-        "CATEGORIE",
-        "CATÉGORIE"
-    ]
-    
-    for keyword in category_keywords:
-        if keyword in name_upper:
-            return True
-    
-    return False
-
-def filter_category_lines(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Filtre les lignes de catégorie d'un DataFrame
-    """
-    if df.empty:
-        return df
-    
-    product_column = None
-    for col in ['Produit Brute', 'Description de l\'Article', 'Description', 'article_brut', 'article']:
-        if col in df.columns:
-            product_column = col
-            break
-    
-    if not product_column:
-        return df
-    
-    mask = df[product_column].apply(lambda x: not is_category_line(str(x)) if pd.notna(x) else True)
-    return df[mask].copy()
-
-def filter_zero_quantity_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Filtre et supprime les lignes où la quantité est égale à 0
-    """
-    if df.empty:
-        return df
-    
-    if "Quantité" in df.columns:
-        df_copy = df.copy()
-        df_copy["Quantité"] = pd.to_numeric(df_copy["Quantité"], errors='coerce')
-        filtered_df = df_copy[df_copy["Quantité"] > 0].copy()
-        return filtered_df
-    else:
-        return df
-
-def filter_categories_and_zero_quantity(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Filtre les catégories ET les lignes avec quantité = 0
-    """
-    if df.empty:
-        return df
-    
-    # Filtrer les catégories
-    df_no_categories = filter_category_lines(df)
-    
-    # Filtrer les quantité = 0
-    df_filtered = filter_zero_quantity_rows(df_no_categories)
-    
-    return df_filtered
-
-def extract_and_format_categories(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Extrait et formate les catégories pour un affichage propre
-    """
-    if df.empty:
-        return df
-    
-    product_column = None
-    for col in ['Produit Brute', 'Description de l\'Article', 'Description', 'article_brut', 'article']:
-        if col in df.columns:
-            product_column = col
-            break
-    
-    if not product_column:
-        return df
-    
-    formatted_df = df.copy()
-    
-    def format_category(name):
-        if not isinstance(name, str):
-            return name
-        
-        if is_category_line(name):
-            name = name.strip()
-            name = re.sub(r'\s+', ' ', name)
-            parts = name.split(' - ')
-            if len(parts) == 2:
-                return f"{parts[0].strip()} - {parts[1].strip().title()}"
-            return name.title()
-        return name
-    
-    formatted_df[product_column] = formatted_df[product_column].apply(format_category)
-    
-    return formatted_df
-
-def generate_next_category_code(existing_categories: List[str]) -> str:
-    """
-    Génère le prochain code de catégorie disponible
-    """
-    if not existing_categories:
-        return "122114"
-    
-    codes = []
-    for category in existing_categories:
-        match = re.search(r'(\d{6})', str(category))
-        if match:
-            codes.append(int(match.group(1)))
-    
-    if not codes:
-        return "122114"
-    
-    max_code = max(codes)
-    
-    if max_code >= 122111 and max_code <= 122119:
-        next_code = max_code + 1
-    elif max_code >= 123141 and max_code <= 123149:
-        next_code = max_code + 1
-    elif max_code >= 821111 and max_code <= 821119:
-        next_code = max_code + 1
-    else:
-        next_code = 122114
-    
-    return str(next_code)
+import jellyfish  # Pour la distance de Jaro-Winkler
 
 # ============================================================
 # STANDARDISATION INTELLIGENTE DES PRODUITS
 # ============================================================
 
+# Liste officielle des produits
 STANDARD_PRODUCTS = [
     "Côte de Fianar Rouge 75 cl",
     "Côte de Fianar Rouge 37 cl",
@@ -214,7 +60,9 @@ STANDARD_PRODUCTS = [
     "Sambatra 20 cl"
 ]
 
+# Dictionnaire de synonymes et normalisations
 SYNONYMS = {
+    # Marques principales
     "cote de fianar": "côte de fianar",
     "cote de fianara": "côte de fianar",
     "fianara": "fianar",
@@ -233,6 +81,7 @@ SYNONYMS = {
     "sambatra": "sambatra",
     "champetre": "champêtre",
     
+    # Types de vins
     "vin rouge": "rouge",
     "vin blanc": "blanc",
     "vin rose": "rosé",
@@ -242,6 +91,7 @@ SYNONYMS = {
     "blanc doux": "blanc doux",
     "doux": "doux",
     
+    # Abréviations communes
     "btl": "",
     "bouteille": "",
     "nu": "",
@@ -255,8 +105,8 @@ SYNONYMS = {
     "chan foul": "chan foui",
     "cons. chan foul": "consigne chan foui",
     "cons chan foul": "consigne chan foui",
-    "chan foui": "chan foui",
     
+    # Unités
     "750ml": "75 cl",
     "750 ml": "75 cl",
     "700ml": "70 cl",
@@ -273,12 +123,9 @@ SYNONYMS = {
     "500 ml": "50 cl",
     "200ml": "20 cl",
     "200 ml": "20 cl",
-    "75cl": "75 cl",
-    "75 cl": "75 cl",
-    "37cl": "37 cl",
-    "37 cl": "37 cl",
 }
 
+# Mapping des équivalences de volume
 VOLUME_EQUIVALENTS = {
     "750": "75",
     "750ml": "75",
@@ -304,8 +151,6 @@ VOLUME_EQUIVALENTS = {
     "200 ml": "20",
     "75cl": "75",
     "75 cl": "75",
-    "37cl": "37",
-    "37 cl": "37",
 }
 
 def preprocess_text(text: str) -> str:
@@ -313,28 +158,39 @@ def preprocess_text(text: str) -> str:
     if not text:
         return ""
     
+    # Convertir en minuscules
     text = text.lower()
+    
+    # Supprimer les accents
     text = unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii')
+    
+    # Remplacer les apostrophes et tirets
     text = text.replace("'", " ").replace("-", " ").replace("_", " ").replace("/", " ")
+    
+    # Supprimer les caractères spéciaux (garder lettres, chiffres, espaces)
     text = re.sub(r'[^a-z0-9\s]', ' ', text)
     
+    # Remplacer les synonymes
     words = text.split()
     cleaned_words = []
     for word in words:
         if word in SYNONYMS:
             replacement = SYNONYMS[word]
-            if replacement:
+            if replacement:  # Ne pas ajouter si le synonyme est vide
                 cleaned_words.append(replacement)
         else:
             cleaned_words.append(word)
     
     text = ' '.join(cleaned_words)
+    
+    # Supprimer les espaces multiples
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
 
 def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
     """Extrait et normalise l'information de volume"""
+    # Chercher des motifs de volume
     volume_patterns = [
         r'(\d+)\s*cl',
         r'(\d+)\s*ml',
@@ -350,7 +206,9 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
         matches = re.findall(pattern, text)
         if matches:
             volume = matches[0]
+            # Normaliser le volume
             if 'ml' in pattern:
+                # Convertir ml en cl
                 try:
                     ml = int(volume)
                     if ml >= 1000:
@@ -360,6 +218,7 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
                 except:
                     pass
             elif 'l' in pattern and 'cl' not in pattern and 'ml' not in pattern:
+                # Convertir litres en cl
                 try:
                     liters = float(volume)
                     if liters >= 1:
@@ -367,13 +226,16 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
                 except:
                     pass
             
+            # Supprimer le volume du texte pour faciliter la correspondance
             text_without_volume = re.sub(pattern, '', text_without_volume)
             break
     
+    # Chercher aussi des volumes sans unité spécifique
     if not volume:
         match = re.search(r'\b(\d+)\b', text)
         if match:
             vol_num = match.group(1)
+            # Deviner l'unité basée sur la valeur
             if vol_num in VOLUME_EQUIVALENTS:
                 volume = f"{VOLUME_EQUIVALENTS[vol_num]} cl"
                 text_without_volume = re.sub(r'\b' + vol_num + r'\b', '', text_without_volume)
@@ -390,15 +252,15 @@ def extract_product_features(text: str) -> Dict[str, str]:
         'original': text
     }
     
-    if is_category_line(text):
-        features['type'] = 'categorie'
-        return features
-    
+    # Normaliser le texte
     normalized = preprocess_text(text)
+    
+    # Extraire le volume
     text_without_volume, volume = extract_volume_info(normalized)
     if volume:
         features['volume'] = volume
     
+    # Détecter la couleur
     colors = ['rouge', 'blanc', 'rose', 'gris', 'orange', 'peche', 'ananas', 'epices', 'ratafia']
     for color in colors:
         if color in text_without_volume:
@@ -406,6 +268,7 @@ def extract_product_features(text: str) -> Dict[str, str]:
             text_without_volume = text_without_volume.replace(color, '')
             break
     
+    # Détecter le type
     types = ['vin', 'jus', 'aperitif', 'eau de vie', 'cuvee', 'cuvee special', 'special', 'consigne']
     for type_ in types:
         if type_ in text_without_volume:
@@ -413,6 +276,7 @@ def extract_product_features(text: str) -> Dict[str, str]:
             text_without_volume = text_without_volume.replace(type_, '')
             break
     
+    # Détecter la marque
     marques = [
         ('cote de fianar', 'côte de fianar'),
         ('maroparasy', 'maroparasy'),
@@ -422,7 +286,6 @@ def extract_product_features(text: str) -> Dict[str, str]:
         ('champetre', 'vin de champêtre'),
         ('sambatra', 'sambatra'),
         ('consigne chan foui', 'consigne chan foui'),
-        ('chan foui', 'chan foui'),
     ]
     
     for marque_pattern, marque_std in marques:
@@ -431,6 +294,7 @@ def extract_product_features(text: str) -> Dict[str, str]:
             text_without_volume = text_without_volume.replace(marque_pattern, '')
             break
     
+    # Nettoyer le texte restant
     text_without_volume = re.sub(r'\s+', ' ', text_without_volume).strip()
     if text_without_volume:
         features['autres'] = text_without_volume
@@ -439,12 +303,10 @@ def extract_product_features(text: str) -> Dict[str, str]:
 
 def calculate_similarity_score(features1: Dict, features2: Dict) -> float:
     """Calcule un score de similarité entre deux ensembles de caractéristiques"""
-    if features1.get('type') == 'categorie' or features2.get('type') == 'categorie':
-        return 0.0
-    
     score = 0.0
     max_score = 0.0
     
+    # Poids pour chaque caractéristique
     weights = {
         'marque': 0.4,
         'couleur': 0.3,
@@ -456,12 +318,14 @@ def calculate_similarity_score(features1: Dict, features2: Dict) -> float:
         if features1.get(key) and features2.get(key):
             if features1[key] == features2[key]:
                 score += weight
+            # Similarité partielle pour les couleurs (rose/rosé)
             elif key == 'couleur':
                 if ('rose' in features1[key] and 'rosé' in features2[key]) or \
                    ('rosé' in features1[key] and 'rose' in features2[key]):
                     score += weight * 0.8
         max_score += weight
     
+    # Bonus pour correspondance exacte du volume
     if features1.get('volume') and features2.get('volume'):
         if features1['volume'] == features2['volume']:
             score += 0.1
@@ -472,34 +336,41 @@ def calculate_similarity_score(features1: Dict, features2: Dict) -> float:
 def find_best_match(ocr_designation: str, standard_products: List[str]) -> Tuple[Optional[str], float]:
     """
     Trouve le meilleur match pour une désignation OCR
-    """
-    if is_category_line(ocr_designation):
-        return None, 0.0
     
+    Returns:
+        Tuple (produit_standard, score_confidence)
+    """
+    # Prétraiter la désignation OCR
     ocr_features = extract_product_features(ocr_designation)
     
     best_match = None
     best_score = 0.0
     
+    # Pré-calculer les caractéristiques des produits standards
     standard_features = []
     for product in standard_products:
         std_features = extract_product_features(product)
         standard_features.append((product, std_features))
     
+    # Chercher le meilleur match
     for product, std_features in standard_features:
         score = calculate_similarity_score(ocr_features, std_features)
         
+        # Bonus pour correspondance exacte (après normalisation)
         ocr_normalized = preprocess_text(ocr_designation)
         std_normalized = preprocess_text(product)
         
+        # Utiliser Jaro-Winkler pour la similarité textuelle
         jaro_score = jellyfish.jaro_winkler_similarity(ocr_normalized, std_normalized)
         
+        # Combiner les scores
         combined_score = (score * 0.7) + (jaro_score * 0.3)
         
         if combined_score > best_score:
             best_score = combined_score
             best_match = product
     
+    # Seuil de confiance minimum
     if best_score < 0.6:
         return None, best_score
     
@@ -508,6 +379,9 @@ def find_best_match(ocr_designation: str, standard_products: List[str]) -> Tuple
 def intelligent_product_matcher(ocr_designation: str) -> Tuple[Optional[str], float, Dict]:
     """
     Standardise intelligemment une désignation produit OCR
+    
+    Returns:
+        Tuple (produit_standard, score_confidence, details)
     """
     details = {
         'original': ocr_designation,
@@ -515,14 +389,14 @@ def intelligent_product_matcher(ocr_designation: str) -> Tuple[Optional[str], fl
         'matches': []
     }
     
-    if is_category_line(ocr_designation):
-        return None, 0.0, details
-    
+    # 1. Extraction des caractéristiques
     features = extract_product_features(ocr_designation)
     details['features'] = features
     
+    # 2. Recherche du meilleur match
     best_match, confidence = find_best_match(ocr_designation, STANDARD_PRODUCTS)
     
+    # 3. Calcul des alternatives (top 3)
     alternatives = []
     for product in STANDARD_PRODUCTS:
         product_features = extract_product_features(product)
@@ -533,61 +407,75 @@ def intelligent_product_matcher(ocr_designation: str) -> Tuple[Optional[str], fl
         )
         combined_score = (score * 0.7) + (jaro_score * 0.3)
         
-        if combined_score >= 0.4:
+        if combined_score >= 0.4:  # Seuil bas pour voir les alternatives
             alternatives.append((product, combined_score))
     
+    # Trier par score décroissant
     alternatives.sort(key=lambda x: x[1], reverse=True)
-    details['matches'] = alternatives[:3]
+    details['matches'] = alternatives[:3]  # Top 3 seulement
     
     return best_match, confidence, details
 
+# ============================================================
+# FONCTION AMÉLIORÉE DE STANDARDISATION
+# ============================================================
 def standardize_product_name_improved(product_name: str) -> Tuple[str, float, str]:
     """
     Standardise le nom du produit avec score de confiance
+    
+    Args:
+        product_name: Nom du produit issu de l'OCR
+        
+    Returns:
+        Tuple (nom_standardisé, score_confiance, status)
     """
     if not product_name or not product_name.strip():
         return "", 0.0, "empty"
     
-    if is_category_line(product_name):
-        return product_name, 0.0, "category"
-    
+    # Essayer d'abord avec le matching intelligent
     best_match, confidence, details = intelligent_product_matcher(product_name)
     
     if best_match and confidence >= 0.7:
         return best_match, confidence, "matched"
     elif best_match and confidence >= 0.6:
+        # Match à confiance moyenne
         return best_match, confidence, "partial_match"
     else:
+        # Aucun bon match trouvé
         return product_name.title(), confidence, "no_match"
 
+# ============================================================
+# FONCTION DE STANDARDISATION SPÉCIFIQUE POUR BDC
+# ============================================================
 def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str]:
     """
     Standardise spécifiquement pour les produits BDC ULYS
+    
+    Returns:
+        Tuple (produit_brut, produit_standard, confidence, status)
     """
+    # Garder le produit brut original
     produit_brut = product_name.strip()
     
-    if is_category_line(produit_brut):
-        return produit_brut, produit_brut, 0.0, "category"
-    
+    # Standardiser avec la méthode améliorée
     produit_standard, confidence, status = standardize_product_name_improved(product_name)
     
+    # Corrections spécifiques pour ULYS
     produit_upper = produit_brut.upper()
     
-    if "CONS" in produit_upper and ("CHAN" in produit_upper or "FOUI" in produit_upper or "FOUL" in produit_upper):
+    # Gestion spéciale pour "CONS. CHAN FOUI 75CL"
+    if "CONS" in produit_upper and "CHAN" in produit_upper:
         if "FOUL" in produit_upper:
             produit_standard = "Consigne Chan Foui 75 cl"
             confidence = 0.95
-            status = "matched"
         elif "FOUI" in produit_upper:
             produit_standard = "Consigne Chan Foui 75 cl"
             confidence = 0.9
-            status = "matched"
-        elif "CHAN" in produit_upper:
-            produit_standard = "Consigne Chan Foui 75 cl"
-            confidence = 0.85
-            status = "matched"
+        status = "matched"
     
-    if "NU" in produit_upper and ("750" in produit_upper or "75" in produit_upper):
+    # Gestion spéciale pour les vins avec "NU"
+    if "NU" in produit_upper and "750" in produit_upper:
+        # Essayer de déterminer le type exact
         if "ROUGE" in produit_upper and "FIANAR" in produit_upper:
             produit_standard = "Côte de Fianar Rouge 75 cl"
             confidence = 0.9
@@ -609,7 +497,8 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
             confidence = 0.9
             status = "matched"
     
-    if "3L" in produit_upper or "3 L" in produit_upper or "3000" in produit_upper:
+    # Gestion spéciale pour les 3L
+    if "3L" in produit_upper or "3 L" in produit_upper:
         if "ROUGE" in produit_upper and "FIANAR" in produit_upper:
             produit_standard = "Côte de Fianar Rouge 3L"
             confidence = 0.9
@@ -618,240 +507,8 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
             produit_standard = "Côte de Fianar Blanc 3L"
             confidence = 0.9
             status = "matched"
-        elif "ROSE" in produit_upper or "ROSÉ" in produit_upper and "FIANAR" in produit_upper:
-            produit_standard = "Côte de Fianar Rosé 3L"
-            confidence = 0.9
-            status = "matched"
-    
-    if "37" in produit_upper or "370" in produit_upper:
-        if "ROUGE" in produit_upper and "FIANAR" in produit_upper:
-            produit_standard = "Côte de Fianar Rouge 37 cl"
-            confidence = 0.85
-            status = "matched"
-        elif "BLANC" in produit_upper and "FIANAR" in produit_upper:
-            produit_standard = "Côte de Fianar Blanc 37 cl"
-            confidence = 0.85
-            status = "matched"
-        elif "GRIS" in produit_upper and "FIANAR" in produit_upper:
-            produit_standard = "Côte de Fianar Gris 37 cl"
-            confidence = 0.85
-            status = "matched"
     
     return produit_brut, produit_standard, confidence, status
-
-# ============================================================
-# NOUVELLE FONCTION DE TRAITEMENT OCR AVEC SUPPRESSION COMPLÈTE DES QUANTITÉS = 0
-# ============================================================
-
-def process_ocr_with_complete_filtering(ocr_result: dict) -> pd.DataFrame:
-    """
-    Traite les résultats OCR avec filtrage COMPLET:
-    - Supprime les catégories
-    - Supprime les lignes avec quantité = 0
-    - Ne garde que les produits avec quantité > 0
-    """
-    std_data = []
-    
-    if "articles" in ocr_result:
-        for article in ocr_result["articles"]:
-            raw_name = article.get("article_brut", article.get("article", ""))
-            quantite = article.get("quantite", 0)
-            
-            # Vérifier si c'est une catégorie - NE PAS L'AJOUTER DU TOUT
-            if is_category_line(raw_name):
-                continue
-            
-            # Vérifier si la quantité est > 0
-            try:
-                qty = float(quantite)
-                if qty <= 0:
-                    continue
-            except:
-                continue
-            
-            # Standardiser seulement les produits avec quantité > 0
-            produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
-            
-            std_data.append({
-                "Produit Brute": produit_brut,
-                "Produit Standard": produit_standard,
-                "Quantité": qty,
-                "Confiance": f"{confidence*100:.1f}%",
-                "Auto": confidence >= 0.7
-            })
-    
-    return pd.DataFrame(std_data)
-
-# ============================================================
-# FONCTION OCR AVEC FILTRAGE
-# ============================================================
-
-def openai_vision_ocr_improved_with_complete_filter(image_bytes: bytes) -> Dict:
-    """Utilise OpenAI Vision pour analyser le document avec filtrage COMPLET"""
-    try:
-        client = get_openai_client()
-        if not client:
-            return None
-        
-        base64_image = encode_image_to_base64(image_bytes)
-        
-        prompt = """
-        Analyse ce document de type BON DE COMMANDE (BDC) et extrais précisément les informations suivantes:
-        
-        IMPORTANT: 
-        1. Extrais TOUTES les lignes du tableau, y compris les catégories comme "122111 - VINS ROUGES".
-        2. Pour les lignes de catégorie, mets la quantité à 0.
-        3. Pour les produits réels, extrais la quantité exacte.
-        4. NE FILTRE PAS les lignes avec quantité 0 - nous les filtrerons après.
-        
-        {
-            "type_document": "BDC",
-            "numero": "...",
-            "date": "...",
-            "client": "...",
-            "adresse_livraison": "...",
-            "articles": [
-                {
-                    "article_brut": "TEXT EXACT COMME SUR LE DOCUMENT",
-                    "quantite": nombre
-                }
-            ]
-        }
-        
-        RÈGLES STRICTES:
-        1. Pour "article_brut": copie EXACTEMENT le texte de la colonne "Description de l'Article" sans modifications
-        2. Pour les quantités: extrais le nombre exact de la colonne "Qté"
-        3. Pour les lignes qui sont des catégories (ex: "122111 - VINS ROUGES"), mets "quantite": 0
-        4. Si c'est un BDC ULYS, note "ULYS" comme client
-        5. Ne standardise PAS les noms, garde-les exactement comme sur le document
-        """
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=3000,
-            temperature=0.1
-        )
-        
-        content = response.choices[0].message.content
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            json_str = json_match.group()
-            try:
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
-                try:
-                    return json.loads(json_str)
-                except:
-                    st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
-                    return None
-        else:
-            st.error("❌ Réponse JSON non trouvée dans la réponse OpenAI")
-            return None
-            
-    except Exception as e:
-        st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
-        return None
-
-def generate_new_category_code(existing_codes: List[str] = None) -> str:
-    """
-    Génère un nouveau code de catégorie à jour
-    """
-    if existing_codes is None:
-        existing_codes = []
-    
-    series_codes = {
-        "vins": ["122111", "122112", "122113"],
-        "liqueur": ["123141"],
-        "consigne": ["821111"]
-    }
-    
-    all_codes = []
-    for serie in series_codes.values():
-        all_codes.extend(serie)
-    
-    if existing_codes:
-        all_codes.extend(existing_codes)
-    
-    numeric_codes = []
-    for code in all_codes:
-        match = re.search(r'(\d{6})', str(code))
-        if match:
-            numeric_codes.append(int(match.group(1)))
-    
-    if not numeric_codes:
-        return "122114"
-    
-    numeric_codes.sort()
-    
-    vins_series = [c for c in numeric_codes if 122111 <= c <= 122199]
-    if vins_series:
-        last_vins = max(vins_series)
-        if last_vins < 122199:
-            return str(last_vins + 1)
-    
-    liqueur_series = [c for c in numeric_codes if 123141 <= c <= 123199]
-    if liqueur_series:
-        last_liqueur = max(liqueur_series)
-        if last_liqueur < 123199:
-            return str(last_liqueur + 1)
-    
-    return "122114"
-
-def extract_categories_from_dataframe(df: pd.DataFrame) -> List[str]:
-    """
-    Extrait les catégories d'un DataFrame
-    """
-    if df.empty:
-        return []
-    
-    product_column = None
-    for col in ['Produit Brute', 'Description de l\'Article', 'Description', 'article_brut', 'article']:
-        if col in df.columns:
-            product_column = col
-            break
-    
-    if not product_column:
-        return []
-    
-    categories = []
-    for item in df[product_column]:
-        if is_category_line(str(item)):
-            categories.append(str(item).strip())
-    
-    return list(set(categories))
-
-def standardize_product_name(product_name: str) -> str:
-    """Standardise les noms de produits avec la nouvelle méthode intelligente"""
-    if is_category_line(product_name):
-        return product_name
-    
-    standardized, confidence, status = standardize_product_name_improved(product_name)
-    
-    if 'product_matching_scores' not in st.session_state:
-        st.session_state.product_matching_scores = {}
-    
-    st.session_state.product_matching_scores[product_name] = {
-        'standardized': standardized,
-        'confidence': confidence,
-        'status': status
-    }
-    
-    return standardized
 
 # ============================================================
 # CONFIGURATION STREAMLIT
@@ -864,8 +521,9 @@ st.set_page_config(
 )
 
 # ============================================================
-# INITIALISATION DES VARIABLES DE SESSION
+# INITIALISATION COMPLÈTE DES VARIABLES DE SESSION
 # ============================================================
+# Initialisation des états de session pour l'authentification
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "username" not in st.session_state:
@@ -875,6 +533,7 @@ if "login_attempts" not in st.session_state:
 if "locked_until" not in st.session_state:
     st.session_state.locked_until = None
 
+# Initialisation des états pour l'application principale
 if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
 if "uploaded_image" not in st.session_state:
@@ -909,8 +568,22 @@ if "document_scanned" not in st.session_state:
     st.session_state.document_scanned = False
 if "product_matching_scores" not in st.session_state:
     st.session_state.product_matching_scores = {}
-if "removed_zero_quantity_count" not in st.session_state:
-    st.session_state.removed_zero_quantity_count = 0
+
+# ============================================================
+# FONCTION DE NORMALISATION DES PRODUITS (COMPATIBILITÉ)
+# ============================================================
+def standardize_product_name(product_name: str) -> str:
+    """Standardise les noms de produits avec la nouvelle méthode intelligente"""
+    standardized, confidence, status = standardize_product_name_improved(product_name)
+    
+    # Stocker le score de confiance dans la session pour affichage
+    st.session_state.product_matching_scores[product_name] = {
+        'standardized': standardized,
+        'confidence': confidence,
+        'status': status
+    }
+    
+    return standardized
 
 # ============================================================
 # SYSTÈME D'AUTHENTIFICATION
@@ -961,7 +634,6 @@ def logout():
     st.session_state.document_scanned = False
     st.session_state.export_triggered = False
     st.session_state.product_matching_scores = {}
-    st.session_state.removed_zero_quantity_count = 0
     st.rerun()
 
 # ============================================================
@@ -998,11 +670,17 @@ if not check_authentication():
         }
         
         .login-subtitle {
-            color: #1E293B !important;
+            color: #1E293B !important;  /* Texte sombre */
             margin-bottom: 32px;
             font-size: 1rem;
             font-weight: 400;
             font-family: 'Inter', sans-serif;
+        }
+        
+        .login-logo {
+            height: 80px;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
         }
         
         .stSelectbox > div > div {
@@ -1012,7 +690,7 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
-            color: #1E293B !important;
+            color: #1E293B !important;  /* Texte sombre */
         }
         
         .stSelectbox > div > div:hover {
@@ -1020,6 +698,7 @@ if not check_authentication():
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
         }
         
+        /* FORCER LE TEXTE EN NOIR POUR TOUS LES CHAMPS */
         .stSelectbox input,
         .stSelectbox div,
         .stSelectbox span {
@@ -1034,20 +713,22 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
-            color: #1E293B !important;
+            color: #1E293B !important;  /* Texte sombre */
         }
         
         .stTextInput > div > div > input:focus {
             border-color: #27414A;
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
             outline: none;
-            color: #1E293B !important;
+            color: #1E293B !important;  /* Texte sombre */
         }
         
+        /* Correction pour le placeholder */
         .stTextInput > div > div > input::placeholder {
-            color: #64748b !important;
+            color: #64748b !important;  /* Placeholder en gris */
         }
         
+        /* Correction pour les labels */
         label {
             color: #1E293B !important;
             font-weight: 500 !important;
@@ -1071,7 +752,22 @@ if not check_authentication():
         
         .stButton > button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 8px 20px rgba(39, 65, 74, 0.25);
+        }
+        
+        .stButton > button:after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: 0.5s;
+        }
+        
+        .stButton > button:hover:after {
+            left: 100%;
         }
         
         .security-warning {
@@ -1081,7 +777,7 @@ if not check_authentication():
             padding: 18px;
             margin-top: 28px;
             font-size: 0.9rem;
-            color: #856404 !important;
+            color: #856404 !important;  /* Texte sombre */
             text-align: left;
             font-family: 'Inter', sans-serif;
             box-shadow: 0 4px 12px rgba(255, 193, 7, 0.1);
@@ -1103,19 +799,27 @@ if not check_authentication():
             100% { transform: scale(0.95); opacity: 0.7; }
         }
         
+        /* Styles pour assurer la lisibilité */
         .text-dark {
             color: #1E293B !important;
         }
         
+        .text-medium {
+            color: #334155 !important;
+        }
+        
+        /* Override pour tous les textes */
         * {
             color: #1E293B !important;
         }
         
+        /* Exception pour les éléments qui doivent être blancs */
         .stButton > button,
         .user-info {
             color: white !important;
         }
         
+        /* Style spécifique pour le dropdown */
         [data-baseweb="select"] * {
             color: #1E293B !important;
         }
@@ -1140,19 +844,24 @@ if not check_authentication():
     st.markdown('<h1 class="login-title">CHAN FOUI ET FILS</h1>', unsafe_allow_html=True)
     st.markdown('<p class="login-subtitle">Système de Scanner Pro - Accès Restreint</p>', unsafe_allow_html=True)
     
+    # Indicateur de sécurité
     col_status = st.columns(3)
     with col_status[0]:
         st.markdown('<div style="text-align: center; color: #1E293B !important;"><span class="pulse-dot"></span>Serveur actif</div>', unsafe_allow_html=True)
     
+    # Injection JavaScript pour forcer les couleurs
     st.markdown("""
     <script>
+    // Fonction pour forcer les couleurs sombres
     function forceDarkText() {
+        // Cibler tous les inputs
         const inputs = document.querySelectorAll('input, select, textarea, [role="combobox"], [data-baseweb="select"]');
         inputs.forEach(el => {
             el.style.color = '#1E293B';
             el.style.setProperty('color', '#1E293B', 'important');
             el.style.setProperty('-webkit-text-fill-color', '#1E293B', 'important');
             
+            // Forcer aussi les enfants
             const children = el.querySelectorAll('*');
             children.forEach(child => {
                 child.style.color = '#1E293B';
@@ -1160,9 +869,11 @@ if not check_authentication():
             });
         });
         
+        // Cibler tous les textes
         const textElements = document.querySelectorAll('div, span, p, label, h1, h2, h3, h4, h5, h6');
         textElements.forEach(el => {
             const computedColor = window.getComputedStyle(el).color;
+            // Si la couleur est proche du blanc, la changer
             if (computedColor.includes('255') || computedColor.includes('rgb(255') || computedColor === 'white') {
                 el.style.color = '#1E293B';
                 el.style.setProperty('color', '#1E293B', 'important');
@@ -1170,9 +881,11 @@ if not check_authentication():
         });
     }
     
+    // Exécuter immédiatement et régulièrement
     setTimeout(forceDarkText, 100);
     setInterval(forceDarkText, 500);
     
+    // Écouter les changements
     document.addEventListener('click', forceDarkText);
     document.addEventListener('input', forceDarkText);
     document.addEventListener('change', forceDarkText);
@@ -1216,6 +929,9 @@ if not check_authentication():
 # APPLICATION PRINCIPALE
 # ============================================================
 
+# ============================================================
+# THÈME CHAN FOUI & FILS - VERSION TECH AMÉLIORÉE
+# ============================================================
 LOGO_FILENAME = "CF_LOGOS.png"
 BRAND_TITLE = "CHAN FOUI ET FILS"
 BRAND_SUB = "AI Document Processing System"
@@ -1226,9 +942,9 @@ PALETTE = {
     "background": "#F5F5F3",
     "card_bg": "#FFFFFF",
     "card_bg_alt": "#F4F6F3",
-    "text_dark": "#1A1A1A",
-    "text_medium": "#333333",
-    "text_light": "#4B5563",
+    "text_dark": "#1A1A1A",        # Couleur de texte principale
+    "text_medium": "#333333",      # Texte secondaire
+    "text_light": "#4B5563",       # Texte tertiaire
     "accent": "#2C5F73",
     "success": "#10B981",
     "warning": "#F59E0B",
@@ -1244,10 +960,12 @@ st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400&display=swap');
     
+    /* RÈGLE GLOBALE : AUCUN TEXTE EN BLANC */
     * {{
         color: {PALETTE['text_dark']} !important;
     }}
     
+    /* Exceptions spécifiques pour les éléments qui DOIVENT être blancs */
     .stButton > button,
     .user-info,
     .document-title,
@@ -1269,6 +987,7 @@ st.markdown(f"""
         color: {PALETTE['text_dark']} !important;
     }}
     
+    /* Amélioration de la lisibilité */
     h1, h2, h3, h4, h5, h6 {{
         color: {PALETTE['text_dark']} !important;
         font-weight: 700 !important;
@@ -1522,6 +1241,7 @@ st.markdown(f"""
         animation: shine 2s infinite;
     }}
     
+    /* Texte en noir dans la barre de progression */
     .progress-text-dark {{
         color: {PALETTE['text_dark']} !important;
         font-weight: 600;
@@ -1637,6 +1357,7 @@ st.markdown(f"""
         pointer-events: none;
     }}
     
+    /* Custom scrollbar */
     ::-webkit-scrollbar {{
         width: 8px;
         height: 8px;
@@ -1656,6 +1377,7 @@ st.markdown(f"""
         background: linear-gradient(135deg, {PALETTE['primary_light']} 0%, {PALETTE['tech_blue']} 100%);
     }}
     
+    /* Animations pour les éléments d'interface */
     @keyframes fadeIn {{
         from {{ opacity: 0; transform: translateY(10px); }}
         to {{ opacity: 1; transform: translateY(0); }}
@@ -1665,6 +1387,7 @@ st.markdown(f"""
         animation: fadeIn 0.5s ease-out;
     }}
     
+    /* AMÉLIORATION : Style pour les champs de formulaire avec texte sombre */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
     .stSelectbox > div > div,
@@ -1689,11 +1412,13 @@ st.markdown(f"""
         color: {PALETTE['text_dark']} !important;
     }}
     
+    /* Placeholder en gris */
     ::placeholder {{
         color: {PALETTE['text_light']} !important;
         opacity: 0.7;
     }}
     
+    /* Labels en gras et sombres */
     label {{
         color: {PALETTE['text_dark']} !important;
         font-weight: 600 !important;
@@ -1701,6 +1426,7 @@ st.markdown(f"""
         display: block;
     }}
     
+    /* Forcer le texte dans les dropdowns */
     [data-baseweb="select"] *,
     [data-baseweb="popover"] *,
     [role="listbox"] *,
@@ -1708,6 +1434,7 @@ st.markdown(f"""
         color: {PALETTE['text_dark']} !important;
     }}
     
+    /* Style pour les dataframes */
     .dataframe {{
         border-radius: 12px !important;
         overflow: hidden !important;
@@ -1715,6 +1442,7 @@ st.markdown(f"""
         border: 1px solid {PALETTE['border']} !important;
     }}
     
+    /* Amélioration des contrastes pour l'accessibilité */
     .stAlert {{
         color: {PALETTE['text_dark']} !important;
     }}
@@ -1737,6 +1465,7 @@ st.markdown(f"""
         border-color: {PALETTE['warning']} !important;
     }}
     
+    /* Amélioration des badges */
     .stat-badge {{
         padding: 15px;
         border-radius: 14px;
@@ -1752,6 +1481,7 @@ st.markdown(f"""
         margin-top: 5px;
     }}
     
+    /* Animation pour les nouveaux éléments */
     @keyframes slideIn {{
         from {{ transform: translateX(-20px); opacity: 0; }}
         to {{ transform: translateX(0); opacity: 1; }}
@@ -1775,6 +1505,9 @@ SHEET_GIDS = {
     "BDC ULYS": 954728911
 }
 
+# ============================================================
+# FONCTION DE NORMALISATION DU TYPE DE DOCUMENT
+# ============================================================
 def normalize_document_type(doc_type: str) -> str:
     """Normalise le type de document pour correspondre aux clés SHEET_GIDS"""
     if not doc_type:
@@ -1782,9 +1515,11 @@ def normalize_document_type(doc_type: str) -> str:
     
     doc_type_upper = doc_type.upper()
     
+    # Mapping des types de documents
     if "FACTURE" in doc_type_upper and "COMPTE" in doc_type_upper:
         return "FACTURE EN COMPTE"
     elif "BDC" in doc_type_upper or "BON DE COMMANDE" in doc_type_upper:
+        # Extraire le client du type de document
         if "LEADERPRICE" in doc_type_upper or "DLP" in doc_type_upper:
             return "BDC LEADERPRICE"
         elif "S2M" in doc_type_upper or "SUPERMAKI" in doc_type_upper:
@@ -1792,11 +1527,13 @@ def normalize_document_type(doc_type: str) -> str:
         elif "ULYS" in doc_type_upper:
             return "BDC ULYS"
         else:
+            # Vérifier si le client est dans le nom
             for client in ["LEADERPRICE", "DLP", "S2M", "SUPERMAKI", "ULYS"]:
                 if client in doc_type_upper:
                     return f"BDC {client}"
-            return "BDC LEADERPRICE"
+            return "BDC LEADERPRICE"  # Par défaut
     else:
+        # Essayer de deviner le type
         if any(word in doc_type_upper for word in ["FACTURE", "INVOICE", "BILL"]):
             return "FACTURE EN COMPTE"
         elif any(word in doc_type_upper for word in ["COMMANDE", "ORDER", "PO"]):
@@ -1804,6 +1541,9 @@ def normalize_document_type(doc_type: str) -> str:
         else:
             return "DOCUMENT INCONNU"
 
+# ============================================================
+# OPENAI CONFIGURATION
+# ============================================================
 def get_openai_client():
     """Initialise et retourne le client OpenAI"""
     try:
@@ -1822,6 +1562,105 @@ def get_openai_client():
         st.error(f"❌ Erreur d'initialisation OpenAI: {str(e)}")
         return None
 
+# ============================================================
+# FONCTION OCR AMÉLIORÉE POUR BDC ULYS
+# ============================================================
+def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
+    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré"""
+    try:
+        client = get_openai_client()
+        if not client:
+            return None
+        
+        # Encoder l'image
+        base64_image = encode_image_to_base64(image_bytes)
+        
+        # Prompt amélioré pour mieux extraire les articles
+        prompt = """
+        Analyse ce document de type BON DE COMMANDE (BDC) et extrais précisément les informations suivantes:
+        
+        IMPORTANT: Extrais TOUTES les lignes du tableau, y compris les catégories comme "122111 - VINS ROUGES".
+        
+        {
+            "type_document": "BDC",
+            "numero": "...",
+            "date": "...",
+            "client": "...",
+            "adresse_livraison": "...",
+            "articles": [
+                {
+                    "article_brut": "TEXT EXACT COMME SUR LE DOCUMENT",
+                    "quantite": nombre
+                }
+            ]
+        }
+        
+        RÈGLES STRICTES:
+        1. Pour "article_brut": copie EXACTEMENT le texte de la colonne "Description de l'Article" sans modifications
+        2. Pour les quantités: extrais le nombre exact de la colonne "Qté"
+        3. Si c'est un BDC ULYS, note "ULYS" comme client
+        4. Extrais TOUTES les lignes d'articles, même celles qui sont des catégories
+        5. Ne standardise PAS les noms, garde-les exactement comme sur le document
+        6. Pour les lignes sans quantité (catégories), mets "0" ou laisse vide
+        
+        Exemples d'extraction CORRECTE:
+        "article_brut": "VIN ROUGE COTE DE FIANAR 3L"
+        "article_brut": "VIN ROUGE COTE DE FIANARA 750ML NU"
+        "article_brut": "CONS. CHAN FOUI 75CL"
+        "article_brut": "122111 - VINS ROUGES"  (c'est OK, on garde tout)
+        """
+        
+        # Appel à l'API OpenAI Vision
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=3000,
+            temperature=0.1
+        )
+        
+        # Extraire et parser la réponse JSON
+        content = response.choices[0].message.content
+        
+        # Nettoyer la réponse pour extraire le JSON
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            json_str = json_match.group()
+            try:
+                data = json.loads(json_str)
+                return data
+            except json.JSONDecodeError:
+                # Essayer de nettoyer le JSON
+                json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
+                try:
+                    data = json.loads(json_str)
+                    return data
+                except:
+                    st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
+                    return None
+        else:
+            st.error("❌ Réponse JSON non trouvée dans la réponse OpenAI")
+            return None
+            
+    except Exception as e:
+        st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
+        return None
+
+# ============================================================
+# FONCTIONS UTILITAIRES
+# ============================================================
 def preprocess_image(b: bytes) -> bytes:
     """Prétraitement de l'image pour améliorer la qualité"""
     img = Image.open(BytesIO(b)).convert("RGB")
@@ -1908,11 +1747,10 @@ def map_client(client: str) -> str:
         return client
 
 # ============================================================
-# NOUVELLES FONCTIONS DE PRÉPARATION AVEC FILTRAGE COMPLET
+# FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS
 # ============================================================
-
-def prepare_facture_rows_with_complete_filter(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les factures avec filtrage COMPLET"""
+def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
+    """Prépare les lignes pour les factures (9 colonnes)"""
     rows = []
     
     try:
@@ -1923,35 +1761,24 @@ def prepare_facture_rows_with_complete_filter(data: dict, articles_df: pd.DataFr
         nf = data.get("numero_facture", "")
         magasin = data.get("adresse_livraison", "")
         
-        # Filtrer les lignes avec quantité > 0
-        articles_to_export = articles_df.copy()
-        articles_to_export["Quantité"] = pd.to_numeric(articles_to_export["Quantité"], errors='coerce')
-        articles_to_export = articles_to_export[articles_to_export["Quantité"] > 0]
-        
-        for _, row in articles_to_export.iterrows():
+        for _, row in articles_df.iterrows():
             article = str(row.get("Produit Standard", "")).strip()
             if not article:
                 article = str(row.get("Produit Brute", "")).strip()
             
             quantite = format_quantity(row.get("Quantité", ""))
             
-            # Vérifier que la quantité n'est pas 0
-            try:
-                qty_value = float(quantite.replace(',', '.'))
-                if qty_value > 0:
-                    rows.append([
-                        mois,
-                        client,
-                        date,
-                        nbc,
-                        nf,
-                        "",  # Lien (vide par défaut)
-                        magasin,
-                        article,
-                        quantite
-                    ])
-            except:
-                continue
+            rows.append([
+                mois,
+                client,
+                date,
+                nbc,
+                nf,
+                "",  # Lien (vide par défaut)
+                magasin,
+                article,
+                quantite
+            ])
         
         return rows
         
@@ -1959,8 +1786,8 @@ def prepare_facture_rows_with_complete_filter(data: dict, articles_df: pd.DataFr
         st.error(f"❌ Erreur lors de la préparation des données facture: {str(e)}")
         return []
 
-def prepare_bdc_rows_with_complete_filter(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les BDC avec filtrage COMPLET"""
+def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
+    """Prépare les lignes pour les BDC (8 colonnes)"""
     rows = []
     
     try:
@@ -1971,34 +1798,23 @@ def prepare_bdc_rows_with_complete_filter(data: dict, articles_df: pd.DataFrame)
         nbc = data.get("numero", "")
         magasin = data.get("adresse_livraison", "")
         
-        # Filtrer les lignes avec quantité > 0
-        articles_to_export = articles_df.copy()
-        articles_to_export["Quantité"] = pd.to_numeric(articles_to_export["Quantité"], errors='coerce')
-        articles_to_export = articles_to_export[articles_to_export["Quantité"] > 0]
-        
-        for _, row in articles_to_export.iterrows():
+        for _, row in articles_df.iterrows():
             article = str(row.get("Produit Standard", "")).strip()
             if not article:
                 article = str(row.get("Produit Brute", "")).strip()
             
             quantite = format_quantity(row.get("Quantité", ""))
             
-            # Vérifier que la quantité n'est pas 0
-            try:
-                qty_value = float(quantite.replace(',', '.'))
-                if qty_value > 0:
-                    rows.append([
-                        mois,
-                        client,
-                        date,
-                        nbc,
-                        "",  # Lien (vide par défaut)
-                        magasin,
-                        article,
-                        quantite
-                    ])
-            except:
-                continue
+            rows.append([
+                mois,
+                client,
+                date,
+                nbc,
+                "",  # Lien (vide par défaut)
+                magasin,
+                article,
+                quantite
+            ])
         
         return rows
         
@@ -2006,13 +1822,16 @@ def prepare_bdc_rows_with_complete_filter(data: dict, articles_df: pd.DataFrame)
         st.error(f"❌ Erreur lors de la préparation des données BDC: {str(e)}")
         return []
 
-def prepare_rows_for_sheet_with_complete_filter(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes avec filtrage COMPLET (catégories + quantité = 0)"""
+def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
+    """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document"""
     if "FACTURE" in document_type.upper():
-        return prepare_facture_rows_with_complete_filter(data, articles_df)
+        return prepare_facture_rows(data, articles_df)
     else:
-        return prepare_bdc_rows_with_complete_filter(data, articles_df)
+        return prepare_bdc_rows(data, articles_df)
 
+# ============================================================
+# FONCTIONS DE DÉTECTION DE DOUBLONS
+# ============================================================
 def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
     """Vérifie si un document existe déjà dans Google Sheets"""
     try:
@@ -2064,6 +1883,9 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
         st.error(f"❌ Erreur lors de la vérification des doublons: {str(e)}")
         return False, []
 
+# ============================================================
+# GOOGLE SHEETS FUNCTIONS
+# ============================================================
 def get_worksheet(document_type: str):
     """Récupère la feuille Google Sheets correspondant au type de document"""
     try:
@@ -2071,8 +1893,10 @@ def get_worksheet(document_type: str):
             st.error("❌ Les credentials Google Sheets ne sont pas configurés")
             return None
         
+        # Normaliser le type de document
         normalized_type = normalize_document_type(document_type)
         
+        # Si le type n'est pas dans SHEET_GIDS, utiliser une feuille par défaut
         if normalized_type not in SHEET_GIDS:
             st.warning(f"⚠️ Type de document '{document_type}' non reconnu. Utilisation de la feuille par défaut.")
             normalized_type = "FACTURE EN COMPTE"
@@ -2085,12 +1909,14 @@ def get_worksheet(document_type: str):
         
         if target_gid is None:
             st.error(f"❌ GID non trouvé pour le type: {normalized_type}")
+            # Utiliser la première feuille par défaut
             return sh.get_worksheet(0)
         
         for worksheet in sh.worksheets():
             if int(worksheet.id) == target_gid:
                 return worksheet
         
+        # Si la feuille spécifique n'est pas trouvée, utiliser la première feuille
         st.warning(f"⚠️ Feuille avec GID {target_gid} non trouvée. Utilisation de la première feuille.")
         return sh.get_worksheet(0)
         
@@ -2109,6 +1935,7 @@ def find_table_range(worksheet, num_columns=9):
             else:
                 return "A1:H1"
         
+        # Déterminer les headers selon le nombre de colonnes
         if num_columns == 9:
             headers = ["Mois", "Client", "date", "NBC", "NF", "lien", "Magasin", "Produit", "Quantite"]
         else:
@@ -2148,13 +1975,9 @@ def find_table_range(worksheet, num_columns=9):
         else:
             return "A2:H2"
 
-# ============================================================
-# NOUVELLE FONCTION DE SAUVEGARDE AVEC FILTRAGE COMPLET
-# ============================================================
-
-def save_to_google_sheets_with_complete_filter(document_type: str, data: dict, articles_df: pd.DataFrame, 
-                                               duplicate_action: str = None, duplicate_rows: List[int] = None):
-    """Sauvegarde les données dans Google Sheets avec filtrage COMPLET"""
+def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
+                         duplicate_action: str = None, duplicate_rows: List[int] = None):
+    """Sauvegarde les données dans Google Sheets"""
     try:
         ws = get_worksheet(document_type)
         
@@ -2162,11 +1985,10 @@ def save_to_google_sheets_with_complete_filter(document_type: str, data: dict, a
             st.error("❌ Impossible de se connecter à Google Sheets")
             return False, "Erreur de connexion"
         
-        # Utiliser la nouvelle fonction avec filtrage COMPLET
-        new_rows = prepare_rows_for_sheet_with_complete_filter(document_type, data, articles_df)
+        new_rows = prepare_rows_for_sheet(document_type, data, articles_df)
         
         if not new_rows:
-            st.warning("⚠️ Aucune donnée à enregistrer (toutes les quantités sont à 0 ou ligne filtrée)")
+            st.warning("⚠️ Aucune donnée à enregistrer")
             return False, "Aucune donnée"
         
         if duplicate_action == "overwrite" and duplicate_rows:
@@ -2185,9 +2007,10 @@ def save_to_google_sheets_with_complete_filter(document_type: str, data: dict, a
             st.warning("⏸️ Import annulé - Document ignoré")
             return True, "Document ignoré (doublon)"
         
-        # Afficher l'aperçu
-        st.info(f"📋 **Aperçu des données à enregistrer ({len(new_rows)} lignes):**")
+        # Afficher l'aperçu des données à enregistrer
+        st.info(f"📋 **Aperçu des données à enregistrer:**")
         
+        # Définir les colonnes selon le type de document
         if "FACTURE" in document_type.upper():
             columns = ["Mois", "Client", "Date", "NBC", "NF", "Lien", "Magasin", "Produit", "Quantité"]
         else:
@@ -2196,7 +2019,7 @@ def save_to_google_sheets_with_complete_filter(document_type: str, data: dict, a
         preview_df = pd.DataFrame(new_rows, columns=columns)
         st.dataframe(preview_df, use_container_width=True)
         
-        # Table range
+        # Ajuster la plage selon le nombre de colonnes
         if "FACTURE" in document_type.upper():
             table_range = find_table_range(ws, num_columns=9)
         else:
@@ -2216,6 +2039,7 @@ def save_to_google_sheets_with_complete_filter(document_type: str, data: dict, a
             
             st.success(f"✅ {len(new_rows)} ligne(s) {action_msg} avec succès dans Google Sheets!")
             
+            # Utiliser le type normalisé pour l'URL
             normalized_type = normalize_document_type(document_type)
             sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={SHEET_GIDS.get(normalized_type, '')}"
             st.markdown(f'<div class="info-box">🔗 <a href="{sheet_url}" target="_blank">Ouvrir Google Sheets</a></div>', unsafe_allow_html=True)
@@ -2248,10 +2072,11 @@ def save_to_google_sheets_with_complete_filter(document_type: str, data: dict, a
         return False, str(e)
 
 # ============================================================
-# HEADER
+# HEADER AVEC LOGO - VERSION TECH AMÉLIORÉE
 # ============================================================
 st.markdown('<div class="header-container slide-in">', unsafe_allow_html=True)
 
+# Badge utilisateur avec style tech
 st.markdown(f'''
 <div class="user-info">
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 6px;">
@@ -2262,10 +2087,12 @@ st.markdown(f'''
 </div>
 ''', unsafe_allow_html=True)
 
+# Grille technologique en arrière-plan
 st.markdown('<div class="tech-grid"></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="logo-title-wrapper">', unsafe_allow_html=True)
 
+# Logo avec effet
 if os.path.exists(LOGO_FILENAME):
     st.image(LOGO_FILENAME, width=100)
 else:
@@ -2275,8 +2102,10 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
+# Titre avec effet gradient
 st.markdown(f'<h1 class="brand-title">{BRAND_TITLE}</h1>', unsafe_allow_html=True)
 
+# Sous-titre avec badges technologiques
 st.markdown(f'''
 <div style="margin-top: 10px;">
     <span class="tech-badge">GPT-4 Vision</span>
@@ -2292,6 +2121,7 @@ st.markdown(f'''
 </p>
 ''', unsafe_allow_html=True)
 
+# Indicateurs de statut
 col1, col2, col3 = st.columns(3)
 with col1:
     st.markdown(f'<div style="text-align: center; color: {PALETTE["text_dark"]} !important;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
@@ -2304,7 +2134,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# ZONE DE TÉLÉCHARGEMENT
+# ZONE DE TÉLÉCHARGEMENT UNIQUE - VERSION TECH AMÉLIORÉE
 # ============================================================
 st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
 st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True)
@@ -2315,7 +2145,6 @@ st.markdown(f"""
     • Détection automatique du type de document<br>
     • Extraction intelligente des données structurées<br>
     • <strong>Standardisation intelligente des produits</strong><br>
-    • <strong>Filtrage automatique : catégories et quantités = 0 supprimées</strong><br>
     • Synchronisation cloud automatique
 </div>
 """, unsafe_allow_html=True)
@@ -2330,6 +2159,7 @@ uploaded = st.file_uploader(
 )
 st.markdown('</div>', unsafe_allow_html=True)
 
+# Indicateur de compatibilité
 st.markdown(f"""
 <div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: {PALETTE['text_medium']} !important;">
     <div style="text-align: center;">
@@ -2354,7 +2184,7 @@ st.markdown(f"""
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AUTOMATIQUE DE L'IMAGE AVEC FILTRAGE COMPLET
+# TRAITEMENT AUTOMATIQUE DE L'IMAGE
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.uploaded_file = uploaded
@@ -2371,15 +2201,17 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.export_triggered = False
     st.session_state.export_status = None
     st.session_state.product_matching_scores = {}
-    st.session_state.removed_zero_quantity_count = 0
     
+    # Barre de progression avec style tech
     progress_container = st.empty()
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
         st.markdown('<h3 style="color: white !important;">Initialisation du système IA</h3>', unsafe_allow_html=True)
-        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision et filtrage automatique...</p>', unsafe_allow_html=True)
+        # Texte en noir comme demandé
+        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
         
+        # Barre de progression animée
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -2389,67 +2221,77 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             "Analyse par IA...",
             "Extraction des données...",
             "Standardisation intelligente...",
-            "Filtrage automatique...",
             "Finalisation..."
         ]
         
         for i in range(101):
             time.sleep(0.03)
             progress_bar.progress(i)
-            if i < 15:
+            if i < 20:
                 status_text.text(steps[0])
-            elif i < 30:
+            elif i < 40:
                 status_text.text(steps[1])
-            elif i < 45:
-                status_text.text(steps[2])
             elif i < 60:
+                status_text.text(steps[2])
+            elif i < 80:
                 status_text.text(steps[3])
-            elif i < 75:
+            elif i < 95:
                 status_text.text(steps[4])
-            elif i < 90:
-                status_text.text(steps[5])
             else:
-                status_text.text(steps[6])
+                status_text.text(steps[5])
         
         st.markdown('</div>', unsafe_allow_html=True)
     
+    # Traitement OCR avec OpenAI Vision améliorée
     try:
         buf = BytesIO()
         st.session_state.uploaded_image.save(buf, format="JPEG")
         image_bytes = buf.getvalue()
         
+        # Prétraitement de l'image
         img_processed = preprocess_image(image_bytes)
         
-        # Utilisation de la NOUVELLE fonction OCR avec filtrage COMPLET
-        result = openai_vision_ocr_improved_with_complete_filter(img_processed)
+        # Analyse avec OpenAI Vision améliorée
+        result = openai_vision_ocr_improved(img_processed)
         
         if result:
             st.session_state.ocr_result = result
             raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
+            # Normaliser le type de document détecté
             st.session_state.detected_document_type = normalize_document_type(raw_doc_type)
             st.session_state.show_results = True
             st.session_state.processing = False
             
-            # Traiter les données avec la NOUVELLE fonction de filtrage COMPLET
-            st.session_state.edited_standardized_df = process_ocr_with_complete_filtering(result)
-            
-            # Compter les lignes filtrées
+            # Préparer les données standardisées avec les nouvelles colonnes
             if "articles" in result:
-                total_lines = len(result["articles"])
-                kept_lines = len(st.session_state.edited_standardized_df)
-                removed_lines = total_lines - kept_lines
-                st.session_state.removed_zero_quantity_count = removed_lines
-            
-            # Afficher les statistiques
-            if not st.session_state.edited_standardized_df.empty:
-                total_items = len(st.session_state.edited_standardized_df)
-                st.info(f"📊 {total_items} produit(s) détecté(s) avec quantité > 0")
-                if st.session_state.removed_zero_quantity_count > 0:
-                    st.info(f"🗑️ {st.session_state.removed_zero_quantity_count} ligne(s) filtrée(s) (catégories ou quantité = 0)")
-            else:
-                st.warning("⚠️ Aucun produit avec quantité > 0 détecté")
-                if st.session_state.removed_zero_quantity_count > 0:
-                    st.info(f"🗑️ {st.session_state.removed_zero_quantity_count} ligne(s) filtrée(s) (catégories ou quantité = 0)")
+                std_data = []
+                for article in result["articles"]:
+                    raw_name = article.get("article_brut", article.get("article", ""))
+                    
+                    # Filtrer les catégories (lignes qui ne sont pas des produits)
+                    if any(cat in raw_name.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE"]):
+                        # C'est une catégorie, on la garde mais on ne la standardise pas
+                        std_data.append({
+                            "Produit Brute": raw_name,
+                            "Produit Standard": raw_name,  # Garder tel quel
+                            "Quantité": 0,
+                            "Confiance": "0%",
+                            "Auto": False
+                        })
+                    else:
+                        # C'est un produit, on le standardise
+                        produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
+                        
+                        std_data.append({
+                            "Produit Brute": produit_brut,
+                            "Produit Standard": produit_standard,
+                            "Quantité": article.get("quantite", 0),
+                            "Confiance": f"{confidence*100:.1f}%",
+                            "Auto": confidence >= 0.7  # True si confiance élevée
+                        })
+                
+                # Créer le dataframe standardisé pour l'édition
+                st.session_state.edited_standardized_df = pd.DataFrame(std_data)
             
             progress_container.empty()
             st.rerun()
@@ -2462,12 +2304,13 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         st.session_state.processing = False
 
 # ============================================================
-# APERÇU DU DOCUMENT
+# APERÇU DU DOCUMENT (TOUJOURS VISIBLE SI SCANNÉ)
 # ============================================================
 if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>👁️ Aperçu du document analysé</h4>', unsafe_allow_html=True)
     
+    # Ajouter un effet de cadre moderne
     col_img, col_info = st.columns([2, 1])
     
     with col_img:
@@ -2480,7 +2323,7 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
             • Statut : Analysé par IA<br>
-            • Filtrage : Actif<br><br>
+            • Confiance : Élevée<br><br>
             <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
         </div>
         """, unsafe_allow_html=True)
@@ -2494,19 +2337,21 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
     
+    # Message de succès avec style tech
     st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
     st.markdown(f'''
     <div style="display: flex; align-items: start; gap: 15px;">
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
             <strong style="font-size: 1.1rem; color: {PALETTE['text_dark']} !important;">Analyse IA terminée avec succès</strong><br>
-            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong> | Filtrage : <strong>Complet</strong></span><br>
+            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
             <small style="color: {PALETTE['text_light']} !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
     ''', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
+    # Titre du mode détecté avec icône tech
     icon_map = {
         "FACTURE": "📄",
         "BDC": "📋",
@@ -2530,6 +2375,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>📋 Informations extraites</h4>', unsafe_allow_html=True)
     
+    # Afficher les informations selon le type de document
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
@@ -2583,6 +2429,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     
     st.session_state.data_for_sheets = data_for_sheets
     
+    # Indicateur de validation amélioré
     fields_filled = sum([1 for v in data_for_sheets.values() if str(v).strip()])
     total_fields = len(data_for_sheets)
     
@@ -2604,30 +2451,26 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # TABLEAU STANDARDISÉ ÉDITABLE (SEULEMENT PRODUITS AVEC QUANTITÉ > 0)
+    # TABLEAU STANDARDISÉ ÉDITABLE
     # ========================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
         st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
         st.markdown('<h4>📘 Standardisation des Produits</h4>', unsafe_allow_html=True)
         
+        # Instructions
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
             <small style="color: {PALETTE['text_dark']} !important;">
-            💡 <strong>Mode édition activé avec filtrage automatique :</strong> 
-            • Seuls les produits avec quantité > 0 sont affichés<br>
-            • Les catégories (ex: "122111 - VINS ROUGES") sont automatiquement filtrées<br>
-            • Les lignes avec quantité = 0 sont automatiquement supprimées<br>
+            💡 <strong>Mode édition activé :</strong> 
             • Colonne "Produit Brute" : texte original extrait par l'OCR<br>
             • Colonne "Produit Standard" : standardisé automatiquement (éditable)<br>
-            • Colonne "Auto" : ✓ si la standardisation est automatique et fiable
+            • Colonne "Auto" : ✓ si la standardisation est automatique et fiable<br>
+            • <strong>Note :</strong> Les lignes de catégorie (ex: "122111 - VINS ROUGES") ne sont pas standardisées
             </small>
         </div>
         """, unsafe_allow_html=True)
         
-        # Afficher le nombre de lignes filtrées
-        if st.session_state.removed_zero_quantity_count > 0:
-            st.info(f"🗑️ {st.session_state.removed_zero_quantity_count} ligne(s) filtrée(s) automatiquement (catégories ou quantité = 0)")
-        
+        # Éditeur de données avec les nouvelles colonnes
         edited_df = st.data_editor(
             st.session_state.edited_standardized_df,
             num_rows="dynamic",
@@ -2644,8 +2487,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 ),
                 "Quantité": st.column_config.NumberColumn(
                     "Quantité",
-                    min_value=1,  # Minimum 1 pour éviter les quantités = 0
-                    help="Quantité commandée (minimum 1)",
+                    min_value=0,
+                    help="Quantité commandée",
                     format="%d"
                 ),
                 "Confiance": st.column_config.TextColumn(
@@ -2662,24 +2505,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             key="standardized_data_editor"
         )
         
-        # Filtrer automatiquement les lignes avec quantité = 0 après édition
-        edited_df_copy = edited_df.copy()
-        edited_df_copy["Quantité"] = pd.to_numeric(edited_df_copy["Quantité"], errors='coerce')
-        edited_df_filtered = edited_df_copy[edited_df_copy["Quantité"] > 0].copy()
-        
-        # Mettre à jour le dataframe dans session state
-        st.session_state.edited_standardized_df = edited_df_filtered
-        
-        # Vérifier si des lignes ont été filtrées
-        original_count = len(edited_df)
-        filtered_count = len(edited_df_filtered)
-        if original_count > filtered_count:
-            removed_count = original_count - filtered_count
-            st.warning(f"⚠️ {removed_count} ligne(s) avec quantité = 0 ont été automatiquement supprimée(s)")
+        # Mettre à jour le dataframe édité
+        st.session_state.edited_standardized_df = edited_df
         
         # Afficher les statistiques
-        total_items = filtered_count
-        auto_standardized = edited_df_filtered["Auto"].sum() if "Auto" in edited_df_filtered.columns else 0
+        total_items = len(edited_df)
+        auto_standardized = edited_df["Auto"].sum() if "Auto" in edited_df.columns else 0
         
         col_stat1, col_stat2, col_stat3 = st.columns(3)
         with col_stat1:
@@ -2687,15 +2518,16 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(59, 130, 246, 0.2);">
                     <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['tech_blue']} !important;">{total_items}</div>
-                    <div class="stat-label">Produits (Qty > 0)</div>
+                    <div class="stat-label">Articles</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
         with col_stat2:
+            # Calculer la confiance moyenne seulement pour les lignes standardisées
             confiance_values = []
-            for _, row in edited_df_filtered.iterrows():
-                if "Auto" in edited_df_filtered.columns and row["Auto"]:
+            for _, row in edited_df.iterrows():
+                if row["Auto"]:  # Seulement pour les lignes auto-standardisées
                     try:
                         confiance = float(row["Confiance"].replace('%', ''))
                         confiance_values.append(confiance)
@@ -2723,50 +2555,99 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 unsafe_allow_html=True
             )
         
-        # Bouton pour forcer la re-standardisation avec filtrage
-        if st.button("🔄 Re-standardiser et filtrer tous les produits", 
+        # Bouton pour forcer la re-standardisation
+        if st.button("🔄 Re-standardiser tous les produits", 
                     key="restandardize_button",
-                    help="Appliquer la standardisation intelligente et supprimer les quantités = 0"):
+                    help="Appliquer la standardisation intelligente à tous les produits"):
+            # Réappliquer la standardisation
             new_data = []
-            for _, row in edited_df_filtered.iterrows():
+            for _, row in edited_df.iterrows():
                 produit_brut = row["Produit Brute"]
                 
-                # Standardiser le produit
-                produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(produit_brut)
-                
-                # Vérifier la quantité
-                quantite = row["Quantité"]
-                if pd.notna(quantite) and float(quantite) > 0:
+                # Vérifier si c'est une catégorie
+                if any(cat in produit_brut.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE", "122111", "122112", "122113"]):
+                    # Garder les catégories telles quelles
+                    new_data.append({
+                        "Produit Brute": produit_brut,
+                        "Produit Standard": produit_brut,
+                        "Quantité": row["Quantité"],
+                        "Confiance": "0%",
+                        "Auto": False
+                    })
+                else:
+                    # Standardiser les produits
+                    produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(produit_brut)
+                    
                     new_data.append({
                         "Produit Brute": produit_brut,
                         "Produit Standard": produit_standard,
-                        "Quantité": quantite,
+                        "Quantité": row["Quantité"],
                         "Confiance": f"{confidence*100:.1f}%",
                         "Auto": confidence >= 0.7
                     })
             
             st.session_state.edited_standardized_df = pd.DataFrame(new_data)
-            st.success(f"✅ {len(new_data)} produit(s) re-standardisé(s) et filtré(s)")
             st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
+    # TEST DE STANDARDISATION ULYS
+    # ========================================================
+    with st.expander("🧪 Tester la standardisation ULYS"):
+        # Exemples de test
+        test_examples = [
+            "VIN ROUGE COTE DE FIANAR 3L",
+            "VIN ROUGE COTE DE FIANARA 750ML NU",
+            "VIN BLANC COTE DE FIANAR 3L",
+            "VIN BLANC DOUX MAROPARASY 750ML NU",
+            "VIN BLANC COTE DE FIANARA 750ML NU",
+            "VIN GRIS COTE DE FIANARA 750ML NU",
+            "VIN ROUGE DOUX MAROPARASY 750ML NU",
+            "CONS. CHAN FOUI 75CL",
+            "CONS. CHAN FOUL 75CL",
+            "COTE DE FIANAR 3L",
+            "MAROPARASY 750ML",
+            "VIN ROUGE COTE DE FLANAR 3L",
+        ]
+        
+        if st.button("Tester avec des exemples typiques ULYS"):
+            results = []
+            for example in test_examples:
+                produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(example)
+                results.append({
+                    "Produit Brute": example,
+                    "Produit Standard": produit_standard,
+                    "Confiance": f"{confidence*100:.1f}%",
+                    "Statut": status
+                })
+            
+            test_df = pd.DataFrame(results)
+            st.dataframe(test_df, use_container_width=True)
+            
+            # Calculer l'accuracy
+            perfect_matches = sum(1 for _, row in test_df.iterrows() 
+                                if float(row["Confiance"].replace('%', '')) >= 85.0 and row["Statut"] == "matched")
+            accuracy = (perfect_matches / len(test_df)) * 100
+            st.success(f"📈 Précision pour ULYS : {accuracy:.1f}%")
+    
+    # ========================================================
     # BOUTON D'EXPORT PAR DÉFAUT
-    # ============================================================
+    # ========================================================
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
+    # Informations sur l'export
     st.markdown(f"""
     <div class="info-box">
         <strong style="color: {PALETTE['text_dark']} !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
         <strong style="color: {PALETTE['text_dark']} !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
         <strong style="color: {PALETTE['text_dark']} !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">🗑️ Filtrage :</strong> Suppression automatique des quantités = 0
+        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons
     </div>
     """, unsafe_allow_html=True)
     
+    # Bouton d'export avec style tech
     col_btn, col_info = st.columns([2, 1])
     
     with col_btn:
@@ -2790,15 +2671,18 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS
-    # ============================================================
+    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
+    # ========================================================
     if st.session_state.export_triggered and st.session_state.export_status is None:
         with st.spinner("🔍 Analyse des doublons en cours..."):
+            # Normaliser le type de document
             normalized_doc_type = normalize_document_type(doc_type)
             
+            # Obtenir la feuille Google Sheets
             ws = get_worksheet(normalized_doc_type)
             
             if ws:
+                # Vérifier les doublons
                 duplicate_found, duplicates = check_for_duplicates(
                     normalized_doc_type,
                     st.session_state.data_for_sheets,
@@ -2820,10 +2704,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     
     # ========================================================
     # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
-    # ============================================================
+    # ========================================================
     if st.session_state.export_status == "duplicates_found":
         st.markdown('<div class="duplicate-box fade-in">', unsafe_allow_html=True)
         
+        # En-tête avec icône
         st.markdown(f'''
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
             <div style="font-size: 2rem; color: {PALETTE['warning']} !important;">⚠️</div>
@@ -2834,6 +2719,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         </div>
         ''', unsafe_allow_html=True)
         
+        # Détails du document
         if "FACTURE" in doc_type.upper():
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
@@ -2859,6 +2745,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         
         st.markdown(f'<div style="color: {PALETTE["text_dark"]} !important; margin-bottom: 10px; font-weight: 600;">Sélectionnez une action :</div>', unsafe_allow_html=True)
         
+        # Boutons d'action avec style tech
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -2892,17 +2779,17 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # EXPORT EFFECTIF DES DONNÉES AVEC FILTRAGE COMPLET
-    # ============================================================
+    # EXPORT EFFECTIF DES DONNÉES
+    # ========================================================
     if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
         if st.session_state.export_status == "no_duplicates":
             st.session_state.duplicate_action = "add_new"
         
+        # Préparer le dataframe pour l'export
         export_df = st.session_state.edited_standardized_df.copy()
         
         try:
-            # Utiliser la NOUVELLE fonction de sauvegarde avec filtrage COMPLET
-            success, message = save_to_google_sheets_with_complete_filter(
+            success, message = save_to_google_sheets(
                 doc_type,
                 st.session_state.data_for_sheets,
                 export_df,
@@ -2912,6 +2799,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             
             if success:
                 st.session_state.export_status = "completed"
+                # Afficher un message de succès stylé
                 st.markdown("""
                 <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white !important; border-radius: 18px; text-align: center; margin: 20px 0;">
                     <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
@@ -2933,6 +2821,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     if st.session_state.document_scanned:
         st.markdown("---")
         
+        # Section de navigation avec style tech
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<h4>🧭 Navigation</h4>', unsafe_allow_html=True)
         
@@ -2957,4 +2846,85 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.export_triggered = False
                 st.session_state.export_status = None
                 st.session_state.product_matching_scores = {}
-                st.session_state.
+                st.rerun()
+        
+        with col_nav2:
+            if st.button("🔄 Réanalyser", 
+                        use_container_width=True, 
+                        type="secondary",
+                        key="restart_main_nav",
+                        help="Recommencer l'analyse du document actuel"):
+                st.session_state.uploaded_file = None
+                st.session_state.uploaded_image = None
+                st.session_state.ocr_result = None
+                st.session_state.show_results = False
+                st.session_state.detected_document_type = None
+                st.session_state.duplicate_check_done = False
+                st.session_state.duplicate_found = False
+                st.session_state.duplicate_action = None
+                st.session_state.image_preview_visible = True
+                st.session_state.document_scanned = True
+                st.session_state.export_triggered = False
+                st.session_state.export_status = None
+                st.session_state.product_matching_scores = {}
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================================
+# BOUTON DE DÉCONNEXION (toujours visible)
+# ============================================================
+st.markdown("---")
+if st.button("🔒 Déconnexion sécurisée", 
+            use_container_width=True, 
+            type="secondary",
+            key="logout_button_final",
+            help="Fermer la session en toute sécurité"):
+    logout()
+
+# ============================================================
+# FOOTER - SOLUTION STREAMLIT NATIVE AMÉLIORÉE
+# ============================================================
+st.markdown("---")
+
+# Créer un conteneur stylé
+with st.container():
+    # Espacement
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+    
+    # Première ligne : Icônes
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🤖</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>AI Vision</small></center>", unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>⚡</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Fast Processing</small></center>", unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🔒</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Secure Cloud</small></center>", unsafe_allow_html=True)
+    
+    # Deuxième ligne : Titre
+    st.markdown(f"""
+    <center style='margin: 15px 0;'>
+        <span style='font-weight: 700; color: {PALETTE["primary_dark"]} !important;'>{BRAND_TITLE}</span>
+        <span style='color: {PALETTE["text_light"]} !important;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
+    </center>
+    """, unsafe_allow_html=True)
+    
+    # Troisième ligne : Statut
+    st.markdown(f"""
+    <center style='font-size: 0.8rem; color: {PALETTE['text_light']} !important;'>
+        <span style='color: #10B981 !important;'>●</span> 
+        Système actif • Session : 
+        <strong style='color: {PALETTE['text_dark']} !important;'>{st.session_state.username}</strong>
+        • {datetime.now().strftime("%H:%M:%S")}
+    </center>
+    """, unsafe_allow_html=True)
+    
+    # Espacement final
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
