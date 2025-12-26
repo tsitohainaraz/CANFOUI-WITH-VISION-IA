@@ -2124,11 +2124,6 @@ st.markdown("""
         <li>Il évite les doublons</li>
         <li>Il enregistre tout automatiquement</li>
     </ul>
-
-    <strong>📸 Conseil important :</strong>
-    <p>
-        Prenez une photo bien nette, bien cadrée et le plus proche possible du document.
-    </p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2929,6 +2924,7 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
