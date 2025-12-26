@@ -2116,12 +2116,16 @@ st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True
 
 st.markdown(f"""
 <div class="info-box">
-    <strong style="color: #1A1A1A !important;">ℹ️ Système de reconnaissance IA avec standardisation intelligente :</strong><br>
-    • Détection automatique du type de document<br>
-    • Extraction intelligente des données structurées<br>
-    • <strong>Standardisation intelligente des produits</strong><br>
-    • Synchronisation cloud automatique<br>
-    • <strong>Filtres actifs : Suppression lignes quantité 0, Standardisation "Chan Foui 75cl", Détection doublons BDC</strong>
+    <strong>ℹ️ Que fait ChanFoui.AI ?</strong><br><br>
+
+    ✔ Il lit votre facture ou bon de commande<br>
+    ✔ Il corrige automatiquement les noms des produits<br>
+    ✔ Il garde uniquement les quantités utiles<br>
+    ✔ Il évite les doublons<br>
+    ✔ Il enregistre tout automatiquement<br><br>
+
+    <strong>📸 Conseil important :</strong><br>
+    Prenez une photo bien nette, bien cadrée et le plus proche possible du document.
 </div>
 """, unsafe_allow_html=True)
 
@@ -2293,16 +2297,18 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
         st.image(st.session_state.uploaded_image, use_column_width=True)
     
     with col_info:
-        st.markdown(f"""
-        <div class="info-box" style="height: 100%;">
-            <strong style="color: #1A1A1A !important;">📊 Métadonnées :</strong><br><br>
-            • Résolution : Haute définition<br>
-            • Format : Image numérique<br>
-            • Statut : Analysé par IA<br>
-            • Confiance : Élevée<br><br>
-            <small style="color: #4B5563 !important;">Document prêt pour traitement</small>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown("""
+    <div class="info-box" style="height: 100%;">
+        <strong>📊 Informations du document :</strong><br><br>
+
+        • Qualité de la photo : Bonne<br>
+        • Type : Photo du document<br>
+        • État : Analyse terminée<br>
+        • Fiabilité : Élevée<br><br>
+
+        ✔ Document prêt pour le traitement
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2661,7 +2667,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT - FILTRE 3
     # ========================================================
     if st.session_state.export_triggered and st.session_state.export_status is None:
-        with st.spinner("🔍 Analyse des doublons en cours (Filtre 3)..."):
+        with st.spinner("🔍 Analyse des doublons en cours ..."):
             # Normaliser le type de document
             normalized_doc_type = normalize_document_type(doc_type)
             
@@ -2700,7 +2706,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
             <div style="font-size: 2rem; color: #F59E0B !important;">⚠️</div>
             <div>
-                <h3 style="margin: 0; color: #1A1A1A !important;">ALERTE : DOUBLON DÉTECTÉ (Filtre 3)</h3>
+                <h3 style="margin: 0; color: #1A1A1A !important;">ALERTE : DOUBLON DÉTECTÉ </h3>
                 <p style="margin: 5px 0 0 0; color: #4B5563 !important; font-size: 0.9rem;">Document similaire existant dans la base cloud - Même logique pour BDC et factures</p>
             </div>
         </div>
@@ -2920,3 +2926,4 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
