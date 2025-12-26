@@ -2072,7 +2072,7 @@ if os.path.exists(LOGO_FILENAME):
     st.image(LOGO_FILENAME, width=100)
 else:
     st.markdown("""
-    <div style="font-size: 3.5rem; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); color: #1E293B !important;">
+    <div style="font-size: 3.5rem; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); color: #1A1A1A !important;">
         🍷
     </div>
     """, unsafe_allow_html=True)
@@ -2092,18 +2092,18 @@ st.markdown(f'''
 
 st.markdown(f'''
 <p class="brand-sub">
-    Système intelligent de traitement de documents • Connecté en tant que <strong style="color: {PALETTE['text_dark']} !important;">{st.session_state.username}</strong>
+    Système intelligent de traitement de documents • Connecté en tant que <strong style="color: #1A1A1A !important;">{st.session_state.username}</strong>
 </p>
 ''', unsafe_allow_html=True)
 
 # Indicateurs de statut
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.markdown(f'<div style="text-align: center; color: {PALETTE["text_dark"]} !important;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #1A1A1A !important;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
 with col2:
-    st.markdown(f'<div style="text-align: center; color: {PALETTE["text_dark"]} !important;"><span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;margin-right:8px;"></span><small>Cloud Online</small></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #1A1A1A !important;"><span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;margin-right:8px;"></span><small>Cloud Online</small></div>', unsafe_allow_html=True)
 with col3:
-    st.markdown(f'<div style="text-align: center; color: {PALETTE["text_dark"]} !important;"><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:50%;margin-right:8px;"></span><small>Secured</small></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #1A1A1A !important;"><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:50%;margin-right:8px;"></span><small>Secured</small></div>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
@@ -2116,7 +2116,7 @@ st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True
 
 st.markdown(f"""
 <div class="info-box">
-    <strong style="color: {PALETTE["text_dark"]} !important;">ℹ️ Système de reconnaissance IA avec standardisation intelligente :</strong><br>
+    <strong style="color: #1A1A1A !important;">ℹ️ Système de reconnaissance IA avec standardisation intelligente :</strong><br>
     • Détection automatique du type de document<br>
     • Extraction intelligente des données structurées<br>
     • <strong>Standardisation intelligente des produits</strong><br>
@@ -2137,21 +2137,21 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 # Indicateur de compatibilité
 st.markdown(f"""
-<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: {PALETTE["text_medium"]} !important;">
+<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: #333333 !important;">
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">📄</div>
+        <div style="font-size: 1.2rem; color: #1A1A1A !important;">📄</div>
         <div>Factures</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">📋</div>
+        <div style="font-size: 1.2rem; color: #1A1A1A !important;">📋</div>
         <div>Bons de commande</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">🏷️</div>
+        <div style="font-size: 1.2rem; color: #1A1A1A !important;">🏷️</div>
         <div>Étiquettes</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">🤖</div>
+        <div style="font-size: 1.2rem; color: #1A1A1A !important;">🤖</div>
         <div>Smart Matching</div>
     </div>
 </div>
@@ -2295,12 +2295,12 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     with col_info:
         st.markdown(f"""
         <div class="info-box" style="height: 100%;">
-            <strong style="color: {PALETTE["text_dark"]} !important;">📊 Métadonnées :</strong><br><br>
+            <strong style="color: #1A1A1A !important;">📊 Métadonnées :</strong><br><br>
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
             • Statut : Analysé par IA<br>
             • Confiance : Élevée<br><br>
-            <small style="color: {PALETTE["text_light"]} !important;">Document prêt pour traitement</small>
+            <small style="color: #4B5563 !important;">Document prêt pour traitement</small>
         </div>
         """, unsafe_allow_html=True)
     
@@ -2319,9 +2319,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     <div style="display: flex; align-items: start; gap: 15px;">
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
-            <strong style="font-size: 1.1rem; color: {PALETTE['text_dark']} !important;">Analyse IA terminée avec succès</strong><br>
-            <span style="color: {PALETTE['text_medium']} !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
-            <small style="color: {PALETTE['text_light']} !important;">Veuillez vérifier les données extraites avant validation</small>
+            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA terminée avec succès</strong><br>
+            <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
+            <small style="color: #4B5563 !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
     ''', unsafe_allow_html=True)
@@ -2355,19 +2355,19 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Client</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
             client = st.text_input("", value=result.get("client", ""), key="facture_client", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">N° Facture</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° Facture</div>', unsafe_allow_html=True)
             numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Bon de commande</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Bon de commande</div>', unsafe_allow_html=True)
             bon_commande = st.text_input("", value=result.get("bon_commande", ""), key="facture_bdc", label_visibility="collapsed")
         
         with col2:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Adresse</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
             adresse = st.text_input("", value=result.get("adresse_livraison", ""), key="facture_adresse", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Date</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
             date = st.text_input("", value=result.get("date", ""), key="facture_date", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Mois</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Mois</div>', unsafe_allow_html=True)
             mois = st.text_input("", value=result.get("mois", get_month_from_date(result.get("date", ""))), key="facture_mois", label_visibility="collapsed")
         
         data_for_sheets = {
@@ -2382,15 +2382,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     else:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Client</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
             client = st.text_input("", value=result.get("client", "ULYS"), key="bdc_client", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">N° BDC</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° BDC</div>', unsafe_allow_html=True)
             numero = st.text_input("", value=result.get("numero", ""), key="bdc_numero", label_visibility="collapsed")
         
         with col2:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Date</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
             date = st.text_input("", value=result.get("date", ""), key="bdc_date", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: {PALETTE["text_dark"]} !important;">Adresse</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
             adresse = st.text_input("", 
                                   value=result.get("adresse_livraison", "SCORE TALATAMATY"), 
                                   key="bdc_adresse", 
@@ -2413,10 +2413,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     <div style="margin-top: 20px; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <strong style="color: {PALETTE['text_dark']} !important;">Validation des données</strong><br>
-                <small style="color: {PALETTE['text_light']} !important;">{fields_filled}/{total_fields} champs remplis</small>
+                <strong style="color: #1A1A1A !important;">Validation des données</strong><br>
+                <small style="color: #4B5563 !important;">{fields_filled}/{total_fields} champs remplis</small>
             </div>
-            <div style="font-size: 1.5rem; color: {PALETTE['success'] if fields_filled == total_fields else PALETTE['warning']} !important;">{"✅" if fields_filled == total_fields else "⚠️"}</div>
+            <div style="font-size: 1.5rem; color: #10B981 !important;">{"✅" if fields_filled == total_fields else "⚠️"}</div>
         </div>
         <div style="margin-top: 10px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
             <div style="width: {fields_filled/total_fields*100}%; height: 100%; background: linear-gradient(90deg, #10B981, #34D399); border-radius: 3px;"></div>
@@ -2436,7 +2436,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Instructions avec mention des filtres
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
-            <small style="color: {PALETTE["text_dark"]} !important;">
+            <small style="color: #1A1A1A !important;">
             💡 <strong>Mode édition activé avec filtres :</strong> 
             • <strong>Filtre 1:</strong> Lignes avec quantité 0 seront automatiquement supprimées à l'export<br>
             • <strong>Filtre 2:</strong> "CONS. CHAN FOUI 75CL" devient "Chan Foui 75 cl"<br>
@@ -2506,7 +2506,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.markdown(
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(59, 130, 246, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['tech_blue']} !important;">{total_items}</div>
+                    <div style="font-size: 1.8rem; font-weight: 700; color: #3B82F6 !important;">{total_items}</div>
                     <div class="stat-label">Articles totaux</div>
                 </div>
                 ''',
@@ -2516,7 +2516,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.markdown(
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.1) 100%); border: 1px solid rgba(16, 185, 129, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['success']} !important;">{items_with_qty}</div>
+                    <div style="font-size: 1.8rem; font-weight: 700; color: #10B981 !important;">{items_with_qty}</div>
                     <div class="stat-label">Avec quantité > 0</div>
                 </div>
                 ''',
@@ -2526,7 +2526,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.markdown(
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.1) 100%); border: 1px solid rgba(245, 158, 11, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['warning']} !important;">{int(auto_standardized)}</div>
+                    <div style="font-size: 1.8rem; font-weight: 700; color: #F59E0B !important;">{int(auto_standardized)}</div>
                     <div class="stat-label">Auto-standardisés</div>
                 </div>
                 ''',
@@ -2625,11 +2625,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     # Informations sur l'export avec mention des filtres
     st.markdown(f"""
     <div class="info-box">
-        <strong style="color: {PALETTE["text_dark"]} !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
-        <strong style="color: {PALETTE["text_dark"]} !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
-        <strong style="color: {PALETTE["text_dark"]} !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: {PALETTE["text_dark"]} !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: {PALETTE["text_dark"]} !important;">⚠️ Filtres actifs :</strong> 
+        <strong style="color: #1A1A1A !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
+        <strong style="color: #1A1A1A !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
+        <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
+        <strong style="color: #1A1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
+        <strong style="color: #1A1A1A !important;">⚠️ Filtres actifs :</strong> 
         • Suppression lignes quantité 0 | • Standardisation "Chan Foui 75cl" | • Détection doublons BDC
     </div>
     """, unsafe_allow_html=True)
@@ -2650,8 +2650,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     with col_info:
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
-            <div style="font-size: 1.5rem; color: {PALETTE["tech_blue"]} !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: {PALETTE["text_light"]} !important;">Export instantané<br>Filtres actifs</div>
+            <div style="font-size: 1.5rem; color: #3B82F6 !important;">⚡</div>
+            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Filtres actifs</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -2698,10 +2698,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # En-tête avec icône
         st.markdown(f'''
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-            <div style="font-size: 2rem; color: {PALETTE['warning']} !important;">⚠️</div>
+            <div style="font-size: 2rem; color: #F59E0B !important;">⚠️</div>
             <div>
-                <h3 style="margin: 0; color: {PALETTE['text_dark']} !important;">ALERTE : DOUBLON DÉTECTÉ (Filtre 3)</h3>
-                <p style="margin: 5px 0 0 0; color: {PALETTE['text_light']} !important; font-size: 0.9rem;">Document similaire existant dans la base cloud - Même logique pour BDC et factures</p>
+                <h3 style="margin: 0; color: #1A1A1A !important;">ALERTE : DOUBLON DÉTECTÉ (Filtre 3)</h3>
+                <p style="margin: 5px 0 0 0; color: #4B5563 !important; font-size: 0.9rem;">Document similaire existant dans la base cloud - Même logique pour BDC et factures</p>
             </div>
         </div>
         ''', unsafe_allow_html=True)
@@ -2710,7 +2710,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         if "FACTURE" in doc_type.upper():
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: {PALETTE['text_dark']} !important;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: #1A1A1A !important;">
                     <div><strong>Type :</strong> {doc_type}</div>
                     <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
                     <div><strong>N° Facture :</strong> {st.session_state.data_for_sheets.get('numero_facture', 'Non détecté')}</div>
@@ -2721,7 +2721,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         else:
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: {PALETTE['text_dark']} !important;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: #1A1A1A !important;">
                     <div><strong>Type :</strong> {doc_type}</div>
                     <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
                     <div><strong>N° BDC :</strong> {st.session_state.data_for_sheets.get('numero', 'Non détecté')}</div>
@@ -2730,7 +2730,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             </div>
             """, unsafe_allow_html=True)
         
-        st.markdown(f'<div style="color: {PALETTE["text_dark"]} !important; margin-bottom: 10px; font-weight: 600;">Sélectionnez une action :</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="color: #1A1A1A !important; margin-bottom: 10px; font-weight: 600;">Sélectionnez une action :</div>', unsafe_allow_html=True)
         
         # Boutons d'action avec style tech
         col1, col2, col3 = st.columns(3)
@@ -2889,36 +2889,34 @@ with st.container():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🤖</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>AI Vision</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center style='color: #1A1A1A !important;'>🤖</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision</small></center>", unsafe_allow_html=True)
     
     with col2:
-        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>⚡</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Fast Processing</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center style='color: #1A1A1A !important;'>⚡</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: #4B5563 !important;'>Fast Processing</small></center>", unsafe_allow_html=True)
     
     with col3:
-        st.markdown(f"<center style='color: {PALETTE['text_dark']} !important;'>🔒</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: {PALETTE['text_light']} !important;'>Secure Cloud</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center style='color: #1A1A1A !important;'>🔒</center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: #4B5563 !important;'>Secure Cloud</small></center>", unsafe_allow_html=True)
     
     # Deuxième ligne : Titre
     st.markdown(f"""
     <center style='margin: 15px 0;'>
-        <span style='font-weight: 700; color: {PALETTE["primary_dark"]} !important;'>{BRAND_TITLE}</span>
-        <span style='color: {PALETTE["text_light"]} !important;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
+        <span style='font-weight: 700; color: #27414A !important;'>{BRAND_TITLE}</span>
+        <span style='color: #4B5563 !important;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
     </center>
     """, unsafe_allow_html=True)
     
     # Troisième ligne : Statut avec mention des filtres
     st.markdown(f"""
-    <center style='font-size: 0.8rem; color: {PALETTE["text_light"]} !important;'>
+    <center style='font-size: 0.8rem; color: #4B5563 !important;'>
         <span style='color: #10B981 !important;'>●</span> 
         Système actif • Session : 
-        <strong style='color: {PALETTE["text_dark"]} !important;'>{st.session_state.username}</strong>
+        <strong style='color: #1A1A1A !important;'>{st.session_state.username}</strong>
         • Filtres actifs • {datetime.now().strftime("%H:%M:%S")}
     </center>
     """, unsafe_allow_html=True)
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-
