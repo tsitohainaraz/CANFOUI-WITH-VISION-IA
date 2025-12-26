@@ -2910,13 +2910,14 @@ with st.container():
     
     # Troisième ligne : Statut avec mention des filtres
     st.markdown(f"""
-    <center style='font-size: 0.8rem; color: {PALETTE['text_light']} !important;'>
+    <center style='font-size: 0.8rem; color: {PALETTE["text_light"]} !important;'>
         <span style='color: #10B981 !important;'>●</span> 
         Système actif • Session : 
-        <strong style='color: {PALETTE['text_dark']} !important;'>{st.session_state.username}</strong>
+        <strong style='color: {PALETTE["text_dark"]} !important;'>{st.session_state.username}</strong>
         • Filtres actifs • {datetime.now().strftime("%H:%M:%S")}
     </center>
     ""', unsafe_allow_html=True)
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
