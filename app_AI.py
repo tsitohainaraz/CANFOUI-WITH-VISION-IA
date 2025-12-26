@@ -2114,18 +2114,21 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
 st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True)
 
-st.markdown(f"""
+st.markdown("""
 <div class="info-box">
-    <strong>ℹ️ Que fait ChanFoui.AI ?</strong><br><br>
+    <strong>ℹ️ Que fait ChanFoui.AI ?</strong>
+    <ul style="margin-top:10px;">
+        <li>Il lit votre facture ou bon de commande</li>
+        <li>Il corrige automatiquement les noms des produits</li>
+        <li>Il garde uniquement les quantités utiles</li>
+        <li>Il évite les doublons</li>
+        <li>Il enregistre tout automatiquement</li>
+    </ul>
 
-    ✔ Il lit votre facture ou bon de commande<br>
-    ✔ Il corrige automatiquement les noms des produits<br>
-    ✔ Il garde uniquement les quantités utiles<br>
-    ✔ Il évite les doublons<br>
-    ✔ Il enregistre tout automatiquement<br><br>
-
-    <strong>📸 Conseil important :</strong><br>
-    Prenez une photo bien nette, bien cadrée et le plus proche possible du document.
+    <strong>📸 Conseil important :</strong>
+    <p>
+        Prenez une photo bien nette, bien cadrée et le plus proche possible du document.
+    </p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2926,6 +2929,7 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
