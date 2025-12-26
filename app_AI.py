@@ -874,9 +874,9 @@ if not check_authentication():
     st.markdown("""
     <div class="security-warning">
         <strong style="display: block; margin-bottom: 8px; color: #856404 !important;">🔐 Protocole de sécurité :</strong>
-        • Système de reconnaissance biométrique numérique<br>
-        • Chiffrement AES-256 pour toutes les données<br>
-        • Journalisation complète des activités<br>
+        • Votre compte est protégé<br>
+        • Vos informations sont en sécurité<br>
+        • Personne d’autre ne peut y accéder<br>
         • Verrouillage automatique après 3 tentatives
     </div>
     """, unsafe_allow_html=True)
@@ -2926,6 +2926,7 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
