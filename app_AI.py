@@ -2300,13 +2300,13 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     st.markdown("""
     <div class="info-box" style="height: 100%;">
         <strong>📊 Informations du document :</strong><br><br>
-
-        • Qualité de la photo : Bonne<br>
-        • Type : Photo du document<br>
-        • État : Analyse terminée<br>
-        • Fiabilité : Élevée<br><br>
-
-        ✔ Document prêt pour le traitement
+    
+            • Qualité de la photo : Bonne<br>
+            • Type : Photo du document<br>
+            • État : Analyse terminée<br>
+            • Fiabilité : Élevée<br><br>
+    
+            ✔ Document prêt pour le traitement
     </div>
     """, unsafe_allow_html=True)
     
@@ -2926,4 +2926,5 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
