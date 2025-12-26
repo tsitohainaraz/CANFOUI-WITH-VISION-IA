@@ -2116,7 +2116,7 @@ st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True
 
 st.markdown(f"""
 <div class="info-box">
-    <strong style="color: {PALETTE['text_dark']} !important;">ℹ️ Système de reconnaissance IA avec standardisation intelligente :</strong><br>
+    <strong style="color: {PALETTE["text_dark"]} !important;">ℹ️ Système de reconnaissance IA avec standardisation intelligente :</strong><br>
     • Détection automatique du type de document<br>
     • Extraction intelligente des données structurées<br>
     • <strong>Standardisation intelligente des produits</strong><br>
@@ -2137,21 +2137,21 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 # Indicateur de compatibilité
 st.markdown(f"""
-<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: {PALETTE['text_medium']} !important;">
+<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: {PALETTE["text_medium"]} !important;">
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">📄</div>
+        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">📄</div>
         <div>Factures</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">📋</div>
+        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">📋</div>
         <div>Bons de commande</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">🏷️</div>
+        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">🏷️</div>
         <div>Étiquettes</div>
     </div>
     <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: {PALETTE['text_dark']} !important;">🤖</div>
+        <div style="font-size: 1.2rem; color: {PALETTE["text_dark"]} !important;">🤖</div>
         <div>Smart Matching</div>
     </div>
 </div>
@@ -2295,12 +2295,12 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     with col_info:
         st.markdown(f"""
         <div class="info-box" style="height: 100%;">
-            <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
+            <strong style="color: {PALETTE["text_dark"]} !important;">📊 Métadonnées :</strong><br><br>
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
             • Statut : Analysé par IA<br>
             • Confiance : Élevée<br><br>
-            <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
+            <small style="color: {PALETTE["text_light"]} !important;">Document prêt pour traitement</small>
         </div>
         """, unsafe_allow_html=True)
     
@@ -2436,7 +2436,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Instructions avec mention des filtres
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
-            <small style="color: {PALETTE['text_dark']} !important;">
+            <small style="color: {PALETTE["text_dark"]} !important;">
             💡 <strong>Mode édition activé avec filtres :</strong> 
             • <strong>Filtre 1:</strong> Lignes avec quantité 0 seront automatiquement supprimées à l'export<br>
             • <strong>Filtre 2:</strong> "CONS. CHAN FOUI 75CL" devient "Chan Foui 75 cl"<br>
@@ -2625,11 +2625,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     # Informations sur l'export avec mention des filtres
     st.markdown(f"""
     <div class="info-box">
-        <strong style="color: {PALETTE['text_dark']} !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">⚠️ Filtres actifs :</strong> 
+        <strong style="color: {PALETTE["text_dark"]} !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
+        <strong style="color: {PALETTE["text_dark"]} !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
+        <strong style="color: {PALETTE["text_dark"]} !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
+        <strong style="color: {PALETTE["text_dark"]} !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
+        <strong style="color: {PALETTE["text_dark"]} !important;">⚠️ Filtres actifs :</strong> 
         • Suppression lignes quantité 0 | • Standardisation "Chan Foui 75cl" | • Détection doublons BDC
     </div>
     """, unsafe_allow_html=True)
@@ -2650,8 +2650,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     with col_info:
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
-            <div style="font-size: 1.5rem; color: {PALETTE['tech_blue']} !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: {PALETTE['text_light']} !important;">Export instantané<br>Filtres actifs</div>
+            <div style="font-size: 1.5rem; color: {PALETTE["tech_blue"]} !important;">⚡</div>
+            <div style="font-size: 0.8rem; color: {PALETTE["text_light"]} !important;">Export instantané<br>Filtres actifs</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -2916,8 +2916,9 @@ with st.container():
         <strong style='color: {PALETTE["text_dark"]} !important;'>{st.session_state.username}</strong>
         • Filtres actifs • {datetime.now().strftime("%H:%M:%S")}
     </center>
-    ""', unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
