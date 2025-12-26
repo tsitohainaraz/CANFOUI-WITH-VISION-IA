@@ -2440,13 +2440,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
             <small style="color: #1A1A1A !important;">
             💡 <strong>Mode édition activé avec filtres :</strong> 
-            • <strong>Filtre 1:</strong> Lignes avec quantité 0 seront automatiquement supprimées à l'export<br>
-            • <strong>Filtre 2:</strong> "CONS. CHAN FOUI 75CL" devient "Chan Foui 75 cl"<br>
-            • <strong>Filtre 3:</strong> Détection de doublons identique pour BDC et factures<br>
-            • Colonne "Produit Brute" : texte original extrait par l'OCR<br>
-            • Colonne "Produit Standard" : standardisé automatiquement (éditable)<br>
-            • Colonne "Auto" : ✓ si la standardisation est automatique et fiable<br>
-            • <strong>Note :</strong> Les lignes de catégorie (ex: "122111 - VINS ROUGES") ne sont pas standardisées
+            • <strong>info 1:</strong> Les produits ont été reconnus automatiquement<br>
+            • <strong>info 2:</strong> Les quantités à 0 seront ignorées<br>
+            • <strong>info 3:</strong> Les doublons sont détectés automatiquement<br>
+            • Colonne "Produit Brute" : texte original extrait par l'IA de Chanfoui AI<br>
+            • Colonne "Produit Standard" : standardisé automatiquement par Chafoui AI (éditable)<br>
+            • <strong>Note :</strong> Veuillez prendre la photo le plus près possible du document et avec une netteté maximale.
             </small>
         </div>
         """, unsafe_allow_html=True)
@@ -2922,6 +2921,7 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
