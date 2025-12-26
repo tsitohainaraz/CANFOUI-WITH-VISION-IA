@@ -99,12 +99,12 @@ SYNONYMS = {
     "cl": "cl",
     "ml": "ml",
     "l": "l",
-    "cons": "consigne",
-    "cons.": "consigne",
+    "cons": "",
+    "cons.": "",
     "foul": "foui",
     "chan foul": "chan foui",
-    "cons. chan foul": "consigne chan foui",
-    "cons chan foul": "consigne chan foui",
+    "cons. chan foul": "chan foui",
+    "cons chan foul": "chan foui",
     
     # Unités
     "750ml": "75 cl",
@@ -285,7 +285,7 @@ def extract_product_features(text: str) -> Dict[str, str]:
         ('aperao', 'aperao'),
         ('champetre', 'vin de champêtre'),
         ('sambatra', 'sambatra'),
-        ('consigne chan foui', 'consigne chan foui'),
+        ('chan foui', 'chan foui'),
     ]
     
     for marque_pattern, marque_std in marques:
@@ -463,14 +463,11 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
     # Corrections spécifiques pour ULYS
     produit_upper = produit_brut.upper()
     
-    # Gestion spéciale pour "CONS. CHAN FOUI 75CL"
-    if "CONS" in produit_upper and "CHAN" in produit_upper:
-        if "FOUL" in produit_upper:
-            produit_standard = "Consigne Chan Foui 75 cl"
-            confidence = 0.95
-        elif "FOUI" in produit_upper:
-            produit_standard = "Consigne Chan Foui 75 cl"
-            confidence = 0.9
+    # Gestion spéciale pour "CONS. CHAN FOUI 75CL" - FILTRE 2
+    if "CONS" in produit_upper and "CHAN" in produit_upper and "FOUI" in produit_upper:
+        # Juste "Chan Foui 75 cl"
+        produit_standard = "Chan Foui 75 cl"
+        confidence = 0.95
         status = "matched"
     
     # Gestion spéciale pour les vins avec "NU"
@@ -637,7 +634,7 @@ def logout():
     st.rerun()
 
 # ============================================================
-# PAGE DE CONNEXION
+# PAGE DE CONNEXION - FILTRE 1: Texte noir sur fond blanc
 # ============================================================
 if not check_authentication():
     st.markdown("""
@@ -683,6 +680,7 @@ if not check_authentication():
             filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
         }
         
+        /* FORCER LE TEXTE EN NOIR SUR BLANC - FILTRE 1 */
         .stSelectbox > div > div {
             border: 1.5px solid #e2e8f0;
             border-radius: 12px;
@@ -690,7 +688,7 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
-            color: #1E293B !important;  /* Texte sombre */
+            color: #1E293B !important;  /* Texte noir */
         }
         
         .stSelectbox > div > div:hover {
@@ -698,12 +696,18 @@ if not check_authentication():
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
         }
         
-        /* FORCER LE TEXTE EN NOIR POUR TOUS LES CHAMPS */
+        /* Texte dans le dropdown */
         .stSelectbox input,
         .stSelectbox div,
         .stSelectbox span {
             color: #1E293B !important;
             fill: #1E293B !important;
+        }
+        
+        /* Options du dropdown */
+        [data-baseweb="popover"] div,
+        [data-baseweb="popover"] span {
+            color: #1E293B !important;
         }
         
         .stTextInput > div > div > input {
@@ -713,14 +717,14 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
-            color: #1E293B !important;  /* Texte sombre */
+            color: #1E293B !important;  /* Texte noir */
         }
         
         .stTextInput > div > div > input:focus {
             border-color: #27414A;
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
             outline: none;
-            color: #1E293B !important;  /* Texte sombre */
+            color: #1E293B !important;  /* Texte noir */
         }
         
         /* Correction pour le placeholder */
@@ -728,7 +732,7 @@ if not check_authentication():
             color: #64748b !important;  /* Placeholder en gris */
         }
         
-        /* Correction pour les labels */
+        /* Labels en noir */
         label {
             color: #1E293B !important;
             font-weight: 500 !important;
@@ -799,15 +803,6 @@ if not check_authentication():
             100% { transform: scale(0.95); opacity: 0.7; }
         }
         
-        /* Styles pour assurer la lisibilité */
-        .text-dark {
-            color: #1E293B !important;
-        }
-        
-        .text-medium {
-            color: #334155 !important;
-        }
-        
         /* Override pour tous les textes */
         * {
             color: #1E293B !important;
@@ -825,6 +820,12 @@ if not check_authentication():
         }
         
         [data-baseweb="popover"] * {
+            color: #1E293B !important;
+        }
+        
+        /* Texte dans les options */
+        [role="listbox"] div,
+        [role="option"] {
             color: #1E293B !important;
         }
     </style>
@@ -849,49 +850,7 @@ if not check_authentication():
     with col_status[0]:
         st.markdown('<div style="text-align: center; color: #1E293B !important;"><span class="pulse-dot"></span>Serveur actif</div>', unsafe_allow_html=True)
     
-    # Injection JavaScript pour forcer les couleurs
-    st.markdown("""
-    <script>
-    // Fonction pour forcer les couleurs sombres
-    function forceDarkText() {
-        // Cibler tous les inputs
-        const inputs = document.querySelectorAll('input, select, textarea, [role="combobox"], [data-baseweb="select"]');
-        inputs.forEach(el => {
-            el.style.color = '#1E293B';
-            el.style.setProperty('color', '#1E293B', 'important');
-            el.style.setProperty('-webkit-text-fill-color', '#1E293B', 'important');
-            
-            // Forcer aussi les enfants
-            const children = el.querySelectorAll('*');
-            children.forEach(child => {
-                child.style.color = '#1E293B';
-                child.style.setProperty('color', '#1E293B', 'important');
-            });
-        });
-        
-        // Cibler tous les textes
-        const textElements = document.querySelectorAll('div, span, p, label, h1, h2, h3, h4, h5, h6');
-        textElements.forEach(el => {
-            const computedColor = window.getComputedStyle(el).color;
-            // Si la couleur est proche du blanc, la changer
-            if (computedColor.includes('255') || computedColor.includes('rgb(255') || computedColor === 'white') {
-                el.style.color = '#1E293B';
-                el.style.setProperty('color', '#1E293B', 'important');
-            }
-        });
-    }
-    
-    // Exécuter immédiatement et régulièrement
-    setTimeout(forceDarkText, 100);
-    setInterval(forceDarkText, 500);
-    
-    // Écouter les changements
-    document.addEventListener('click', forceDarkText);
-    document.addEventListener('input', forceDarkText);
-    document.addEventListener('change', forceDarkText);
-    </script>
-    """, unsafe_allow_html=True)
-    
+    # FILTRE 1: Le nom de l'identifiant apparaît clair et noir sur fond blanc
     username = st.selectbox(
         "👤 Identifiant",
         options=[""] + list(AUTHORIZED_USERS.keys()),
@@ -1750,7 +1709,7 @@ def map_client(client: str) -> str:
 # FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS
 # ============================================================
 def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les factures (9 colonnes)"""
+    """Prépare les lignes pour les factures (9 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
     rows = []
     
     try:
@@ -1762,11 +1721,16 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         magasin = data.get("adresse_livraison", "")
         
         for _, row in articles_df.iterrows():
+            # FILTRE 1: Vérifier si la quantité est différente de 0
+            quantite = row.get("Quantité", 0)
+            if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
+                continue  # Passer à la ligne suivante
+            
             article = str(row.get("Produit Standard", "")).strip()
             if not article:
                 article = str(row.get("Produit Brute", "")).strip()
             
-            quantite = format_quantity(row.get("Quantité", ""))
+            quantite_str = format_quantity(quantite)
             
             rows.append([
                 mois,
@@ -1777,7 +1741,7 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
                 "",  # Lien (vide par défaut)
                 magasin,
                 article,
-                quantite
+                quantite_str
             ])
         
         return rows
@@ -1787,7 +1751,7 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         return []
 
 def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les BDC (8 colonnes)"""
+    """Prépare les lignes pour les BDC (8 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
     rows = []
     
     try:
@@ -1799,11 +1763,16 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
         magasin = data.get("adresse_livraison", "")
         
         for _, row in articles_df.iterrows():
+            # FILTRE 1: Vérifier si la quantité est différente de 0
+            quantite = row.get("Quantité", 0)
+            if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
+                continue  # Passer à la ligne suivante
+            
             article = str(row.get("Produit Standard", "")).strip()
             if not article:
                 article = str(row.get("Produit Brute", "")).strip()
             
-            quantite = format_quantity(row.get("Quantité", ""))
+            quantite_str = format_quantity(quantite)
             
             rows.append([
                 mois,
@@ -1813,7 +1782,7 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
                 "",  # Lien (vide par défaut)
                 magasin,
                 article,
-                quantite
+                quantite_str
             ])
         
         return rows
@@ -1823,59 +1792,65 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
         return []
 
 def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document"""
+    """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document - FILTRE 1 appliqué"""
     if "FACTURE" in document_type.upper():
         return prepare_facture_rows(data, articles_df)
     else:
         return prepare_bdc_rows(data, articles_df)
 
 # ============================================================
-# FONCTIONS DE DÉTECTION DE DOUBLONS
+# FONCTIONS DE DÉTECTION DE DOUBLONS - FILTRE 3: Même logique pour BDC et factures
 # ============================================================
 def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
-    """Vérifie si un document existe déjà dans Google Sheets"""
+    """Vérifie si un document existe déjà dans Google Sheets - FILTRE 3: Même logique pour BDC et factures"""
     try:
         all_data = worksheet.get_all_values()
         
         if len(all_data) <= 1:
             return False, []
         
+        # FILTRE 3: Même logique de détection pour BDC et factures
+        # Recherche basée sur client et numéro de document
+        client_col = 1  # Colonne client (commune aux deux types)
+        
+        current_client = extracted_data.get('client', '')
+        
+        # Colonne pour le numéro de document selon le type
         if "FACTURE" in document_type.upper():
-            nf_col = 4
-            client_col = 1
-            
-            current_nf = extracted_data.get('numero_facture', '')
-            current_client = extracted_data.get('client', '')
-            
-            duplicates = []
-            for i, row in enumerate(all_data[1:], start=2):
-                if len(row) > max(nf_col, client_col):
-                    if (row[nf_col] == current_nf and 
-                        row[client_col] == current_client and 
-                        current_nf != '' and current_client != ''):
-                        duplicates.append({
-                            'row_number': i,
-                            'data': row,
-                            'match_type': 'NF et Client identiques'
-                        })
+            doc_num_col = 4  # Colonne NF
+            current_doc_num = extracted_data.get('numero_facture', '')
         else:
-            nbc_col = 3
-            client_col = 1
-            
-            current_nbc = extracted_data.get('numero', '')
-            current_client = extracted_data.get('client', '')
-            
-            duplicates = []
-            for i, row in enumerate(all_data[1:], start=2):
-                if len(row) > max(nbc_col, client_col):
-                    if (row[nbc_col] == current_nbc and 
-                        row[client_col] == current_client and 
-                        current_nbc != '' and current_client != ''):
-                        duplicates.append({
-                            'row_number': i,
-                            'data': row,
-                            'match_type': 'NBC et Client identiques'
-                        })
+            doc_num_col = 3  # Colonne NBC
+            current_doc_num = extracted_data.get('numero', '')
+        
+        duplicates = []
+        for i, row in enumerate(all_data[1:], start=2):
+            if len(row) > max(doc_num_col, client_col):
+                row_client = row[client_col] if len(row) > client_col else ''
+                row_doc_num = row[doc_num_col] if len(row) > doc_num_col else ''
+                
+                if (row_client == current_client and 
+                    row_doc_num == current_doc_num and 
+                    current_client != '' and current_doc_num != ''):
+                    
+                    # Vérifier aussi les articles similaires
+                    match_type = 'Client et Numéro identiques'
+                    
+                    # Vérification supplémentaire pour les BDC ULYS
+                    if "ULYS" in current_client.upper() and "BDC" in document_type.upper():
+                        # Pour ULYS, vérifier aussi la date
+                        date_col = 2  # Colonne date
+                        current_date = format_date_french(extracted_data.get('date', ''))
+                        row_date = row[date_col] if len(row) > date_col else ''
+                        
+                        if row_date == current_date and current_date != '':
+                            match_type = 'Client, Numéro et Date identiques'
+                    
+                    duplicates.append({
+                        'row_number': i,
+                        'data': row,
+                        'match_type': match_type
+                    })
         
         return len(duplicates) > 0, duplicates
             
@@ -1988,7 +1963,7 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         new_rows = prepare_rows_for_sheet(document_type, data, articles_df)
         
         if not new_rows:
-            st.warning("⚠️ Aucune donnée à enregistrer")
+            st.warning("⚠️ Aucune donnée à enregistrer (toutes les lignes ont une quantité de 0)")
             return False, "Aucune donnée"
         
         if duplicate_action == "overwrite" and duplicate_rows:
@@ -2008,7 +1983,7 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             return True, "Document ignoré (doublon)"
         
         # Afficher l'aperçu des données à enregistrer
-        st.info(f"📋 **Aperçu des données à enregistrer:**")
+        st.info(f"📋 **Aperçu des données à enregistrer (lignes avec quantité > 0):**")
         
         # Définir les colonnes selon le type de document
         if "FACTURE" in document_type.upper():
@@ -2145,7 +2120,8 @@ st.markdown(f"""
     • Détection automatique du type de document<br>
     • Extraction intelligente des données structurées<br>
     • <strong>Standardisation intelligente des produits</strong><br>
-    • Synchronisation cloud automatique
+    • Synchronisation cloud automatique<br>
+    • <strong>Filtres actifs : Suppression lignes quantité 0, Standardisation "Chan Foui 75cl", Détection doublons BDC</strong>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2451,17 +2427,20 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # TABLEAU STANDARDISÉ ÉDITABLE
+    # TABLEAU STANDARDISÉ ÉDITABLE - FILTRE 1 appliqué automatiquement
     # ========================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
         st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
         st.markdown('<h4>📘 Standardisation des Produits</h4>', unsafe_allow_html=True)
         
-        # Instructions
+        # Instructions avec mention des filtres
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
             <small style="color: {PALETTE['text_dark']} !important;">
-            💡 <strong>Mode édition activé :</strong> 
+            💡 <strong>Mode édition activé avec filtres :</strong> 
+            • <strong>Filtre 1:</strong> Lignes avec quantité 0 seront automatiquement supprimées à l'export<br>
+            • <strong>Filtre 2:</strong> "CONS. CHAN FOUI 75CL" devient "Chan Foui 75 cl"<br>
+            • <strong>Filtre 3:</strong> Détection de doublons identique pour BDC et factures<br>
             • Colonne "Produit Brute" : texte original extrait par l'OCR<br>
             • Colonne "Produit Standard" : standardisé automatiquement (éditable)<br>
             • Colonne "Auto" : ✓ si la standardisation est automatique et fiable<br>
@@ -2469,6 +2448,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             </small>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Afficher un avertissement pour les lignes avec quantité 0
+        df_with_zero_qty = st.session_state.edited_standardized_df[
+            (st.session_state.edited_standardized_df["Quantité"] == 0) | 
+            (st.session_state.edited_standardized_df["Quantité"].isna())
+        ]
+        
+        if len(df_with_zero_qty) > 0:
+            st.warning(f"⚠️ **Attention :** {len(df_with_zero_qty)} ligne(s) avec quantité 0 seront automatiquement supprimées lors de l'export")
         
         # Éditeur de données avec les nouvelles colonnes
         edited_df = st.data_editor(
@@ -2488,7 +2476,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 "Quantité": st.column_config.NumberColumn(
                     "Quantité",
                     min_value=0,
-                    help="Quantité commandée",
+                    help="Quantité commandée (lignes avec 0 seront supprimées à l'export)",
                     format="%d"
                 ),
                 "Confiance": st.column_config.TextColumn(
@@ -2511,6 +2499,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         # Afficher les statistiques
         total_items = len(edited_df)
         auto_standardized = edited_df["Auto"].sum() if "Auto" in edited_df.columns else 0
+        items_with_qty = len(edited_df[edited_df["Quantité"] > 0])
         
         col_stat1, col_stat2, col_stat3 = st.columns(3)
         with col_stat1:
@@ -2518,28 +2507,17 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(59, 130, 246, 0.2);">
                     <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['tech_blue']} !important;">{total_items}</div>
-                    <div class="stat-label">Articles</div>
+                    <div class="stat-label">Articles totaux</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
         with col_stat2:
-            # Calculer la confiance moyenne seulement pour les lignes standardisées
-            confiance_values = []
-            for _, row in edited_df.iterrows():
-                if row["Auto"]:  # Seulement pour les lignes auto-standardisées
-                    try:
-                        confiance = float(row["Confiance"].replace('%', ''))
-                        confiance_values.append(confiance)
-                    except:
-                        pass
-            
-            avg_confidence = np.mean(confiance_values) if confiance_values else 0
             st.markdown(
                 f'''
                 <div class="stat-badge" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.1) 100%); border: 1px solid rgba(16, 185, 129, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['success']} !important;">{avg_confidence:.1f}%</div>
-                    <div class="stat-label">Confiance moyenne</div>
+                    <div style="font-size: 1.8rem; font-weight: 700; color: {PALETTE['success']} !important;">{items_with_qty}</div>
+                    <div class="stat-label">Avec quantité > 0</div>
                 </div>
                 ''',
                 unsafe_allow_html=True
@@ -2592,11 +2570,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # TEST DE STANDARDISATION ULYS
+    # TEST DE STANDARDISATION ULYS - FILTRE 2 test
     # ========================================================
-    with st.expander("🧪 Tester la standardisation ULYS"):
-        # Exemples de test
+    with st.expander("🧪 Tester la standardisation ULYS (Filtre 2)"):
+        # Exemples de test avec focus sur FILTRE 2
         test_examples = [
+            "CONS. CHAN FOUI 75CL",
+            "CONS. CHAN FOUL 75CL",
+            "CONS CHAN FOUI 75CL",
+            "CONS CHAN FOUL 75CL",
             "VIN ROUGE COTE DE FIANAR 3L",
             "VIN ROUGE COTE DE FIANARA 750ML NU",
             "VIN BLANC COTE DE FIANAR 3L",
@@ -2604,14 +2586,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             "VIN BLANC COTE DE FIANARA 750ML NU",
             "VIN GRIS COTE DE FIANARA 750ML NU",
             "VIN ROUGE DOUX MAROPARASY 750ML NU",
-            "CONS. CHAN FOUI 75CL",
-            "CONS. CHAN FOUL 75CL",
             "COTE DE FIANAR 3L",
             "MAROPARASY 750ML",
             "VIN ROUGE COTE DE FLANAR 3L",
         ]
         
-        if st.button("Tester avec des exemples typiques ULYS"):
+        if st.button("Tester les filtres avec des exemples typiques ULYS"):
             results = []
             for example in test_examples:
                 produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(example)
@@ -2625,6 +2605,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             test_df = pd.DataFrame(results)
             st.dataframe(test_df, use_container_width=True)
             
+            # Vérification spécifique du FILTRE 2
+            filter2_test = test_df[test_df["Produit Brute"].str.contains("CHAN FOUI|CHAN FOUL", case=False, na=False)]
+            if not filter2_test.empty:
+                st.info(f"**Filtre 2 testé:** 'CONS. CHAN FOUI 75CL' → '{filter2_test.iloc[0]['Produit Standard']}'")
+            
             # Calculer l'accuracy
             perfect_matches = sum(1 for _, row in test_df.iterrows() 
                                 if float(row["Confiance"].replace('%', '')) >= 85.0 and row["Statut"] == "matched")
@@ -2637,13 +2622,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
-    # Informations sur l'export
+    # Informations sur l'export avec mention des filtres
     st.markdown(f"""
     <div class="info-box">
         <strong style="color: {PALETTE['text_dark']} !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
         <strong style="color: {PALETTE['text_dark']} !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
         <strong style="color: {PALETTE['text_dark']} !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons
+        <strong style="color: {PALETTE['text_dark']} !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
+        <strong style="color: {PALETTE['text_dark']} !important;">⚠️ Filtres actifs :</strong> 
+        • Suppression lignes quantité 0 | • Standardisation "Chan Foui 75cl" | • Détection doublons BDC
     </div>
     """, unsafe_allow_html=True)
     
@@ -2664,17 +2651,17 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
             <div style="font-size: 1.5rem; color: {PALETTE['tech_blue']} !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: {PALETTE['text_light']} !important;">Export instantané</div>
+            <div style="font-size: 0.8rem; color: {PALETTE['text_light']} !important;">Export instantané<br>Filtres actifs</div>
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
+    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT - FILTRE 3
     # ========================================================
     if st.session_state.export_triggered and st.session_state.export_status is None:
-        with st.spinner("🔍 Analyse des doublons en cours..."):
+        with st.spinner("🔍 Analyse des doublons en cours (Filtre 3)..."):
             # Normaliser le type de document
             normalized_doc_type = normalize_document_type(doc_type)
             
@@ -2682,7 +2669,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             ws = get_worksheet(normalized_doc_type)
             
             if ws:
-                # Vérifier les doublons
+                # Vérifier les doublons avec la même logique pour BDC et factures
                 duplicate_found, duplicates = check_for_duplicates(
                     normalized_doc_type,
                     st.session_state.data_for_sheets,
@@ -2703,7 +2690,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.export_status = "error"
     
     # ========================================================
-    # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
+    # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS - FILTRE 3
     # ========================================================
     if st.session_state.export_status == "duplicates_found":
         st.markdown('<div class="duplicate-box fade-in">', unsafe_allow_html=True)
@@ -2713,8 +2700,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
             <div style="font-size: 2rem; color: {PALETTE['warning']} !important;">⚠️</div>
             <div>
-                <h3 style="margin: 0; color: {PALETTE['text_dark']} !important;">ALERTE : DOUBLON DÉTECTÉ</h3>
-                <p style="margin: 5px 0 0 0; color: {PALETTE['text_light']} !important; font-size: 0.9rem;">Document similaire existant dans la base cloud</p>
+                <h3 style="margin: 0; color: {PALETTE['text_dark']} !important;">ALERTE : DOUBLON DÉTECTÉ (Filtre 3)</h3>
+                <p style="margin: 5px 0 0 0; color: {PALETTE['text_light']} !important; font-size: 0.9rem;">Document similaire existant dans la base cloud - Même logique pour BDC et factures</p>
             </div>
         </div>
         ''', unsafe_allow_html=True)
@@ -2779,7 +2766,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # EXPORT EFFECTIF DES DONNÉES
+    # EXPORT EFFECTIF DES DONNÉES - FILTRE 1 appliqué ici
     # ========================================================
     if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
         if st.session_state.export_status == "no_duplicates":
@@ -2787,6 +2774,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         
         # Préparer le dataframe pour l'export
         export_df = st.session_state.edited_standardized_df.copy()
+        
+        # FILTRE 1: Afficher le nombre de lignes qui seront supprimées
+        zero_qty_rows = export_df[export_df["Quantité"] == 0]
+        if len(zero_qty_rows) > 0:
+            st.info(f"⚠️ **Filtre 1 actif :** {len(zero_qty_rows)} ligne(s) avec quantité 0 seront automatiquement exclues de l'export")
         
         try:
             success, message = save_to_google_sheets(
@@ -2799,12 +2791,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             
             if success:
                 st.session_state.export_status = "completed"
-                # Afficher un message de succès stylé
+                # Afficher un message de succès stylé avec mention des filtres
                 st.markdown("""
                 <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white !important; border-radius: 18px; text-align: center; margin: 20px 0;">
                     <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
                     <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
                     <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
+                    <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">✓ Filtre 1: Lignes quantité 0 supprimées<br>✓ Filtre 2: Standardisation Chan Foui appliquée<br>✓ Filtre 3: Détection doublons BDC activée</p>
                 </div>
                 """, unsafe_allow_html=True)
             else:
@@ -2915,16 +2908,15 @@ with st.container():
     </center>
     """, unsafe_allow_html=True)
     
-    # Troisième ligne : Statut
+    # Troisième ligne : Statut avec mention des filtres
     st.markdown(f"""
     <center style='font-size: 0.8rem; color: {PALETTE['text_light']} !important;'>
         <span style='color: #10B981 !important;'>●</span> 
         Système actif • Session : 
         <strong style='color: {PALETTE['text_dark']} !important;'>{st.session_state.username}</strong>
-        • {datetime.now().strftime("%H:%M:%S")}
+        • Filtres actifs • {datetime.now().strftime("%H:%M:%S")}
     </center>
-    """, unsafe_allow_html=True)
+    ""', unsafe_allow_html=True)
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
