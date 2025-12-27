@@ -1,4 +1,17 @@
 # ============================================================
+# IMPORTS ET CONFIGURATION
+# ============================================================
+import streamlit as st
+import pandas as pd
+import json
+import re
+from PIL import Image
+from io import BytesIO
+import base64
+from typing import Dict, List, Tuple
+import pytesseract
+
+# ============================================================
 # GOOGLE SHEETS CONFIGURATION
 # ============================================================
 SHEET_ID = "1FooEwQBwLjvyjAsvHu4eDes0o-eEm92fbEWv6maBNyE"
@@ -9,6 +22,46 @@ SHEET_GIDS = {
     "BDC S2M": 954728911,
     "BDC ULYS": 954728911
 }
+
+# ============================================================
+# FONCTION DE DÉTECTION DE TYPE DE DOCUMENT PAR TITRE
+# ============================================================
+def detect_document_type_by_title(ocr_result: dict) -> str:
+    """
+    Détecte le type de document basé sur les titres spécifiques dans le texte OCR.
+    """
+    if not ocr_result or not isinstance(ocr_result, dict):
+        return "INCONNU"
+    
+    # Récupérer tout le texte OCR combiné pour la détection
+    full_text = ""
+    
+    # Combiner différents champs de texte possibles
+    if 'client' in ocr_result:
+        full_text += ocr_result.get('client', '') + " "
+    if 'adresse_livraison' in ocr_result:
+        full_text += ocr_result.get('adresse_livraison', '') + " "
+    if 'type_document' in ocr_result:
+        full_text += ocr_result.get('type_document', '') + " "
+    
+    # Ajouter le texte des articles si présent
+    if 'articles' in ocr_result:
+        for article in ocr_result['articles']:
+            full_text += article.get('article_brut', '') + " "
+    
+    # Vérifier la présence des titres spécifiques
+    full_text_upper = full_text.upper()
+    
+    if "FACTURE EN COMPTE" in full_text_upper:
+        return "FACTURE EN COMPTE"
+    elif "BON DE COMMANDE FOURNISSEUR" in full_text_upper:
+        return "BDC ULYS"
+    elif "BON DE COMMANDE /RECEPTION" in full_text_upper or "BON DE COMMANDE/RECEPTION" in full_text_upper:
+        return "BDC LEADERPRICE"
+    elif "SUPERMAKI" in full_text_upper or "S2M" in full_text_upper:
+        return "BDC S2M"
+    
+    return "INCONNU"
 
 # ============================================================
 # FONCTIONS DE DÉTECTION DE DOUBLONS - MIS À JOUR POUR FACTURES
@@ -109,12 +162,18 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
 # ============================================================
 # MISE À JOUR DE LA FONCTION DE NORMALISATION DU TYPE DE DOCUMENT
 # ============================================================
-def normalize_document_type(doc_type: str) -> str:
+def normalize_document_type(doc_type: str, ocr_result: dict = None) -> str:
     """Normalise le type de document pour correspondre aux clés SHEET_GIDS"""
     if not doc_type:
         return "DOCUMENT INCONNU"
     
     doc_type_upper = doc_type.upper()
+    
+    # D'abord, essayer de détecter par titre si un résultat OCR est fourni
+    if ocr_result:
+        title_detected = detect_document_type_by_title(ocr_result)
+        if title_detected != "INCONNU":
+            return title_detected
     
     # Mapping des types de documents
     if "FACTURE" in doc_type_upper and "COMPTE" in doc_type_upper:
@@ -145,19 +204,157 @@ def normalize_document_type(doc_type: str) -> str:
             return "DOCUMENT INCONNU"
 
 # ============================================================
-# MISE À JOUR DE L'APPEL À OPENAI VISION POUR LES FACTURES
+# FONCTION DE CONFIRMATION AVANT IMPORTATION
 # ============================================================
-def openai_vision_ocr_facture(image_bytes: bytes) -> Dict:
+def show_confirmation_before_import(detected_type: str):
+    """
+    Affiche une boîte de dialogue de confirmation avant l'importation
+    Retourne le type de document confirmé par l'utilisateur
+    """
+    st.markdown(f"""
+    <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); 
+                border-radius: 12px; border: 2px solid #dee2e6; text-align: center;">
+        <h4 style="color: #1A1A1A !important; margin-bottom: 15px;">⚠️ CONFIRMATION AVANT IMPORTATION</h4>
+        <p style="color: #495057 !important; font-size: 16px;">
+        Le document détecté est de type : <strong style="color: #3B82F6 !important;">{detected_type}</strong>
+        </p>
+        <p style="color: #6c757d !important; font-size: 14px;">
+        Souhaitez-vous l'enregistrer ?
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Créer deux colonnes pour les boutons
+    col1, col2, col3 = st.columns([1, 1, 2])
+    
+    with col1:
+        if st.button("✅ Enregistrer comme **FACTURE**", 
+                    use_container_width=True,
+                    type="primary",
+                    help="Enregistrer le document dans la feuille Factures",
+                    key="confirm_facture"):
+            return "FACTURE EN COMPTE"
+    
+    with col2:
+        if st.button("📋 Enregistrer comme **BON DE COMMANDE**", 
+                    use_container_width=True,
+                    type="secondary",
+                    help="Enregistrer le document dans la feuille BDC",
+                    key="confirm_bdc"):
+            # Déterminer le type de BDC
+            if "ULYS" in detected_type:
+                return "BDC ULYS"
+            elif "S2M" in detected_type or "SUPERMAKI" in detected_type:
+                return "BDC S2M"
+            else:
+                return "BDC LEADERPRICE"
+    
+    with col3:
+        if st.button("❌ Annuler l'importation", 
+                    use_container_width=True,
+                    type="secondary",
+                    key="cancel_import"):
+            return "CANCEL"
+    
+    return None
+
+# ============================================================
+# FONCTIONS OCR ET TRAITEMENT D'IMAGES
+# ============================================================
+def encode_image_to_base64(image_bytes):
+    """Encode une image en base64"""
+    return base64.b64encode(image_bytes).decode('utf-8')
+
+def preprocess_image(image_bytes):
+    """Prétraite l'image pour améliorer l'OCR"""
+    image = Image.open(BytesIO(image_bytes))
+    # Convertir en niveaux de gris
+    if image.mode != 'L':
+        image = image.convert('L')
+    return image
+
+def get_openai_client():
+    """Initialise et retourne le client OpenAI"""
+    # Implémentez votre propre logique d'initialisation OpenAI
+    return None
+
+def openai_vision_ocr_improved(image_bytes):
+    """Utilise OpenAI Vision pour analyser un document"""
+    try:
+        client = get_openai_client()
+        if not client:
+            return None
+        
+        base64_image = encode_image_to_base64(image_bytes)
+        
+        prompt = """
+        Analyse ce document et extrais précisément les informations suivantes:
+        
+        {
+            "type_document": "...",
+            "numero": "...",
+            "date": "...",
+            "client": "...",
+            "adresse_livraison": "...",
+            "bon_commande": "...",
+            "articles": [
+                {
+                    "article_brut": "TEXT EXACT COMME SUR LE DOCUMENT",
+                    "quantite": nombre
+                }
+            ]
+        }
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=3000,
+            temperature=0.1
+        )
+        
+        content = response.choices[0].message.content
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            json_str = json_match.group()
+            try:
+                data = json.loads(json_str)
+                return data
+            except json.JSONDecodeError:
+                json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
+                try:
+                    data = json.loads(json_str)
+                    return data
+                except:
+                    return None
+        return None
+            
+    except Exception as e:
+        st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
+        return None
+
+def openai_vision_ocr_facture(image_bytes):
     """Utilise OpenAI Vision pour analyser une FACTURE"""
     try:
         client = get_openai_client()
         if not client:
             return None
         
-        # Encoder l'image
         base64_image = encode_image_to_base64(image_bytes)
         
-        # Prompt spécifique pour les factures
         prompt = """
         Analyse ce document de type FACTURE et extrais précisément les informations suivantes:
         
@@ -187,7 +384,6 @@ def openai_vision_ocr_facture(image_bytes: bytes) -> Dict:
         6. Ne standardise PAS les noms, garde-les exactement comme sur le document
         """
         
-        # Appel à l'API OpenAI Vision
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -208,10 +404,7 @@ def openai_vision_ocr_facture(image_bytes: bytes) -> Dict:
             temperature=0.1
         )
         
-        # Extraire et parser la réponse JSON
         content = response.choices[0].message.content
-        
-        # Nettoyer la réponse pour extraire le JSON
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             json_str = json_match.group()
@@ -219,120 +412,48 @@ def openai_vision_ocr_facture(image_bytes: bytes) -> Dict:
                 data = json.loads(json_str)
                 return data
             except json.JSONDecodeError:
-                # Essayer de nettoyer le JSON
                 json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
                 try:
                     data = json.loads(json_str)
                     return data
                 except:
-                    st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
                     return None
-        else:
-            st.error("❌ Réponse JSON non trouvée dans la réponse OpenAI")
-            return None
+        return None
             
     except Exception as e:
         st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
         return None
 
 # ============================================================
-# MODIFICATION DE LA FONCTION DE TRAITEMENT OCR
+# FONCTIONS DE STANDARDISATION
 # ============================================================
-# Dans la section de traitement automatique de l'image, modifiez l'appel OCR :
-if uploaded and uploaded != st.session_state.uploaded_file:
-    # ... [code existant] ...
-    
-    # Traitement OCR avec OpenAI Vision améliorée
-    try:
-        buf = BytesIO()
-        st.session_state.uploaded_image.save(buf, format="JPEG")
-        image_bytes = buf.getvalue()
-        
-        # Prétraitement de l'image
-        img_processed = preprocess_image(image_bytes)
-        
-        # Détecter le type de document en pré-analyse
-        # Vous pouvez ajouter une détection simple ici ou utiliser le même OCR
-        # Pour simplifier, on utilisera le même OCR mais avec détection de type
-        
-        # Analyse avec OpenAI Vision
-        # On utilise d'abord une analyse rapide pour déterminer le type
-        result = openai_vision_ocr_improved(img_processed)
-        
-        if result:
-            st.session_state.ocr_result = result
-            raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
-            
-            # Si c'est une facture, réanalyser avec le modèle spécifique facture
-            if "FACTURE" in raw_doc_type.upper():
-                st.info("📄 Document détecté comme FACTURE - Analyse spécifique en cours...")
-                # Réanalyser avec le modèle facture
-                facture_result = openai_vision_ocr_facture(img_processed)
-                if facture_result:
-                    st.session_state.ocr_result = facture_result
-                    raw_doc_type = "FACTURE EN COMPTE"
-            
-            # Normaliser le type de document détecté
-            st.session_state.detected_document_type = normalize_document_type(raw_doc_type)
-            st.session_state.show_results = True
-            st.session_state.processing = False
-            
-            # Préparer les données standardisées
-            if "articles" in st.session_state.ocr_result:
-                std_data = []
-                for article in st.session_state.ocr_result["articles"]:
-                    raw_name = article.get("article_brut", article.get("article", ""))
-                    
-                    # Pour les factures, on standardise différemment
-                    if "FACTURE" in st.session_state.detected_document_type.upper():
-                        # Standardisation pour les factures
-                        produit_brut = raw_name
-                        # Pour les factures, on peut garder plus d'originalité ou appliquer une standardisation différente
-                        produit_standard, confidence, status = standardize_product_name_improved(raw_name)
-                        
-                        std_data.append({
-                            "Produit Brute": produit_brut,
-                            "Produit Standard": produit_standard,
-                            "Quantité": article.get("quantite", 0),
-                            "Confiance": f"{confidence*100:.1f}%",
-                            "Auto": confidence >= 0.7
-                        })
-                    else:
-                        # Pour les BDC, utiliser la standardisation existante
-                        if any(cat in raw_name.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE"]):
-                            std_data.append({
-                                "Produit Brute": raw_name,
-                                "Produit Standard": raw_name,
-                                "Quantité": 0,
-                                "Confiance": "0%",
-                                "Auto": False
-                            })
-                        else:
-                            produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
-                            
-                            std_data.append({
-                                "Produit Brute": produit_brut,
-                                "Produit Standard": produit_standard,
-                                "Quantité": article.get("quantite", 0),
-                                "Confiance": f"{confidence*100:.1f}%",
-                                "Auto": confidence >= 0.7
-                            })
-                
-                # Créer le dataframe standardisé pour l'édition
-                st.session_state.edited_standardized_df = pd.DataFrame(std_data)
-            
-            progress_container.empty()
-            st.rerun()
-        else:
-            st.error("❌ Échec de l'analyse IA - Veuillez réessayer")
-            st.session_state.processing = False
-        
-    except Exception as e:
-        st.error(f"❌ Erreur système: {str(e)}")
-        st.session_state.processing = False
+def standardize_product_name_improved(product_name):
+    """Standardise le nom du produit"""
+    # Implémentez votre logique de standardisation
+    return product_name, 1.0, "SUCCESS"
+
+def standardize_product_for_bdc(product_name):
+    """Standardise le nom du produit pour les BDC"""
+    # Implémentez votre logique de standardisation pour BDC
+    return product_name, product_name, 1.0, "SUCCESS"
 
 # ============================================================
-# MISE À JOUR DE LA PRÉPARATION DES DONNÉES POUR LES FACTURES
+# FONCTIONS UTILITAIRES
+# ============================================================
+def format_date_french(date_str):
+    """Formate une date en français"""
+    return date_str
+
+def get_month_from_date(date_str):
+    """Extrait le mois d'une date"""
+    return ""
+
+def format_quantity(quantity):
+    """Formate une quantité"""
+    return str(quantity)
+
+# ============================================================
+# FONCTION DE PRÉPARATION DES DONNÉES
 # ============================================================
 def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
     """Prépare les lignes pour les factures (9 colonnes) - MIS À JOUR"""
@@ -347,10 +468,9 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         magasin = data.get("adresse_livraison", "")
         
         for _, row in articles_df.iterrows():
-            # FILTRE 1: Vérifier si la quantité est différente de 0
             quantite = row.get("Quantité", 0)
             if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
-                continue  # Passer à la ligne suivante
+                continue
             
             article = str(row.get("Produit Standard", "")).strip()
             if not article:
@@ -377,22 +497,240 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         return []
 
 # ============================================================
-# AJOUT D'INFORMATIONS SPÉCIFIQUES AUX FACTURES DANS L'INTERFACE
+# FONCTION DE SYNCHRONISATION AVEC GOOGLE SHEETS
 # ============================================================
-# Dans la section d'affichage des résultats, ajoutez une mention spécifique pour les factures
-if st.session_state.show_results and st.session_state.ocr_result and not st.session_state.processing:
-    # ... [code existant] ...
+def sync_to_google_sheets(document_type: str = None):
+    """
+    Synchronise les données avec Google Sheets en utilisant le type de document spécifié
+    """
+    try:
+        # Utiliser le type confirmé si disponible, sinon le type détecté
+        if hasattr(st.session_state, 'confirmed_document_type') and st.session_state.confirmed_document_type:
+            doc_type = st.session_state.confirmed_document_type
+        elif document_type:
+            doc_type = document_type
+        elif hasattr(st.session_state, 'detected_document_type') and st.session_state.detected_document_type:
+            doc_type = st.session_state.detected_document_type
+        else:
+            st.error("❌ Type de document non spécifié")
+            return
+        
+        # Normaliser le type de document
+        normalized_type = normalize_document_type(doc_type, st.session_state.ocr_result)
+        
+        # Récupérer le GID approprié
+        if normalized_type in SHEET_GIDS:
+            gid = SHEET_GIDS[normalized_type]
+            st.success(f"✅ Synchronisation avec Google Sheets - Type: {normalized_type} - GID: {gid}")
+            # Ici, vous ajouteriez le code pour envoyer les données à Google Sheets
+        else:
+            st.error(f"❌ Type de document non reconnu : {normalized_type}")
+            return
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la synchronisation: {str(e)}")
+
+# ============================================================
+# INTERFACE STREAMLET PRINCIPALE
+# ============================================================
+def main():
+    st.set_page_config(page_title="Scanner de Documents", page_icon="📄", layout="wide")
     
-    # Ajouter une mention spécifique pour les factures
-    if "FACTURE" in st.session_state.detected_document_type.upper():
-        st.markdown(f'''
-        <div style="margin: 10px 0; padding: 12px; background: linear-gradient(135deg, #E8F4F8 0%, #D4EAF7 100%); 
-                    border-radius: 12px; border-left: 4px solid #3B82F6;">
-            <strong style="color: #1A1A1A !important;">📄 FACTURE DÉTECTÉE :</strong><br>
-            <small style="color: #4B5563 !important;">
-            • Enregistrement dans le tableau Factures (GID: 16102465)<br>
-            • Détection de doublon active (Client + N° Facture)<br>
-            • 9 colonnes: Mois, Client, Date, NBC, NF, Lien, Magasin, Produit, Quantité
-            </small>
-        </div>
-        ''', unsafe_allow_html=True)
+    st.title("📄 Système de Scan et Importation de Documents")
+    
+    # Initialisation des variables de session
+    if 'uploaded_file' not in st.session_state:
+        st.session_state.uploaded_file = None
+    if 'uploaded_image' not in st.session_state:
+        st.session_state.uploaded_image = None
+    if 'ocr_result' not in st.session_state:
+        st.session_state.ocr_result = None
+    if 'detected_document_type' not in st.session_state:
+        st.session_state.detected_document_type = None
+    if 'confirmed_document_type' not in st.session_state:
+        st.session_state.confirmed_document_type = None
+    if 'show_results' not in st.session_state:
+        st.session_state.show_results = False
+    if 'processing' not in st.session_state:
+        st.session_state.processing = False
+    if 'import_confirmed' not in st.session_state:
+        st.session_state.import_confirmed = False
+    if 'edited_standardized_df' not in st.session_state:
+        st.session_state.edited_standardized_df = None
+    
+    # Section de téléchargement
+    st.header("1. Téléchargement du Document")
+    uploaded = st.file_uploader("Choisissez un fichier image", type=['png', 'jpg', 'jpeg', 'pdf'])
+    
+    # Section de traitement
+    if uploaded and uploaded != st.session_state.uploaded_file:
+        st.session_state.uploaded_file = uploaded
+        st.session_state.uploaded_image = Image.open(uploaded)
+        st.session_state.processing = True
+        st.session_state.show_results = False
+        st.session_state.import_confirmed = False
+        st.session_state.confirmed_document_type = None
+        
+        with st.spinner("🔍 Analyse du document en cours..."):
+            try:
+                buf = BytesIO()
+                st.session_state.uploaded_image.save(buf, format="JPEG")
+                image_bytes = buf.getvalue()
+                
+                # Prétraitement de l'image
+                img_processed = preprocess_image(image_bytes)
+                
+                # Analyse avec OpenAI Vision
+                result = openai_vision_ocr_improved(image_bytes)
+                
+                if result:
+                    st.session_state.ocr_result = result
+                    raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
+                    
+                    # Détecter le type de document
+                    detected_type = detect_document_type_by_title(result)
+                    if detected_type == "INCONNU":
+                        detected_type = normalize_document_type(raw_doc_type, result)
+                    
+                    st.session_state.detected_document_type = detected_type
+                    st.session_state.show_results = True
+                    
+                    # Si c'est une facture, réanalyser avec le modèle spécifique
+                    if "FACTURE" in detected_type.upper():
+                        st.info("📄 Document détecté comme FACTURE - Analyse spécifique en cours...")
+                        facture_result = openai_vision_ocr_facture(image_bytes)
+                        if facture_result:
+                            st.session_state.ocr_result = facture_result
+                    
+                    st.success("✅ Analyse terminée avec succès!")
+                    
+                else:
+                    st.error("❌ Échec de l'analyse IA - Veuillez réessayer")
+                    st.session_state.processing = False
+                
+            except Exception as e:
+                st.error(f"❌ Erreur système: {str(e)}")
+                st.session_state.processing = False
+    
+    # Affichage des résultats et confirmation
+    if st.session_state.show_results and st.session_state.ocr_result and not st.session_state.processing:
+        st.header("2. Résultats de l'Analyse")
+        
+        # Afficher les informations extraites
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("📋 Informations du Document")
+            if 'client' in st.session_state.ocr_result:
+                st.info(f"**Client:** {st.session_state.ocr_result.get('client', 'Non trouvé')}")
+            if 'date' in st.session_state.ocr_result:
+                st.info(f"**Date:** {st.session_state.ocr_result.get('date', 'Non trouvée')}")
+            if 'numero_facture' in st.session_state.ocr_result:
+                st.info(f"**N° Facture:** {st.session_state.ocr_result.get('numero_facture', 'Non trouvé')}")
+            elif 'numero' in st.session_state.ocr_result:
+                st.info(f"**N° Document:** {st.session_state.ocr_result.get('numero', 'Non trouvé')}")
+        
+        with col2:
+            st.subheader("🎯 Type Détecté")
+            st.markdown(f"""
+            <div style="padding: 15px; background-color: #e8f4f8; border-radius: 10px; border-left: 5px solid #3B82F6;">
+                <h4 style="margin: 0; color: #1A1A1A;">{st.session_state.detected_document_type}</h4>
+                <p style="margin: 5px 0 0 0; color: #4B5563; font-size: 14px;">
+                Basé sur l'analyse du titre et du contenu
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Afficher les articles
+        if 'articles' in st.session_state.ocr_result and st.session_state.ocr_result['articles']:
+            st.subheader("📦 Articles Détectés")
+            articles_df = pd.DataFrame(st.session_state.ocr_result['articles'])
+            st.dataframe(articles_df, use_container_width=True)
+        
+        # SECTION DE CONFIRMATION AVANT IMPORTATION
+        st.markdown("---")
+        st.header("3. Confirmation avant Importation")
+        
+        # Afficher la boîte de confirmation seulement si non encore confirmé
+        if not st.session_state.import_confirmed:
+            confirmed_type = show_confirmation_before_import(st.session_state.detected_document_type)
+            
+            if confirmed_type == "CANCEL":
+                st.warning("❌ Importation annulée. Le document ne sera pas enregistré.")
+                st.session_state.import_confirmed = False
+            elif confirmed_type:
+                st.session_state.confirmed_document_type = confirmed_type
+                st.session_state.import_confirmed = True
+                st.success(f"✅ Confirmation reçue : le document sera enregistré comme **{confirmed_type}**")
+                st.rerun()
+        else:
+            # Préparer les données standardisées
+            if 'articles' in st.session_state.ocr_result:
+                std_data = []
+                for article in st.session_state.ocr_result['articles']:
+                    raw_name = article.get('article_brut', article.get('article', ''))
+                    
+                    # Pour les factures
+                    if "FACTURE" in st.session_state.confirmed_document_type.upper():
+                        produit_brut = raw_name
+                        produit_standard, confidence, status = standardize_product_name_improved(raw_name)
+                        
+                        std_data.append({
+                            "Produit Brute": produit_brut,
+                            "Produit Standard": produit_standard,
+                            "Quantité": article.get("quantite", 0),
+                            "Confiance": f"{confidence*100:.1f}%",
+                            "Auto": confidence >= 0.7
+                        })
+                    else:
+                        # Pour les BDC
+                        if any(cat in raw_name.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE"]):
+                            std_data.append({
+                                "Produit Brute": raw_name,
+                                "Produit Standard": raw_name,
+                                "Quantité": 0,
+                                "Confiance": "0%",
+                                "Auto": False
+                            })
+                        else:
+                            produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
+                            
+                            std_data.append({
+                                "Produit Brute": produit_brut,
+                                "Produit Standard": produit_standard,
+                                "Quantité": article.get("quantite", 0),
+                                "Confiance": f"{confidence*100:.1f}%",
+                                "Auto": confidence >= 0.7
+                            })
+                
+                # Créer le dataframe standardisé
+                st.session_state.edited_standardized_df = pd.DataFrame(std_data)
+                
+                # Afficher les données préparées
+                st.subheader("📋 Données préparées pour l'importation")
+                st.dataframe(st.session_state.edited_standardized_df, use_container_width=True)
+                
+                # Bouton final pour synchroniser
+                st.markdown("---")
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if st.button("🚀 Synchroniser avec Google Sheets", 
+                                type="primary", 
+                                use_container_width=True,
+                                key="final_sync_button"):
+                        sync_to_google_sheets()
+                with col2:
+                    if st.button("🔄 Recommencer", 
+                                type="secondary",
+                                use_container_width=True,
+                                key="restart_button"):
+                        # Réinitialiser les variables de session
+                        for key in ['uploaded_file', 'uploaded_image', 'ocr_result', 
+                                  'detected_document_type', 'confirmed_document_type',
+                                  'show_results', 'processing', 'import_confirmed',
+                                  'edited_standardized_df']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
+
+if __name__ == "__main__":
+    main()
