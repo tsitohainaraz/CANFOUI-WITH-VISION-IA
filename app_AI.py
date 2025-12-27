@@ -565,6 +565,10 @@ if "document_scanned" not in st.session_state:
     st.session_state.document_scanned = False
 if "product_matching_scores" not in st.session_state:
     st.session_state.product_matching_scores = {}
+if "ocr_raw_text" not in st.session_state:
+    st.session_state.ocr_raw_text = None
+if "document_analysis_details" not in st.session_state:
+    st.session_state.document_analysis_details = {}
 
 # ============================================================
 # FONCTION DE NORMALISATION DES PRODUITS (COMPATIBILITÉ)
@@ -876,7 +880,7 @@ if not check_authentication():
         <strong style="display: block; margin-bottom: 8px; color: #856404 !important;">🔐 Protocole de sécurité :</strong>
         • Votre compte est protégé<br>
         • Vos informations sont en sécurité<br>
-        • Personne d’autre ne peut y accéder<br>
+        • Personne d'autre ne peut y accéder<br>
         • Verrouillage automatique après 3 tentatives
     </div>
     """, unsafe_allow_html=True)
@@ -1465,40 +1469,69 @@ SHEET_GIDS = {
 }
 
 # ============================================================
-# FONCTION DE NORMALISATION DU TYPE DE DOCUMENT
+# FONCTION DE NORMALISATION DU TYPE DE DOCUMENT - VERSION AMÉLIORÉE V1.1
 # ============================================================
 def normalize_document_type(doc_type: str) -> str:
-    """Normalise le type de document pour correspondre aux clés SHEET_GIDS"""
+    """Normalise le type de document pour correspondre aux clés SHEET_GIDS - VERSION AMÉLIORÉE V1.1"""
     if not doc_type:
         return "DOCUMENT INCONNU"
     
     doc_type_upper = doc_type.upper()
     
-    # Mapping des types de documents
-    if "FACTURE" in doc_type_upper and "COMPTE" in doc_type_upper:
+    # DÉTECTION RENFORCÉE DES FACTURES - Inspiration V2
+    facture_keywords = [
+        "FACTURE", "INVOICE", "BILL", "FACTURA",
+        "FACTURE EN COMPTE", "FACTURE N°", "FACTURE NO",
+        "DOIT", "AU NOM DE", "NOM DU CLIENT", "N° FACTURE"
+    ]
+    
+    bdc_keywords = [
+        "BDC", "BON DE COMMANDE", "ORDER", "COMMANDE",
+        "BON COMMANDE", "PURCHASE ORDER", "PO",
+        "DATE ÉMISSION", "DATE EMISSION", "BON DE COMMANDE N°"
+    ]
+    
+    # Compter les occurrences
+    facture_score = sum(1 for keyword in facture_keywords if keyword in doc_type_upper)
+    bdc_score = sum(1 for keyword in bdc_keywords if keyword in doc_type_upper)
+    
+    # HEURISTIQUES DE DÉCISION AMÉLIORÉES
+    if facture_score > bdc_score:
+        # C'est probablement une facture
         return "FACTURE EN COMPTE"
-    elif "BDC" in doc_type_upper or "BON DE COMMANDE" in doc_type_upper:
-        # Extraire le client du type de document
+    
+    elif bdc_score > facture_score:
+        # C'est probablement un BDC
         if "LEADERPRICE" in doc_type_upper or "DLP" in doc_type_upper:
             return "BDC LEADERPRICE"
-        elif "S2M" in doc_type_upper or "SUPERMAKI" in doc_type_upper:
-            return "BDC S2M"
         elif "ULYS" in doc_type_upper:
             return "BDC ULYS"
+        elif "S2M" in doc_type_upper or "SUPERMAKI" in doc_type_upper:
+            return "BDC S2M"
         else:
-            # Vérifier si le client est dans le nom
-            for client in ["LEADERPRICE", "DLP", "S2M", "SUPERMAKI", "ULYS"]:
-                if client in doc_type_upper:
-                    return f"BDC {client}"
-            return "BDC LEADERPRICE"  # Par défaut
-    else:
-        # Essayer de deviner le type
-        if any(word in doc_type_upper for word in ["FACTURE", "INVOICE", "BILL"]):
-            return "FACTURE EN COMPTE"
-        elif any(word in doc_type_upper for word in ["COMMANDE", "ORDER", "PO"]):
             return "BDC LEADERPRICE"
+    
+    else:
+        # Égalité ou indéterminé, utiliser l'heuristique
+        if "FACTURE" in doc_type_upper and "COMPTE" in doc_type_upper:
+            return "FACTURE EN COMPTE"
+        elif "BDC" in doc_type_upper or "BON DE COMMANDE" in doc_type_upper:
+            if "LEADERPRICE" in doc_type_upper or "DLP" in doc_type_upper:
+                return "BDC LEADERPRICE"
+            elif "S2M" in doc_type_upper or "SUPERMAKI" in doc_type_upper:
+                return "BDC S2M"
+            elif "ULYS" in doc_type_upper:
+                return "BDC ULYS"
+            else:
+                return "BDC LEADERPRICE"
         else:
-            return "DOCUMENT INCONNU"
+            # Essayer de deviner le type
+            if any(word in doc_type_upper for word in ["FACTURE", "INVOICE", "BILL", "DOIT"]):
+                return "FACTURE EN COMPTE"
+            elif any(word in doc_type_upper for word in ["COMMANDE", "ORDER", "PO", "BDC"]):
+                return "BDC LEADERPRICE"
+            else:
+                return "DOCUMENT INCONNU"
 
 # ============================================================
 # OPENAI CONFIGURATION
@@ -1522,10 +1555,67 @@ def get_openai_client():
         return None
 
 # ============================================================
-# FONCTION OCR AMÉLIORÉE POUR BDC ULYS
+# FONCTIONS OCR AMÉLIORÉES POUR MEILLEURE DÉTECTION - V1.1
 # ============================================================
+def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
+    """Extrait les caractéristiques du texte pour aider à la détection du type de document"""
+    text_upper = text.upper()
+    
+    features = {
+        'has_facture': False,
+        'has_bdc': False,
+        'facture_keywords': [],
+        'bdc_keywords': [],
+        'facture_score': 0,
+        'bdc_score': 0
+    }
+    
+    # Mots-clés pour les factures (inspiré du V2)
+    facture_keywords = [
+        "FACTURE", "FACTURE EN COMPTE", "N° FACTURE", "NUMERO FACTURE",
+        "DOIT", "AU NOM DE", "CLIENT", "ADRESSE DE LIVRAISON",
+        "SUIVANT VOTRE BON DE COMMANDE", "BON DE COMMANDE",
+        "QUANTITE", "BOUTEILLES", "MONTANT", "TOTAL", "TVA"
+    ]
+    
+    # Mots-clés pour les BDC (inspiré du V2)
+    bdc_keywords = [
+        "BDC", "BON DE COMMANDE", "COMMANDE", "DATE EMISSION",
+        "DATE ÉMISSION", "ADRESSE FACTURATION", "ADRESSE LIVRAISON",
+        "DESIGNATION", "QTÉ", "QUANTITE", "ARTICLE", "REFERENCE",
+        "CODE ARTICLE", "PRIX UNITAIRE", "SOUS TOTAL"
+    ]
+    
+    # Compter les occurrences
+    for keyword in facture_keywords:
+        if keyword in text_upper:
+            features['facture_keywords'].append(keyword)
+            features['facture_score'] += 1
+            features['has_facture'] = True
+    
+    for keyword in bdc_keywords:
+        if keyword in text_upper:
+            features['bdc_keywords'].append(keyword)
+            features['bdc_score'] += 1
+            features['has_bdc'] = True
+    
+    # Heuristiques supplémentaires
+    if "FACTURE" in text_upper and "COMPTE" in text_upper:
+        features['facture_score'] += 3
+    
+    if "BDC" in text_upper or "BON DE COMMANDE" in text_upper:
+        features['bdc_score'] += 2
+    
+    if "DOIT" in text_upper:
+        features['facture_score'] += 2
+    
+    if "DATE EMISSION" in text_upper or "DATE ÉMISSION" in text_upper:
+        features['bdc_score'] += 2
+    
+    return features
+
 def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
-    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré"""
+    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré pour la détection V1.1"""
     try:
         client = get_openai_client()
         if not client:
@@ -1534,39 +1624,72 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         # Encoder l'image
         base64_image = encode_image_to_base64(image_bytes)
         
-        # Prompt amélioré pour mieux extraire les articles
+        # PROMPT AMÉLIORÉ V1.1 - Meilleure distinction facture/BDC
         prompt = """
-        Analyse ce document de type BON DE COMMANDE (BDC) et extrais précisément les informations suivantes:
+        Analyse ce document et détermine PRÉCISÉMENT s'il s'agit d'une FACTURE ou d'un BON DE COMMANDE (BDC).
         
-        IMPORTANT: Extrais TOUTES les lignes du tableau, y compris les catégories comme "122111 - VINS ROUGES".
+        IMPORTANT: Observe attentivement l'en-tête du document:
+        - Si tu vois "FACTURE EN COMPTE" ou "FACTURE N°" → C'EST UNE FACTURE
+        - Si tu vois "Bon de commande" ou "BDC N°" → C'EST UN BDC
+        - Si tu vois "DOIT:" ou "AU NOM DE:" → C'EST UNE FACTURE
+        - Si tu vois "Date d'émission" → C'EST UN BDC
         
+        EXTRACTION DES INFORMATIONS:
+        
+        1. SI C'EST UNE FACTURE (FACTURE EN COMPTE):
         {
-            "type_document": "BDC",
-            "numero": "...",
-            "date": "...",
-            "client": "...",
-            "adresse_livraison": "...",
+            "type_document": "FACTURE",
+            "client": "...",  (nom après "DOIT" ou "AU NOM DE")
+            "numero_facture": "...",  (numéro après "FACTURE" ou "N°")
+            "date": "...",  (date de la facture)
+            "adresse_livraison": "...",  (adresse après "Adresse de livraison")
+            "bon_commande": "...",  (numéro après "Suivant votre bon de commande")
             "articles": [
                 {
-                    "article_brut": "TEXT EXACT COMME SUR LE DOCUMENT",
-                    "quantite": nombre
+                    "article_brut": "TEXT EXACT de l'article",
+                    "quantite": nombre  (quantité en bouteilles)
                 }
             ]
         }
         
-        RÈGLES STRICTES:
-        1. Pour "article_brut": copie EXACTEMENT le texte de la colonne "Description de l'Article" sans modifications
-        2. Pour les quantités: extrais le nombre exact de la colonne "Qté"
-        3. Si c'est un BDC ULYS, note "ULYS" comme client
-        4. Extrais TOUTES les lignes d'articles, même celles qui sont des catégories
-        5. Ne standardise PAS les noms, garde-les exactement comme sur le document
-        6. Pour les lignes sans quantité (catégories), mets "0" ou laisse vide
+        2. SI C'EST UN BON DE COMMANDE (BDC):
+        {
+            "type_document": "BDC",
+            "numero": "...",  (numéro du BDC)
+            "date": "...",  (date d'émission)
+            "client": "...",  (Client/Facturation)
+            "adresse_livraison": "...",  (Adresse de livraison)
+            "articles": [
+                {
+                    "article_brut": "TEXT EXACT de la colonne Désignation",
+                    "quantite": nombre  (quantité de la colonne Qté)
+                }
+            ]
+        }
         
-        Exemples d'extraction CORRECTE:
-        "article_brut": "VIN ROUGE COTE DE FIANAR 3L"
-        "article_brut": "VIN ROUGE COTE DE FIANARA 750ML NU"
-        "article_brut": "CONS. CHAN FOUI 75CL"
-        "article_brut": "122111 - VINS ROUGES"  (c'est OK, on garde tout)
+        INDICES DÉCISIFS:
+        • "FACTURE EN COMPTE" = TOUJOURS une facture
+        • "DOIT:" = TOUJOURS une facture  
+        • "Bon de commande N°" = TOUJOURS un BDC
+        • "Date d'émission" = SOUVENT un BDC
+        
+        RÈGLES STRICTES V1.1:
+        1. Ne devine pas, regarde l'en-tête du document
+        2. Si c'est ambigu, favorise les indices visuels clairs
+        3. Pour les articles: copie EXACTEMENT le texte sans modifications
+        4. Pour les quantités: extrais les nombres exacts
+        5. Ne standardise PAS les noms de produits
+        6. Extrais TOUTES les lignes du tableau
+        
+        Exemple FACTURE correct:
+        "type_document": "FACTURE"
+        "client": "LEADERPRICE"
+        "numero_facture": "12345"
+        
+        Exemple BDC correct:
+        "type_document": "BDC"
+        "client": "ULYS"
+        "numero": "25011956"
         """
         
         # Appel à l'API OpenAI Vision
@@ -1586,12 +1709,15 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
                     ]
                 }
             ],
-            max_tokens=3000,
+            max_tokens=4000,
             temperature=0.1
         )
         
         # Extraire et parser la réponse JSON
         content = response.choices[0].message.content
+        
+        # Sauvegarder le texte brut pour analyse
+        st.session_state.ocr_raw_text = content
         
         # Nettoyer la réponse pour extraire le JSON
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
@@ -1599,7 +1725,50 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             json_str = json_match.group()
             try:
                 data = json.loads(json_str)
+                
+                # ANALYSE DE CONFIRMATION V1.1
+                doc_type = data.get("type_document", "").upper()
+                
+                # Vérification croisée avec le contenu
+                if "FACTURE" in doc_type:
+                    # Confirmer que c'est bien une facture
+                    has_facture_evidence = False
+                    
+                    # Vérifier les champs typiques des factures
+                    if data.get("numero_facture"):
+                        has_facture_evidence = True
+                    if data.get("bon_commande"):
+                        has_facture_evidence = True
+                    if "DOIT" in content.upper() or "AU NOM DE" in content.upper():
+                        has_facture_evidence = True
+                    
+                    # Si pas d'évidence mais type = FACTURE, garder
+                    if not has_facture_evidence:
+                        # Vérifier s'il y a des indices BDC
+                        if "BDC" in content.upper() or "BON DE COMMANDE" in content.upper():
+                            # Possible erreur, vérifier plus profondément
+                            if "DATE EMISSION" in content.upper() or "DATE ÉMISSION" in content.upper():
+                                data["type_document"] = "BDC"
+                
+                elif "BDC" in doc_type:
+                    # Confirmer que c'est bien un BDC
+                    has_bdc_evidence = False
+                    
+                    # Vérifier les champs typiques des BDC
+                    if data.get("numero"):
+                        has_bdc_evidence = True
+                    if "DATE EMISSION" in content.upper() or "DATE ÉMISSION" in content.upper():
+                        has_bdc_evidence = True
+                    if "ADRESSE FACTURATION" in content.upper():
+                        has_bdc_evidence = True
+                    
+                    # Si pas d'évidence mais type = BDC, vérifier indices facture
+                    if not has_bdc_evidence:
+                        if "FACTURE EN COMPTE" in content.upper():
+                            data["type_document"] = "FACTURE"
+                
                 return data
+                
             except json.JSONDecodeError:
                 # Essayer de nettoyer le JSON
                 json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
@@ -1607,15 +1776,83 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
                     data = json.loads(json_str)
                     return data
                 except:
-                    st.error("❌ Impossible de parser la réponse JSON d'OpenAI")
-                    return None
+                    # Si JSON invalide, essayer de deviner à partir du texte
+                    return guess_document_type_from_text(content)
         else:
-            st.error("❌ Réponse JSON non trouvée dans la réponse OpenAI")
-            return None
+            # Pas de JSON trouvé, deviner à partir du texte
+            return guess_document_type_from_text(content)
             
     except Exception as e:
         st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
         return None
+
+def guess_document_type_from_text(text: str) -> Dict:
+    """Devine le type de document à partir du texte OCR"""
+    text_upper = text.upper()
+    
+    # Analyser les caractéristiques
+    features = extract_text_features_for_detection(text)
+    
+    # Décision basée sur les scores
+    if features['facture_score'] > features['bdc_score']:
+        return {
+            "type_document": "FACTURE",
+            "articles": []
+        }
+    elif features['bdc_score'] > features['facture_score']:
+        return {
+            "type_document": "BDC",
+            "articles": []
+        }
+    else:
+        # Égalité, utiliser des heuristiques
+        if "FACTURE EN COMPTE" in text_upper:
+            return {"type_document": "FACTURE", "articles": []}
+        elif "BDC" in text_upper or "BON DE COMMANDE" in text_upper:
+            return {"type_document": "BDC", "articles": []}
+        else:
+            return {"type_document": "DOCUMENT INCONNU", "articles": []}
+
+def analyze_document_with_backup(image_bytes: bytes) -> Dict:
+    """Analyse le document avec vérification de cohérence"""
+    # 1. Analyse OpenAI principale
+    result = openai_vision_ocr_improved(image_bytes)
+    
+    if not result:
+        return {"type_document": "DOCUMENT INCONNU", "articles": []}
+    
+    # 2. Vérification de cohérence
+    doc_type = result.get("type_document", "").upper()
+    
+    # Vérifier si les articles sont cohérents avec le type
+    articles = result.get("articles", [])
+    
+    # 3. Analyse de contenu pour confirmation
+    if st.session_state.ocr_raw_text:
+        features = extract_text_features_for_detection(st.session_state.ocr_raw_text)
+        
+        # Si contradiction forte, ajuster
+        if "FACTURE" in doc_type and features['bdc_score'] > features['facture_score'] + 3:
+            # Forte évidence BDC, possible erreur
+            st.session_state.document_analysis_details = {
+                "original_type": doc_type,
+                "adjusted_type": "BDC",
+                "reason": "Contradiction détectée: plus d'indices BDC que facture",
+                "features": features
+            }
+            result["type_document"] = "BDC"
+        
+        elif "BDC" in doc_type and features['facture_score'] > features['bdc_score'] + 3:
+            # Forte évidence facture, possible erreur
+            st.session_state.document_analysis_details = {
+                "original_type": doc_type,
+                "adjusted_type": "FACTURE",
+                "reason": "Contradiction détectée: plus d'indices facture que BDC",
+                "features": features
+            }
+            result["type_document"] = "FACTURE"
+    
+    return result
 
 # ============================================================
 # FONCTIONS UTILITAIRES
@@ -2162,7 +2399,7 @@ st.markdown(f"""
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AUTOMATIQUE DE L'IMAGE
+# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.1
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.uploaded_file = uploaded
@@ -2179,15 +2416,17 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.export_triggered = False
     st.session_state.export_status = None
     st.session_state.product_matching_scores = {}
+    st.session_state.ocr_raw_text = None
+    st.session_state.document_analysis_details = {}
     
     # Barre de progression avec style tech
     progress_container = st.empty()
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
-        st.markdown('<h3 style="color: white !important;">Initialisation du système IA</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.1</h3>', unsafe_allow_html=True)
         # Texte en noir comme demandé
-        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision...</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision amélioré...</p>', unsafe_allow_html=True)
         
         # Barre de progression animée
         progress_bar = st.progress(0)
@@ -2197,6 +2436,8 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             "Chargement de l'image...",
             "Prétraitement des données...",
             "Analyse par IA...",
+            "Détection avancée du type...",
+            "Vérification de cohérence...",
             "Extraction des données...",
             "Standardisation intelligente...",
             "Finalisation..."
@@ -2205,22 +2446,26 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         for i in range(101):
             time.sleep(0.03)
             progress_bar.progress(i)
-            if i < 20:
+            if i < 12:
                 status_text.text(steps[0])
-            elif i < 40:
+            elif i < 25:
                 status_text.text(steps[1])
-            elif i < 60:
+            elif i < 40:
                 status_text.text(steps[2])
-            elif i < 80:
+            elif i < 55:
                 status_text.text(steps[3])
-            elif i < 95:
+            elif i < 70:
                 status_text.text(steps[4])
-            else:
+            elif i < 82:
                 status_text.text(steps[5])
+            elif i < 95:
+                status_text.text(steps[6])
+            else:
+                status_text.text(steps[7])
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Traitement OCR avec OpenAI Vision améliorée
+    # Traitement OCR avec système amélioré V1.1
     try:
         buf = BytesIO()
         st.session_state.uploaded_image.save(buf, format="JPEG")
@@ -2229,14 +2474,42 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         # Prétraitement de l'image
         img_processed = preprocess_image(image_bytes)
         
-        # Analyse avec OpenAI Vision améliorée
-        result = openai_vision_ocr_improved(img_processed)
+        # ANALYSE AMÉLIORÉE V1.1 avec vérification de cohérence
+        result = analyze_document_with_backup(img_processed)
         
         if result:
-            st.session_state.ocr_result = result
             raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
+            
+            # CONFIRMATION FINALE DU TYPE
+            final_doc_type = raw_doc_type
+            
+            # Vérification finale basée sur le contenu extrait
+            if raw_doc_type == "BDC":
+                # Si BDC mais avec des champs de facture, vérifier
+                if result.get("numero_facture") or result.get("bon_commande"):
+                    # Possibilité d'erreur, vérifier plus profondément
+                    if st.session_state.ocr_raw_text:
+                        if "FACTURE EN COMPTE" in st.session_state.ocr_raw_text.upper():
+                            final_doc_type = "FACTURE"
+            
+            elif raw_doc_type == "FACTURE":
+                # Si facture mais avec des champs BDC, vérifier
+                if result.get("numero") and "DATE" in str(result.get("date", "")).upper():
+                    # Possibilité d'erreur
+                    if st.session_state.ocr_raw_text:
+                        if "BON DE COMMANDE N°" in st.session_state.ocr_raw_text.upper():
+                            final_doc_type = "BDC"
+            
             # Normaliser le type de document détecté
-            st.session_state.detected_document_type = normalize_document_type(raw_doc_type)
+            st.session_state.detected_document_type = normalize_document_type(final_doc_type)
+            
+            # CORRECTION MANUELLE SI NÉCESSAIRE
+            if st.session_state.document_analysis_details:
+                # Une correction a été appliquée
+                correction = st.session_state.document_analysis_details
+                st.info(f"⚠️ Correction appliquée: {correction.get('original_type')} → {correction.get('adjusted_type')}")
+            
+            st.session_state.ocr_result = result
             st.session_state.show_results = True
             st.session_state.processing = False
             
@@ -2274,7 +2547,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             progress_container.empty()
             st.rerun()
         else:
-            st.error("❌ Échec de l'analyse IA - Veuillez réessayer")
+            st.error("❌ Échec de l'analyse IA - Veuillez réessayer avec une image plus claire")
             st.session_state.processing = False
         
     except Exception as e:
@@ -2300,7 +2573,7 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
             <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
-            • Statut : Analysé par IA<br>
+            • Statut : Analysé par IA V1.1<br>
             • Confiance : Élevée<br><br>
             <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
         </div>
@@ -2309,11 +2582,29 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# AFFICHAGE DES RÉSULTATS
+# AFFICHAGE DES RÉSULTATS - AVEC SECTION DEBUG V1.1
 # ============================================================
 if st.session_state.show_results and st.session_state.ocr_result and not st.session_state.processing:
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
+    
+    # SECTION DÉBUGAGE V1.1 (optionnelle)
+    with st.expander("🔍 Analyse de détection V1.1 (debug)"):
+        st.write("**Type brut détecté par l'IA:**", result.get("type_document", "Non détecté"))
+        st.write("**Type normalisé:**", doc_type)
+        st.write("**Champs disponibles:**", list(result.keys()))
+        
+        if st.session_state.document_analysis_details:
+            st.write("**Corrections appliquées:**", st.session_state.document_analysis_details)
+        
+        # Afficher les indices de détection
+        if st.session_state.ocr_raw_text:
+            features = extract_text_features_for_detection(st.session_state.ocr_raw_text)
+            st.write("**Analyse de contenu:**")
+            st.write(f"- Score facture: {features['facture_score']}")
+            st.write(f"- Score BDC: {features['bdc_score']}")
+            st.write(f"- Mots-clés facture: {', '.join(features['facture_keywords'][:5])}")
+            st.write(f"- Mots-clés BDC: {', '.join(features['bdc_keywords'][:5])}")
     
     # Message de succès avec style tech
     st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
@@ -2321,7 +2612,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     <div style="display: flex; align-items: start; gap: 15px;">
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
-            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA terminée avec succès</strong><br>
+            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.1 terminée avec succès</strong><br>
             <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
             <small style="color: #4B5563 !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
@@ -2891,7 +3182,7 @@ with st.container():
     
     with col1:
         st.markdown(f"<center style='color: #1A1A1A !important;'>🤖</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision V1.1</small></center>", unsafe_allow_html=True)
     
     with col2:
         st.markdown(f"<center style='color: #1A1A1A !important;'>⚡</center>", unsafe_allow_html=True)
@@ -2905,7 +3196,7 @@ with st.container():
     st.markdown(f"""
     <center style='margin: 15px 0;'>
         <span style='font-weight: 700; color: #27414A !important;'>{BRAND_TITLE}</span>
-        <span style='color: #4B5563 !important;'> • Système IA V3.0 • © {datetime.now().strftime("%Y")}</span>
+        <span style='color: #4B5563 !important;'> • Système IA V1.1 • © {datetime.now().strftime("%Y")}</span>
     </center>
     """, unsafe_allow_html=True)
     
@@ -2921,4 +3212,3 @@ with st.container():
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
