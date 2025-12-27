@@ -966,7 +966,7 @@ st.markdown(f"""
         border-radius: 24px;
         margin-bottom: 2.5rem;
         box-shadow: 0 12px 40px rgba(39, 65, 74, 0.1),
-                    0 0 0 1px rgba(39, 65, 74, 0.05);
+                    0 0 0 1px rgba(39, 65,74, 0.05);
         text-align: center;
         border: 1px solid rgba(255, 255, 255, 0.8);
         position: relative;
@@ -1917,19 +1917,30 @@ def get_month_from_date(date_str: str) -> str:
         return months_fr[datetime.now().month]
 
 def format_quantity(qty: Any) -> str:
-    """Formate la quantité"""
+    """Formate la quantité - GARANTIT QUE C'EST UN NOMBRE ENTIER SANS VIRGULE"""
     if qty is None:
         return "0"
     
-    qty_str = str(qty)
-    qty_str = qty_str.replace(".", ",")
-    
-    if "," in qty_str:
-        parts = qty_str.split(",")
-        if len(parts) == 2 and parts[1] == "000":
-            qty_str = parts[0]
-    
-    return qty_str
+    try:
+        # Convertir en float pour gérer les chaînes avec virgules
+        if isinstance(qty, str):
+            qty = qty.replace(',', '.')
+        
+        # Convertir en float puis arrondir à l'entier le plus proche
+        qty_num = float(qty)
+        
+        # FORCER UN ENTIER SANS DÉCIMALES
+        qty_int = int(round(qty_num))
+        
+        # S'assurer que c'est un entier positif
+        if qty_int < 0:
+            qty_int = 0
+            
+        return str(qty_int)
+        
+    except (ValueError, TypeError):
+        # Si la conversion échoue, retourner "0"
+        return "0"
 
 def map_client(client: str) -> str:
     """Mappe le nom du client vers la forme standard"""
@@ -1965,7 +1976,7 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         else:
             date_formatted = datetime.now().strftime("%d/%m/%Y")
         
-        client = map_client(data.get("client", ""))
+        client = data.get("client", "")  # Utiliser la valeur du selectbox
         numero_facture = data.get("numero_facture", "")
         magasin = data.get("adresse_livraison", "")
         editeur = st.session_state.username  # Nom de l'utilisateur connecté
@@ -1976,11 +1987,20 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
             if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
                 continue  # Passer à la ligne suivante
             
+            # FORCER LA QUANTITÉ À ÊTRE UN ENTIER
+            quantite_str = format_quantity(quantite)
+            
+            # Vérifier que c'est bien un entier
+            try:
+                quantite_int = int(float(quantite_str))
+                quantite_str = str(quantite_int)
+            except:
+                quantite_str = "0"
+                continue  # Si conversion échoue, ignorer la ligne
+            
             designation = str(row.get("Produit Standard", "")).strip()
             if not designation:
                 designation = str(row.get("Produit Brute", "")).strip()
-            
-            quantite_str = format_quantity(quantite)
             
             rows.append([
                 mois,           # Mois
@@ -1989,7 +2009,7 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
                 numero_facture, # N* facture
                 magasin,        # Magasin
                 designation,    # Désignation (anciennement Produit)
-                quantite_str,   # Quantité
+                quantite_str,   # Quantité (ENTIER SANS VIRGULE)
                 editeur         # Editeur
             ])
         
@@ -2018,7 +2038,7 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
         else:
             date_formatted = datetime.now().strftime("%d/%m/%Y")
         
-        client = map_client(data.get("client", ""))
+        client = data.get("client", "")  # Utiliser la valeur du selectbox
         numero_bdc = data.get("numero", "")
         magasin = data.get("adresse_livraison", "")
         editeur = st.session_state.username  # Nom de l'utilisateur connecté
@@ -2029,11 +2049,20 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
             if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
                 continue  # Passer à la ligne suivante
             
+            # FORCER LA QUANTITÉ À ÊTRE UN ENTIER
+            quantite_str = format_quantity(quantite)
+            
+            # Vérifier que c'est bien un entier
+            try:
+                quantite_int = int(float(quantite_str))
+                quantite_str = str(quantite_int)
+            except:
+                quantite_str = "0"
+                continue  # Si conversion échoue, ignorer la ligne
+            
             designation = str(row.get("Produit Standard", "")).strip()
             if not designation:
                 designation = str(row.get("Produit Brute", "")).strip()
-            
-            quantite_str = format_quantity(quantite)
             
             rows.append([
                 mois,           # Colonne 1 (mois)
@@ -2042,7 +2071,7 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
                 numero_bdc,     # Numéro BDC
                 magasin,        # Magasin
                 designation,    # Désignation (anciennement Produit)
-                quantite_str,   # Quantité
+                quantite_str,   # Quantité (ENTIER SANS VIRGULE)
                 editeur         # Editeur
             ])
         
@@ -2651,7 +2680,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     )
     
     # ========================================================
-    # INFORMATIONS EXTRAITES
+    # INFORMATIONS EXTRAITES - AVEC NOUVELLE FONCTIONNALITÉ DE SUGGESTION POUR LE CLIENT
     # ========================================================
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>📋 Informations extraites</h4>', unsafe_allow_html=True)
@@ -2661,7 +2690,35 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
-            client = st.text_input("", value=result.get("client", ""), key="facture_client", label_visibility="collapsed")
+            
+            # NOUVELLE FONCTIONNALITÉ: Sélecteur avec suggestions pour le client
+            client_options = ["ULYS", "S2M", "DLP", "Autre"]
+            
+            # Déterminer la valeur par défaut
+            extracted_client = result.get("client", "")
+            # Essayer de mapper le client extrait aux options
+            mapped_client = map_client(extracted_client)
+            default_index = 3  # Par défaut "Autre"
+            if mapped_client in client_options:
+                default_index = client_options.index(mapped_client)
+            elif extracted_client in client_options:
+                default_index = client_options.index(extracted_client)
+            
+            # Sélecteur avec options
+            client_choice = st.selectbox(
+                "Sélectionnez le client",
+                options=client_options,
+                index=default_index,
+                key="facture_client_select",
+                label_visibility="collapsed"
+            )
+            
+            # Si "Autre" est sélectionné, afficher un champ de texte
+            if client_choice == "Autre":
+                client = st.text_input("Autre client", value=extracted_client, key="facture_client_other")
+            else:
+                client = client_choice
+            
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° Facture</div>', unsafe_allow_html=True)
             numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Bon de commande</div>', unsafe_allow_html=True)
@@ -2688,7 +2745,35 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
-            client = st.text_input("", value=result.get("client", "ULYS"), key="bdc_client", label_visibility="collapsed")
+            
+            # NOUVELLE FONCTIONNALITÉ: Sélecteur avec suggestions pour le client
+            client_options = ["ULYS", "S2M", "DLP", "Autre"]
+            
+            # Déterminer la valeur par défaut
+            extracted_client = result.get("client", "ULYS")  # Par défaut ULYS pour les BDC
+            # Essayer de mapper le client extrait aux options
+            mapped_client = map_client(extracted_client)
+            default_index = 0  # Par défaut ULYS pour les BDC
+            if mapped_client in client_options:
+                default_index = client_options.index(mapped_client)
+            elif extracted_client in client_options:
+                default_index = client_options.index(extracted_client)
+            
+            # Sélecteur avec options
+            client_choice = st.selectbox(
+                "Sélectionnez le client",
+                options=client_options,
+                index=default_index,
+                key="bdc_client_select",
+                label_visibility="collapsed"
+            )
+            
+            # Si "Autre" est sélectionné, afficher un champ de texte
+            if client_choice == "Autre":
+                client = st.text_input("Autre client", value=extracted_client, key="bdc_client_other")
+            else:
+                client = client_choice
+            
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° BDC</div>', unsafe_allow_html=True)
             numero = st.text_input("", value=result.get("numero", ""), key="bdc_numero", label_visibility="collapsed")
         
@@ -2746,6 +2831,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             • <strong>info 1:</strong> Les produits ont été reconnus automatiquement<br>
             • <strong>info 2:</strong> Les quantités à 0 seront ignorées<br>
             • <strong>info 3:</strong> Les doublons sont détectés automatiquement<br>
+            • <strong>NOUVEAU 1:</strong> Les quantités sont FORCÉES en nombres ENTIERS (pas de virgules)<br>
+            • <strong>NOUVEAU 2:</strong> Le champ Client a maintenant des suggestions (ULYS, S2M, DLP)<br>
             • Colonne "Produit Brute" : texte original extrait par l'IA de Chanfoui AI<br>
             • Colonne "Produit Standard" : standardisé automatiquement par Chafoui AI (éditable)<br>
             • <strong>Note :</strong> Veuillez prendre la photo le plus près possible du document et avec une netteté maximale.
@@ -2780,8 +2867,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 "Quantité": st.column_config.NumberColumn(
                     "Quantité",
                     min_value=0,
-                    help="Quantité commandée (lignes avec 0 seront supprimées à l'export)",
-                    format="%d"
+                    help="Quantité commandée (lignes avec 0 seront supprimées à l'export) - FORCÉ EN ENTIER",
+                    format="%d",  # Format entier
+                    step=1  # Forcer l'incrément à 1
                 ),
                 "Confiance": st.column_config.TextColumn(
                     "Confiance",
@@ -2796,6 +2884,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             use_container_width=True,
             key="standardized_data_editor"
         )
+        
+        # Forcer les quantités à être des entiers dans le dataframe
+        if "Quantité" in edited_df.columns:
+            edited_df["Quantité"] = edited_df["Quantité"].apply(
+                lambda x: int(round(float(x))) if pd.notna(x) else 0
+            )
         
         # Mettre à jour le dataframe édité
         st.session_state.edited_standardized_df = edited_df
@@ -2875,7 +2969,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     
     # ========================================================
     # TEST DE STANDARDISATION ULYS - FILTRE 2 test
-    # ========================================================
+    # ============================================================
     with st.expander("🧪 Tester la standardisation ULYS (Filtre 2)"):
         # Exemples de test avec focus sur FILTRE 2
         test_examples = [
@@ -2920,9 +3014,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             accuracy = (perfect_matches / len(test_df)) * 100
             st.success(f"📈 Précision pour ULYS : {accuracy:.1f}%")
     
-    # ========================================================
+    # ============================================================
     # BOUTON D'EXPORT PAR DÉFAUT
-    # ========================================================
+    # ============================================================
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
@@ -2934,7 +3028,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
         <strong style="color: #1A1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
         <strong style="color: #1A1A1A !important;">⚠️ Filtres actifs :</strong> 
-        • Suppression lignes quantité 0 | • Standardisation "Chan Foui 75cl" | • Détection doublons BDC
+        • Suppression lignes quantité 0 | • Standardisation "Chan Foui 75cl" | • Détection doublons BDC<br>
+        <strong style="color: #1A1A1A !important;">✨ NOUVEAUTÉS :</strong>
+        • Quantités FORCÉES en entiers | • Suggestions client (ULYS/S2M/DLP)
     </div>
     """, unsafe_allow_html=True)
     
@@ -2955,15 +3051,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
             <div style="font-size: 1.5rem; color: #3B82F6 !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Filtres actifs</div>
+            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Nouvelles fonctionnalités actives</div>
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # ========================================================
+    # ============================================================
     # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT - FILTRE 3
-    # ========================================================
+    # ============================================================
     if st.session_state.export_triggered and st.session_state.export_status is None:
         with st.spinner("🔍 Analyse des doublons en cours ..."):
             # Normaliser le type de document
@@ -2993,9 +3089,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.error("❌ Connexion cloud échouée - Vérifiez votre connexion")
                 st.session_state.export_status = "error"
     
-    # ========================================================
+    # ============================================================
     # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS - FILTRE 3
-    # ========================================================
+    # ============================================================
     if st.session_state.export_status == "duplicates_found":
         st.markdown('<div class="duplicate-box fade-in">', unsafe_allow_html=True)
         
@@ -3069,9 +3165,9 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # ========================================================
+    # ============================================================
     # EXPORT EFFECTIF DES DONNÉES - FILTRE 1 appliqué ici
-    # ========================================================
+    # ============================================================
     if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
         if st.session_state.export_status == "no_duplicates":
             st.session_state.duplicate_action = "add_new"
@@ -3101,7 +3197,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
                     <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
                     <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
-                    <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">✓ Filtre 1: Lignes quantité 0 supprimées<br>✓ Filtre 2: Standardisation Chan Foui appliquée<br>✓ Filtre 3: Détection doublons BDC activée</p>
+                    <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
+                        ✓ Filtre 1: Lignes quantité 0 supprimées<br>
+                        ✓ Filtre 2: Standardisation Chan Foui appliquée<br>
+                        ✓ Filtre 3: Détection doublons BDC activée<br>
+                        ✓ <strong>NOUVEAU 1:</strong> Quantités en entiers sans virgule<br>
+                        ✓ <strong>NOUVEAU 2:</strong> Suggestions client (ULYS/S2M/DLP)
+                    </p>
                 </div>
                 """, unsafe_allow_html=True)
             else:
@@ -3112,7 +3214,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.error(f"❌ Erreur système : {str(e)}")
             st.session_state.export_status = "error"
     
-    # ========================================================
+    # ============================================================
     # BOUTONS DE NAVIGATION
     # ============================================================
     if st.session_state.document_scanned:
@@ -3219,6 +3321,13 @@ with st.container():
         Système actif • Session : 
         <strong style='color: #1A1A1A !important;'>{st.session_state.username}</strong>
         • Filtres actifs • {datetime.now().strftime("%H:%M:%S")}
+    </center>
+    """, unsafe_allow_html=True)
+    
+    # Quatrième ligne : Nouvelles fonctionnalités
+    st.markdown(f"""
+    <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
+        <strong>✨ NOUVEAUTÉS :</strong> Quantités entières • Suggestions client (ULYS/S2M/DLP)
     </center>
     """, unsafe_allow_html=True)
     
