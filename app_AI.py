@@ -11,81 +11,6 @@ SHEET_GIDS = {
 }
 
 # ============================================================
-# FONCTION SIMPLE POUR DÉTECTER FACTURE VS BDC
-# ============================================================
-def detect_facture_vs_bdc(ocr_result: dict) -> str:
-    """
-    Détecte simplement si c'est une facture ou un BDC
-    """
-    if not ocr_result:
-        return "INCONNU"
-    
-    # Récupérer le type de document et client
-    doc_type = ocr_result.get("type_document", "").upper()
-    client = ocr_result.get("client", "").upper()
-    
-    # 1. Vérifier les mots-clés de FACTURE
-    facture_keywords = [
-        "FACTURE EN COMPTE",
-        "FACTURE N°",
-        "FACTURE NO",
-        "N° FACTURE",
-        "NET A PAYER",
-        "TOTAL HT",
-        "TVA",
-        "TTC",
-        "MONTANT HT"
-    ]
-    
-    # Récupérer tout le texte
-    full_text = ""
-    for key, value in ocr_result.items():
-        if isinstance(value, str):
-            full_text += value.upper() + " "
-    
-    # Vérifier si c'est une facture
-    for keyword in facture_keywords:
-        if keyword in full_text:
-            return "FACTURE EN COMPTE"
-    
-    # 2. Si ce n'est pas une facture, vérifier pour BDC
-    bdc_keywords = [
-        "BON DE COMMANDE",
-        "COMMANDE N°",
-        "COMMANDE NO",
-        "BON DE COMMANDE FOURNISSEUR",
-        "BON DE COMMANDE /RECEPTION",
-        "BON DE COMMANDE/RECEPTION"
-    ]
-    
-    for keyword in bdc_keywords:
-        if keyword in full_text:
-            # Déterminer le type de BDC
-            if "ULYS" in client or "BON DE COMMANDE FOURNISSEUR" in full_text:
-                return "BDC ULYS"
-            elif "S2M" in client or "SUPERMAKI" in client or "S2M" in full_text or "SUPERMAKI" in full_text:
-                return "BDC S2M"
-            elif "LEADERPRICE" in client or "DLP" in client or "LEADERPRICE" in full_text or "DLP" in full_text:
-                return "BDC LEADERPRICE"
-            else:
-                return "BDC LEADERPRICE"  # Par défaut
-    
-    # 3. Utiliser l'ancienne logique si pas de mots-clés trouvés
-    if "FACTURE" in doc_type:
-        return "FACTURE EN COMPTE"
-    elif "BDC" in doc_type or "BON DE COMMANDE" in doc_type:
-        if "LEADERPRICE" in client or "DLP" in client:
-            return "BDC LEADERPRICE"
-        elif "S2M" in client or "SUPERMAKI" in client:
-            return "BDC S2M"
-        elif "ULYS" in client:
-            return "BDC ULYS"
-        else:
-            return "BDC LEADERPRICE"
-    
-    return "DOCUMENT INCONNU"
-
-# ============================================================
 # FONCTIONS DE DÉTECTION DE DOUBLONS - MIS À JOUR POUR FACTURES
 # ============================================================
 def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
@@ -184,15 +109,8 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
 # ============================================================
 # MISE À JOUR DE LA FONCTION DE NORMALISATION DU TYPE DE DOCUMENT
 # ============================================================
-def normalize_document_type(doc_type: str, ocr_result: dict = None) -> str:
+def normalize_document_type(doc_type: str) -> str:
     """Normalise le type de document pour correspondre aux clés SHEET_GIDS"""
-    
-    # Si on a un résultat OCR, utiliser la détection améliorée
-    if ocr_result:
-        detected_type = detect_facture_vs_bdc(ocr_result)
-        if detected_type != "INCONNU" and detected_type != "DOCUMENT INCONNU":
-            return detected_type
-    
     if not doc_type:
         return "DOCUMENT INCONNU"
     
@@ -345,31 +263,19 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             st.session_state.ocr_result = result
             raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
             
-            # UTILISER LA NOUVELLE DÉTECTION AMÉLIORÉE
-            detected_type = normalize_document_type(raw_doc_type, result)
-            
-            st.session_state.detected_document_type = detected_type
-            st.session_state.show_results = True
-            st.session_state.processing = False
-            
-            # AFFICHER LE RÉSULTAT DE LA DÉTECTION
-            st.markdown(f'''
-            <div style="margin: 10px 0; padding: 12px; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
-                        border-radius: 12px; border-left: 4px solid #3B82F6;">
-                <strong style="color: #1A1A1A !important;">🔍 TYPE DÉTECTÉ : {detected_type}</strong><br>
-                <small style="color: #4B5563 !important;">
-                Basé sur l'analyse des mots-clés dans le document
-                </small>
-            </div>
-            ''', unsafe_allow_html=True)
-            
             # Si c'est une facture, réanalyser avec le modèle spécifique facture
-            if "FACTURE" in detected_type.upper():
-                st.info("📄 Facture détectée - Extraction spécifique des informations...")
+            if "FACTURE" in raw_doc_type.upper():
+                st.info("📄 Document détecté comme FACTURE - Analyse spécifique en cours...")
                 # Réanalyser avec le modèle facture
                 facture_result = openai_vision_ocr_facture(img_processed)
                 if facture_result:
                     st.session_state.ocr_result = facture_result
+                    raw_doc_type = "FACTURE EN COMPTE"
+            
+            # Normaliser le type de document détecté
+            st.session_state.detected_document_type = normalize_document_type(raw_doc_type)
+            st.session_state.show_results = True
+            st.session_state.processing = False
             
             # Préparer les données standardisées
             if "articles" in st.session_state.ocr_result:
