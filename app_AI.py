@@ -1457,15 +1457,17 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# GOOGLE SHEETS CONFIGURATION
+# GOOGLE SHEETS CONFIGURATION - VERSION PRODUCTION
 # ============================================================
-SHEET_ID = "1FooEwQBwLjvyjAsvHu4eDes0o-eEm92fbEWv6maBNyE"
+# Mise à jour avec les nouveaux liens de production
+SHEET_ID = "1h4xT-cw9Ys1HbkhMWVtRnDOxsZ0fBOaskjPgRyIj3K8"  # ID de la feuille de production
 
+# Mise à jour des GIDs pour la production
 SHEET_GIDS = {
-    "FACTURE EN COMPTE": 16102465,
-    "BDC LEADERPRICE": 954728911,
-    "BDC S2M": 954728911,
-    "BDC ULYS": 954728911
+    "FACTURE EN COMPTE": 0,  # gid=0 pour la feuille de factures
+    "BDC LEADERPRICE": 581432835,
+    "BDC S2M": 581432835,
+    "BDC ULYS": 581432835
 }
 
 # ============================================================
@@ -1943,19 +1945,30 @@ def map_client(client: str) -> str:
         return client
 
 # ============================================================
-# FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS
+# FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS (PRODUCTION)
 # ============================================================
 def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les factures (9 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
+    """Prépare les lignes pour les factures (PRODUCTION - 8 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
     rows = []
     
     try:
         mois = data.get("mois", get_month_from_date(data.get("date", "")))
-        client = data.get("client", "")
-        date = format_date_french(data.get("date", ""))
-        nbc = data.get("bon_commande", "")
-        nf = data.get("numero_facture", "")
+        date_facture = data.get("date", "")
+        # Convertir la date au format JJ/MM/AAAA
+        date_formatted = ""
+        if date_facture:
+            try:
+                date_obj = parser.parse(date_facture, dayfirst=True)
+                date_formatted = date_obj.strftime("%d/%m/%Y")
+            except:
+                date_formatted = datetime.now().strftime("%d/%m/%Y")
+        else:
+            date_formatted = datetime.now().strftime("%d/%m/%Y")
+        
+        client = map_client(data.get("client", ""))
+        numero_facture = data.get("numero_facture", "")
         magasin = data.get("adresse_livraison", "")
+        editeur = st.session_state.username  # Nom de l'utilisateur connecté
         
         for _, row in articles_df.iterrows():
             # FILTRE 1: Vérifier si la quantité est différente de 0
@@ -1963,22 +1976,21 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
             if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
                 continue  # Passer à la ligne suivante
             
-            article = str(row.get("Produit Standard", "")).strip()
-            if not article:
-                article = str(row.get("Produit Brute", "")).strip()
+            designation = str(row.get("Produit Standard", "")).strip()
+            if not designation:
+                designation = str(row.get("Produit Brute", "")).strip()
             
             quantite_str = format_quantity(quantite)
             
             rows.append([
-                mois,
-                client,
-                date,
-                nbc,
-                nf,
-                "",  # Lien (vide par défaut)
-                magasin,
-                article,
-                quantite_str
+                mois,           # Mois
+                date_formatted, # Date au format JJ/MM/AAAA
+                client,         # Client (S2M, DLP ou ULYS)
+                numero_facture, # N* facture
+                magasin,        # Magasin
+                designation,    # Désignation (anciennement Produit)
+                quantite_str,   # Quantité
+                editeur         # Editeur
             ])
         
         return rows
@@ -1988,16 +2000,28 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         return []
 
 def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les BDC (8 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
+    """Prépare les lignes pour les BDC (PRODUCTION - 8 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
     rows = []
     
     try:
         date_emission = data.get("date", "")
         mois = get_month_from_date(date_emission)
+        
+        # Convertir la date au format JJ/MM/AAAA
+        date_formatted = ""
+        if date_emission:
+            try:
+                date_obj = parser.parse(date_emission, dayfirst=True)
+                date_formatted = date_obj.strftime("%d/%m/%Y")
+            except:
+                date_formatted = datetime.now().strftime("%d/%m/%Y")
+        else:
+            date_formatted = datetime.now().strftime("%d/%m/%Y")
+        
         client = map_client(data.get("client", ""))
-        date = format_date_french(date_emission)
-        nbc = data.get("numero", "")
+        numero_bdc = data.get("numero", "")
         magasin = data.get("adresse_livraison", "")
+        editeur = st.session_state.username  # Nom de l'utilisateur connecté
         
         for _, row in articles_df.iterrows():
             # FILTRE 1: Vérifier si la quantité est différente de 0
@@ -2005,21 +2029,21 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
             if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
                 continue  # Passer à la ligne suivante
             
-            article = str(row.get("Produit Standard", "")).strip()
-            if not article:
-                article = str(row.get("Produit Brute", "")).strip()
+            designation = str(row.get("Produit Standard", "")).strip()
+            if not designation:
+                designation = str(row.get("Produit Brute", "")).strip()
             
             quantite_str = format_quantity(quantite)
             
             rows.append([
-                mois,
-                client,
-                date,
-                nbc,
-                "",  # Lien (vide par défaut)
-                magasin,
-                article,
-                quantite_str
+                mois,           # Colonne 1 (mois)
+                date_formatted, # Date
+                client,         # Client (S2M, DLP ou ULYS)
+                numero_bdc,     # Numéro BDC
+                magasin,        # Magasin
+                designation,    # Désignation (anciennement Produit)
+                quantite_str,   # Quantité
+                editeur         # Editeur
             ])
         
         return rows
@@ -2048,16 +2072,19 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
         
         # FILTRE 3: Même logique de détection pour BDC et factures
         # Recherche basée sur client et numéro de document
-        client_col = 1  # Colonne client (commune aux deux types)
+        
+        # Pour les factures: colonne 3 = Client, colonne 4 = N* facture
+        # Pour les BDC: colonne 3 = Client, colonne 4 = Numéro BDC
+        client_col = 2  # Colonne Client (index 2, 3ème colonne)
         
         current_client = extracted_data.get('client', '')
         
         # Colonne pour le numéro de document selon le type
         if "FACTURE" in document_type.upper():
-            doc_num_col = 4  # Colonne NF
+            doc_num_col = 3  # Colonne N* facture (index 3, 4ème colonne)
             current_doc_num = extracted_data.get('numero_facture', '')
         else:
-            doc_num_col = 3  # Colonne NBC
+            doc_num_col = 3  # Colonne Numéro BDC (index 3, 4ème colonne)
             current_doc_num = extracted_data.get('numero', '')
         
         duplicates = []
@@ -2076,8 +2103,16 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
                     # Vérification supplémentaire pour les BDC ULYS
                     if "ULYS" in current_client.upper() and "BDC" in document_type.upper():
                         # Pour ULYS, vérifier aussi la date
-                        date_col = 2  # Colonne date
-                        current_date = format_date_french(extracted_data.get('date', ''))
+                        date_col = 1  # Colonne date (index 1, 2ème colonne)
+                        current_date = ""
+                        date_facture = extracted_data.get('date', '')
+                        if date_facture:
+                            try:
+                                date_obj = parser.parse(date_facture, dayfirst=True)
+                                current_date = date_obj.strftime("%d/%m/%Y")
+                            except:
+                                current_date = ""
+                        
                         row_date = row[date_col] if len(row) > date_col else ''
                         
                         if row_date == current_date and current_date != '':
@@ -2136,22 +2171,17 @@ def get_worksheet(document_type: str):
         st.error(f"❌ Erreur lors de la connexion à Google Sheets: {str(e)}")
         return None
 
-def find_table_range(worksheet, num_columns=9):
+def find_table_range(worksheet, num_columns=8):
     """Trouve la plage de table dans la feuille avec un nombre de colonnes spécifique"""
     try:
         all_data = worksheet.get_all_values()
         
         if not all_data:
-            if num_columns == 9:
-                return "A1:I1"
-            else:
-                return "A1:H1"
+            # Pour la production, toutes les feuilles ont 8 colonnes
+            return "A1:H1"
         
-        # Déterminer les headers selon le nombre de colonnes
-        if num_columns == 9:
-            headers = ["Mois", "Client", "date", "NBC", "NF", "lien", "Magasin", "Produit", "Quantite"]
-        else:
-            headers = ["Mois", "Client", "date", "NBC", "lien", "Magasin", "Produit", "Quantite"]
+        # Déterminer les headers selon le nombre de colonnes (8 colonnes pour la production)
+        headers = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
         
         first_row = all_data[0] if all_data else []
         header_found = any(header in str(first_row) for header in headers)
@@ -2159,37 +2189,22 @@ def find_table_range(worksheet, num_columns=9):
         if header_found:
             last_row = len(all_data) + 1
             if len(all_data) <= 1:
-                if num_columns == 9:
-                    return "A2:I2"
-                else:
-                    return "A2:H2"
+                return "A2:H2"
             else:
-                if num_columns == 9:
-                    return f"A{last_row}:I{last_row}"
-                else:
-                    return f"A{last_row}:H{last_row}"
+                return f"A{last_row}:H{last_row}"
         else:
             for i, row in enumerate(all_data, start=1):
                 if not any(cell.strip() for cell in row):
-                    if num_columns == 9:
-                        return f"A{i}:I{i}"
-                    else:
-                        return f"A{i}:H{i}"
+                    return f"A{i}:H{i}"
             
-            if num_columns == 9:
-                return f"A{len(all_data)+1}:I{len(all_data)+1}"
-            else:
-                return f"A{len(all_data)+1}:H{len(all_data)+1}"
+            return f"A{len(all_data)+1}:H{len(all_data)+1}"
             
     except Exception as e:
-        if num_columns == 9:
-            return "A2:I2"
-        else:
-            return "A2:H2"
+        return "A2:H2"
 
 def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
                          duplicate_action: str = None, duplicate_rows: List[int] = None):
-    """Sauvegarde les données dans Google Sheets"""
+    """Sauvegarde les données dans Google Sheets (version production)"""
     try:
         ws = get_worksheet(document_type)
         
@@ -2222,20 +2237,17 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         # Afficher l'aperçu des données à enregistrer
         st.info(f"📋 **Aperçu des données à enregistrer (lignes avec quantité > 0):**")
         
-        # Définir les colonnes selon le type de document
+        # Définir les colonnes selon le type de document (8 colonnes pour la production)
         if "FACTURE" in document_type.upper():
-            columns = ["Mois", "Client", "Date", "NBC", "NF", "Lien", "Magasin", "Produit", "Quantité"]
+            columns = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
         else:
-            columns = ["Mois", "Client", "Date", "NBC", "Lien", "Magasin", "Produit", "Quantité"]
+            columns = ["Mois", "Date", "Client", "Numéro BDC", "Magasin", "Désignation", "Quantité", "Editeur"]
         
         preview_df = pd.DataFrame(new_rows, columns=columns)
         st.dataframe(preview_df, use_container_width=True)
         
-        # Ajuster la plage selon le nombre de colonnes
-        if "FACTURE" in document_type.upper():
-            table_range = find_table_range(ws, num_columns=9)
-        else:
-            table_range = find_table_range(ws, num_columns=8)
+        # Pour la production, toutes les feuilles ont 8 colonnes
+        table_range = find_table_range(ws, num_columns=8)
         
         try:
             if ":" in table_range and table_range.count(":") == 1:
