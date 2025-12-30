@@ -678,12 +678,6 @@ if "nom_magasin_ulys" not in st.session_state:
     st.session_state.nom_magasin_ulys = ""
 if "fact_manuscrit" not in st.session_state:
     st.session_state.fact_manuscrit = ""
-if "red_handwritten_text" not in st.session_state:
-    st.session_state.red_handwritten_text = {"text": "", "color": "", "position": ""}
-if "facture_number_extracted" not in st.session_state:
-    st.session_state.facture_number_extracted = ""
-if "manual_facture_alert" not in st.session_state:
-    st.session_state.manual_facture_alert = False
 
 # ============================================================
 # FONCTION DE NORMALISATION DES PRODUITS (COMPATIBILITÉ)
@@ -1568,34 +1562,6 @@ st.markdown(f"""
     .slide-in {{
         animation: slideIn 0.3s ease-out;
     }}
-    
-    /* NOUVELLE : Centrage du champ Client */
-    .client-field-container {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-    }}
-    
-    .client-field-container .stSelectbox > div > div {{
-        text-align: center !important;
-    }}
-    
-    /* Alerte pour numéro facture manquant */
-    .facture-alert {{
-        background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-        border: 2px solid #F59E0B;
-        border-radius: 12px;
-        padding: 1rem;
-        margin: 1rem 0;
-        animation: pulse 2s infinite;
-    }}
-    
-    @keyframes alert-pulse {{
-        0% {{ box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }}
-        70% {{ box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }}
-        100% {{ box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }}
-    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1866,21 +1832,19 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         # Encoder l'image
         base64_image = encode_image_to_base64(image_bytes)
         
-        # PROMPT AMÉLIORÉ V1.3 avec détection de l'écriture manuscrite rouge
+        # PROMPT AMÉLIORÉ V1.2 avec détection précise des types et extraction du FACT
         prompt = """
         ANALYSE CE DOCUMENT ET EXTRACT LES INFORMATIONS SUIVANTES:
 
-        IMPORTANT RÈGLE SPÉCIALE POUR LES BONS DE COMMANDE (BDC ULYS, DLP, S2M):
+        IMPORTANT RÈGLE SPÉCIALE POUR LES BONS DE COMMANDE (BDC):
+        - Pour TOUS les BDC (DLP, S2M, ULYS), cherche TOUJOURS le numéro manuscrit écrit à la main
+        - Ce numéro est généralement écrit après "F" ou "Fact" (exemple: Fact 251193 → 251193)
+        - Il se trouve souvent en haut à droite de l'entête, parfois sur le côté droit
+        - Si tu vois deux valeurs manuscrites différentes (ex: f 4567 et Fact 7890), 
+          prends TOUJOURS la valeur de Fact 7890 (donc 7890)
+        - Si aucun "F" ou "Fact" manuscrit n'est trouvé, laisse ce champ vide
         
-        1. CHERCHE SPÉCIFIQUEMENT L'ÉCRITURE MANUSCRITE ROUGE:
-           - Repère toute écriture MANUSCRITE de couleur ROUGE située en HAUT À GAUCHE ou HAUT À DROITE de la feuille.
-           - Si elle existe :
-              * Retranscris le texte EXACTEMENT (respecte les chiffres et symboles)
-              * Confirme la couleur (rouge)
-              * Confirme la position (haut gauche, ou haut droit)
-           - Cette écriture pourrait être : CF + chiffre ou f + chiffre exemple : CF12345 ou f1234 ou Cf12345
-        
-        2. POUR TOUS LES DOCUMENTS, extrais:
+        Pour TOUS les documents, extrais:
         {
             "type_document": "BDC" ou "FACTURE",
             "document_subtype": "DLP", "S2M", "ULYS", ou "FACTURE",
@@ -1888,14 +1852,6 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             "adresse_livraison": "...",
             "quartier_s2m": "...",  (uniquement si S2M: le quartier sous "SUPERMAKI")
             "nom_magasin_ulys": "...",  (uniquement si ULYS: le nom du magasin)
-            
-            "red_handwriting_info": {
-                "found": "oui" ou "non",
-                "text": "...",  (le texte exact de l'écriture rouge si trouvé)
-                "color": "...",  (confirmer "rouge")
-                "position": "..."  (haut gauche ou haut droit)
-            },
-            
             "fact_manuscrit_trouve": "oui" ou "non",
             "fact_manuscrit": "...",  (le numéro exact après F ou Fact, SANS le F/Fact)
         }
@@ -1914,7 +1870,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             ]
         
         2. SI C'EST UN BDC (DLP, S2M, ULYS):
-            "numero": "...",  (IMPORTANT: utiliser l'écriture rouge si disponible, sinon le fact_manuscrit)
+            "numero": "...",  (IMPORTANT: utiliser TOUJOURS le fact_manuscrit si disponible, sinon vide)
             "date": "...",
             "articles": [
                 {
@@ -1928,9 +1884,22 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         • S2M: client = "S2M", adresse = "Supermaki " + quartier_s2m (nettoyer format)
         • ULYS: client = "ULYS", adresse = nom_magasin_ulys
         
-        NOTE IMPORTANTE:
-        - Pour les BDC ULYS, DLP, S2M: si l'écriture rouge est trouvée, l'utiliser comme numéro de facture
-        - Pour les FACTURE EN COMPTE: garder comme avant
+        INDICES DÉCISIFS:
+        • "DISTRIBUTION LEADER PRICE" = TOUJOURS DLP
+        • "SUPERMAKI" = TOUJOURS S2M
+        • "BON DE COMMANDE FOURNISSEUR" = TOUJOURS ULYS
+        • "FACTURE EN COMPTE" = TOUJOURS FACTURE
+        
+        EXEMPLE CORRECT POUR UN BDC:
+        Si tu vois "f251193" manuscrit en haut à droite → 
+        "fact_manuscrit_trouve": "oui",
+        "fact_manuscrit": "251193",
+        "numero": "251193"
+        
+        Si pas de "F" ou "Fact" manuscrit → 
+        "fact_manuscrit_trouve": "non",
+        "fact_manuscrit": "",
+        "numero": ""
         """
         
         # Appel à l'API OpenAI Vision
@@ -1967,44 +1936,18 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             try:
                 data = json.loads(json_str)
                 
-                # GESTION DE L'ÉCRITURE ROUGE POUR LES BDC ULYS, DLP, S2M
+                # GESTION DU FACT MANUSCRIT POUR TOUS LES BDC
                 document_subtype = data.get("document_subtype", "").upper()
                 
                 if document_subtype in ["DLP", "S2M", "ULYS"]:
-                    # C'est un BDC, vérifier l'écriture rouge
-                    red_info = data.get("red_handwriting_info", {})
+                    # C'est un BDC, utiliser le fact_manuscrit
+                    fact_manuscrit = data.get("fact_manuscrit", "")
                     
-                    if red_info.get("found") == "oui":
-                        red_text = red_info.get("text", "").strip()
-                        if red_text:
-                            # Sauvegarder l'information d'écriture rouge
-                            st.session_state.red_handwritten_text = {
-                                "text": red_text,
-                                "color": red_info.get("color", "rouge"),
-                                "position": red_info.get("position", "")
-                            }
-                            
-                            # Extraire le numéro du texte rouge (chercher CF/f + chiffres)
-                            red_number_match = re.search(r'(?:CF|Cf|f)?\s*(\d{4,})', red_text, re.IGNORECASE)
-                            if red_number_match:
-                                red_number = red_number_match.group(1)
-                                # Utiliser l'écriture rouge comme numéro de facture
-                                data["numero"] = red_number
-                                data["fact_manuscrit"] = red_number
-                                st.session_state.facture_number_extracted = red_number
-                                st.session_state.fact_manuscrit = red_number
-                            else:
-                                # Si pas de chiffres, utiliser le texte complet
-                                data["numero"] = red_text
-                                data["fact_manuscrit"] = red_text
-                                st.session_state.facture_number_extracted = red_text
-                                st.session_state.fact_manuscrit = red_text
-                    else:
-                        # Pas d'écriture rouge, utiliser le fact manuscrit normal
-                        fact_manuscrit = data.get("fact_manuscrit", "")
-                        data["numero"] = fact_manuscrit
-                        st.session_state.facture_number_extracted = fact_manuscrit
-                        st.session_state.fact_manuscrit = fact_manuscrit
+                    # Sauvegarder dans la session
+                    st.session_state.fact_manuscrit = fact_manuscrit
+                    
+                    # Utiliser le fact_manuscrit pour le champ "numero"
+                    data["numero"] = fact_manuscrit
                 
                 # Appliquer les règles de correction spécifiques
                 # Correction DLP
@@ -2071,7 +2014,6 @@ def guess_document_type_from_text(text: str) -> Dict:
             "adresse_livraison": "Score Tanjombato",
             "fact_manuscrit": fact_manuscrit,
             "numero": fact_manuscrit,  # Utiliser le fact manuscrit
-            "red_handwriting_info": {"found": "non", "text": "", "color": "", "position": ""},
             "articles": []
         }
     elif detection["type"] == "S2M":
@@ -2083,7 +2025,6 @@ def guess_document_type_from_text(text: str) -> Dict:
             "adresse_livraison": clean_adresse(f"Supermaki {quartier}" if quartier else "Supermaki"),
             "fact_manuscrit": fact_manuscrit,
             "numero": fact_manuscrit,  # Utiliser le fact manuscrit
-            "red_handwriting_info": {"found": "non", "text": "", "color": "", "position": ""},
             "articles": []
         }
     elif detection["type"] == "ULYS":
@@ -2095,14 +2036,12 @@ def guess_document_type_from_text(text: str) -> Dict:
             "adresse_livraison": nom_magasin if nom_magasin else "ULYS Magasin",
             "fact_manuscrit": fact_manuscrit,
             "numero": fact_manuscrit,  # Utiliser le fact manuscrit
-            "red_handwriting_info": {"found": "non", "text": "", "color": "", "position": ""},
             "articles": []
         }
     elif detection["type"] == "FACTURE":
         return {
             "type_document": "FACTURE",
             "document_subtype": "FACTURE",
-            "red_handwriting_info": {"found": "non", "text": "", "color": "", "position": ""},
             "articles": []
         }
     else:
@@ -2110,21 +2049,9 @@ def guess_document_type_from_text(text: str) -> Dict:
         features = extract_text_features_for_detection(text)
         
         if features['facture_score'] > features['bdc_score']:
-            return {
-                "type_document": "FACTURE", 
-                "document_subtype": "FACTURE",
-                "red_handwriting_info": {"found": "non", "text": "", "color": "", "position": ""},
-                "articles": []
-            }
+            return {"type_document": "FACTURE", "document_subtype": "FACTURE", "articles": []}
         else:
-            return {
-                "type_document": "BDC", 
-                "document_subtype": "UNKNOWN", 
-                "fact_manuscrit": fact_manuscrit, 
-                "numero": fact_manuscrit,
-                "red_handwriting_info": {"found": "non", "text": "", "color": "", "position": ""},
-                "articles": []
-            }
+            return {"type_document": "BDC", "document_subtype": "UNKNOWN", "fact_manuscrit": fact_manuscrit, "numero": fact_manuscrit, "articles": []}
 
 def analyze_document_with_backup(image_bytes: bytes) -> Dict:
     """Analyse le document avec vérification de cohérence"""
@@ -2371,7 +2298,7 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
             date_formatted = datetime.now().strftime("%d/%m/%Y")
         
         client = data.get("client", "")  # Utiliser la valeur du selectbox
-        numero_bdc = data.get("numero", "")  # C'est maintenant le FACT manuscrit ou écriture rouge
+        numero_bdc = data.get("numero", "")  # C'est maintenant le FACT manuscrit
         magasin = data.get("adresse_livraison", "")
         editeur = st.session_state.username  # Nom de l'utilisateur connecté
         
@@ -2400,7 +2327,7 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
                 mois,           # Colonne 1 (mois)
                 date_formatted, # Date
                 client,         # Client (S2M, DLP ou ULYS)
-                numero_bdc,     # FACT (anciennement Numéro BDC) - maintenant écriture rouge
+                numero_bdc,     # FACT (anciennement Numéro BDC)
                 magasin,        # Magasin
                 designation,    # Désignation (anciennement Produit)
                 quantite_str,   # Quantité (ENTIER SANS VIRGULE)
@@ -2446,7 +2373,7 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
             current_doc_num = extracted_data.get('numero_facture', '')
         else:
             doc_num_col = 3  # Colonne FACT (index 3, 4ème colonne)
-            current_doc_num = extracted_data.get('numero', '')  # C'est maintenant le FACT manuscrit ou écriture rouge
+            current_doc_num = extracted_data.get('numero', '')  # C'est maintenant le FACT manuscrit
         
         duplicates = []
         for i, row in enumerate(all_data[1:], start=2):
@@ -2772,7 +2699,7 @@ st.markdown(f"""
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.3
+# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.2
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.uploaded_file = uploaded
@@ -2794,16 +2721,13 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.quartier_s2m = ""
     st.session_state.nom_magasin_ulys = ""
     st.session_state.fact_manuscrit = ""
-    st.session_state.red_handwritten_text = {"text": "", "color": "", "position": ""}
-    st.session_state.facture_number_extracted = ""
-    st.session_state.manual_facture_alert = False
     
     # Barre de progression avec style tech
     progress_container = st.empty()
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
-        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.3</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.2</h3>', unsafe_allow_html=True)
         # Texte en noir comme demandé
         st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision amélioré...</p>', unsafe_allow_html=True)
         
@@ -2816,9 +2740,9 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             "Prétraitement des données...",
             "Analyse par IA...",
             "Détection avancée du type...",
-            "Recherche écriture rouge...",
-            "Extraction du numéro facture...",
+            "Extraction du FACT manuscrit...",
             "Vérification de cohérence...",
+            "Extraction des données...",
             "Finalisation..."
         ]
         
@@ -2844,7 +2768,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Traitement OCR avec système amélioré V1.3
+    # Traitement OCR avec système amélioré V1.2
     try:
         buf = BytesIO()
         st.session_state.uploaded_image.save(buf, format="JPEG")
@@ -2853,7 +2777,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         # Prétraitement de l'image
         img_processed = preprocess_image(image_bytes)
         
-        # ANALYSE AMÉLIORÉE V1.3 avec détection écriture rouge
+        # ANALYSE AMÉLIORÉE V1.2 avec vérification de cohérence
         result = analyze_document_with_backup(img_processed)
         
         if result:
@@ -2875,23 +2799,16 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             
             st.session_state.detected_document_type = final_doc_type
             
-            # Afficher les informations sur l'écriture rouge si trouvée
-            red_info = result.get("red_handwriting_info", {})
-            if red_info.get("found") == "oui":
-                st.success(f"✅ Écriture manuscrite rouge détectée: {red_info.get('text')} ({red_info.get('position')})")
-            
-            # Vérifier si le numéro de facture est vide pour les BDC ULYS, DLP, S2M
-            if document_subtype in ["DLP", "S2M", "ULYS"]:
-                numero = result.get("numero", "")
-                if not numero or numero.strip() == "":
-                    st.session_state.manual_facture_alert = True
-                    st.warning("⚠️ Numéro de facture non détecté. Veuillez le saisir manuellement.")
-            
             # CORRECTION MANUELLE SI NÉCESSAIRE
             if st.session_state.document_analysis_details:
                 # Une correction a été appliquée
                 correction = st.session_state.document_analysis_details
                 st.info(f"⚠️ Correction appliquée: {correction.get('original_type')} → {correction.get('adjusted_type')}")
+            
+            # Afficher le FACT manuscrit extrait
+            fact_manuscrit = result.get("fact_manuscrit", "")
+            if fact_manuscrit and document_subtype in ["DLP", "S2M", "ULYS"]:
+                st.success(f"✅ FACT manuscrit détecté: {fact_manuscrit}")
             
             st.session_state.ocr_result = result
             st.session_state.show_results = True
@@ -2957,7 +2874,7 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
             <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
-            • Statut : Analysé par IA V1.3<br>
+            • Statut : Analysé par IA V1.2<br>
             • Confiance : Élevée<br><br>
             <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
         </div>
@@ -2966,25 +2883,18 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# AFFICHAGE DES RÉSULTATS - AVEC SECTION DEBUG V1.3
+# AFFICHAGE DES RÉSULTATS - AVEC SECTION DEBUG V1.2
 # ============================================================
 if st.session_state.show_results and st.session_state.ocr_result and not st.session_state.processing:
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
     
-    # SECTION DÉBUGAGE V1.3 (optionnelle)
-    with st.expander("🔍 Analyse de détection V1.3 (debug)"):
+    # SECTION DÉBUGAGE V1.2 (optionnelle)
+    with st.expander("🔍 Analyse de détection V1.2 (debug)"):
         st.write("**Type brut détecté par l'IA:**", result.get("type_document", "Non détecté"))
         st.write("**Sous-type détecté:**", result.get("document_subtype", "Non détecté"))
         st.write("**Type normalisé:**", doc_type)
-        
-        # Afficher les informations sur l'écriture rouge
-        red_info = result.get("red_handwriting_info", {})
-        if red_info.get("found") == "oui":
-            st.write("**Écriture manuscrite rouge détectée:**")
-            st.write(f"- Texte: {red_info.get('text')}")
-            st.write(f"- Couleur: {red_info.get('color')}")
-            st.write(f"- Position: {red_info.get('position')}")
+        st.write("**Champs disponibles:**", list(result.keys()))
         
         if st.session_state.document_analysis_details:
             st.write("**Corrections appliquées:**", st.session_state.document_analysis_details)
@@ -3001,6 +2911,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.write(f"- Quartier S2M extrait: {st.session_state.quartier_s2m}")
             if st.session_state.nom_magasin_ulys:
                 st.write(f"- Nom magasin ULYS extrait: {st.session_state.nom_magasin_ulys}")
+            
+            # Extraire et afficher le FACT manuscrit du texte
+            fact_extrait = extract_fact_number_from_handwritten(st.session_state.ocr_raw_text)
+            if fact_extrait:
+                st.write(f"- FACT manuscrit extrait du texte: {fact_extrait}")
     
     # Message de succès avec style tech
     st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
@@ -3008,7 +2923,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     <div style="display: flex; align-items: start; gap: 15px;">
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
-            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.3 terminée avec succès</strong><br>
+            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.2 terminée avec succès</strong><br>
             <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
             <small style="color: #4B5563 !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
@@ -3035,7 +2950,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     )
     
     # ========================================================
-    # INFORMATIONS EXTRAITES - AVEC CHANGEMENTS: N° BDC → Num Facture
+    # INFORMATIONS EXTRAITES - AVEC CHANGEMENT: N° BDC → FACT
     # ========================================================
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>📋 Informations extraites</h4>', unsafe_allow_html=True)
@@ -3044,15 +2959,22 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
-            # CHAMP CLIENT AVEC CENTRAGE
-            st.markdown(f'<div class="client-field-container">', unsafe_allow_html=True)
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
             
-            # Sélecteur avec suggestions pour le client
+            # NOUVELLE FONCTIONNALITÉ: Sélecteur avec suggestions pour le client
             client_options = ["ULYS", "S2M", "DLP", "Autre"]
             
             # Déterminer la valeur par défaut basée sur le type détecté
             extracted_client = result.get("client", "")
+            
+            # Si DLP, S2M ou ULYS détecté, forcer la valeur
+            document_subtype = result.get("document_subtype", "").upper()
+            if document_subtype == "DLP":
+                extracted_client = "DLP"
+            elif document_subtype == "S2M":
+                extracted_client = "S2M"
+            elif document_subtype == "ULYS":
+                extracted_client = "ULYS"
             
             # Essayer de mapper le client extrait aux options
             mapped_client = map_client(extracted_client)
@@ -3077,8 +2999,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             else:
                 client = client_choice
             
-            st.markdown(f'</div>', unsafe_allow_html=True)
-            
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° Facture</div>', unsafe_allow_html=True)
             numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Bon de commande</div>', unsafe_allow_html=True)
@@ -3102,21 +3022,18 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         }
     
     else:
-        # C'EST UN BDC (ULYS, DLP, S2M)
         col1, col2 = st.columns(2)
         with col1:
-            # CHAMP CLIENT AVEC CENTRAGE
-            st.markdown(f'<div class="client-field-container">', unsafe_allow_html=True)
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
             
-            # Sélecteur avec suggestions pour le client
+            # NOUVELLE FONCTIONNALITÉ: Sélecteur avec suggestions pour le client
             client_options = ["ULYS", "S2M", "DLP", "Autre"]
             
             # Déterminer la valeur par défaut basée sur le type détecté
             extracted_client = result.get("client", "")
-            document_subtype = result.get("document_subtype", "").upper()
             
             # Si DLP, S2M ou ULYS détecté, forcer la valeur
+            document_subtype = result.get("document_subtype", "").upper()
             if document_subtype == "DLP":
                 extracted_client = "DLP"
             elif document_subtype == "S2M":
@@ -3147,47 +3064,25 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             else:
                 client = client_choice
             
-            st.markdown(f'</div>', unsafe_allow_html=True)
+            # CHANGEMENT: N° BDC → FACT
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">FACT</div>', unsafe_allow_html=True)
             
-            # CHANGEMENT: N° BDC → Num Facture (pour les BDC ULYS, DLP, S2M)
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Num Facture</div>', unsafe_allow_html=True)
-            
-            # Déterminer la valeur par défaut
-            # Priorité 1: Écriture rouge extraite
-            red_info = result.get("red_handwriting_info", {})
-            red_text = ""
-            if red_info.get("found") == "oui":
-                red_text = red_info.get("text", "").strip()
-                # Extraire juste les chiffres si c'est CF/f + chiffres
-                red_number_match = re.search(r'(?:CF|Cf|f)?\s*(\d{4,})', red_text, re.IGNORECASE)
-                if red_number_match:
-                    red_text = red_number_match.group(1)
-            
-            # Priorité 2: Fact manuscrit
+            # FORCER l'utilisation du fact manuscrit
             fact_manuscrit = result.get("fact_manuscrit", "")
-            
-            # Priorité 3: Numéro standard
             numero_standard = result.get("numero", "")
             
-            # Déterminer la valeur à afficher
-            if red_text:
-                numero_a_afficher = red_text
-                st.info(f"🔍 Écriture rouge détectée: {red_text}")
-            elif fact_manuscrit:
+            # Priorité absolue au fact manuscrit
+            if fact_manuscrit:
                 numero_a_afficher = fact_manuscrit
+                st.info(f"🔍 FACT manuscrit détecté: {fact_manuscrit}")
             else:
                 numero_a_afficher = numero_standard
-            
-            # ALERTE SI LE CHAMP EST VIDE
-            if not numero_a_afficher or numero_a_afficher.strip() == "":
-                st.session_state.manual_facture_alert = True
-                st.markdown('<div class="facture-alert">⚠️ <strong>ALERTE:</strong> Numéro de facture non détecté. Veuillez le saisir manuellement.</div>', unsafe_allow_html=True)
             
             numero = st.text_input("", 
                                   value=numero_a_afficher, 
                                   key="bdc_numero", 
                                   label_visibility="collapsed",
-                                  help="Numéro extrait de l'écriture manuscrite rouge ou après 'F'/'Fact'")
+                                  help="Numéro manuscrit extrait après 'F' ou 'Fact' (peut être vide si non trouvé)")
         
         with col2:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
@@ -3219,7 +3114,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         
         data_for_sheets = {
             "client": client,
-            "numero": numero,  # C'est maintenant le Num Facture (écriture rouge ou fact manuscrit)
+            "numero": numero,  # C'est maintenant le FACT
             "date": date,
             "adresse_livraison": adresse
         }
@@ -3254,23 +3149,21 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
         st.markdown('<h4>📘 Standardisation des Produits</h4>', unsafe_allow_html=True)
         
-        # Instructions avec mention des améliorations
+        # Instructions avec mention des filtres
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
             <small style="color: #1A1A1A !important;">
-            💡 <strong>Mode édition activé avec améliorations V1.3 :</strong> 
-            • <strong>AMÉLIORATION 1:</strong> Détection écriture manuscrite ROUGE (CF/f + chiffres)<br>
-            • <strong>AMÉLIORATION 2:</strong> "N° BDC" remplacé par "Num Facture" pour BDC ULYS/DLP/S2M<br>
-            • <strong>AMÉLIORATION 3:</strong> Centrage amélioré du champ Client<br>
-            • <strong>ALERTE:</strong> Notification si numéro facture non détecté<br>
-            • <strong>Filtre 1:</strong> Les quantités à 0 seront ignorées<br>
-            • <strong>Filtre 2:</strong> Standardisation Chan Foui appliquée<br>
-            • <strong>Filtre 3:</strong> Détection doublons activée<br>
-            • <strong>NOUVEAU 1:</strong> Quantités FORCÉES en nombres ENTIERS<br>
-            • <strong>NOUVEAU 2:</strong> Suggestions client (ULYS, S2M, DLP)<br>
-            • Colonne "Produit Brute" : texte original extrait par l'IA<br>
-            • Colonne "Produit Standard" : standardisé automatiquement<br>
-            • <strong>Note :</strong> Photo nette et proche pour meilleure détection.
+            💡 <strong>Mode édition activé avec filtres :</strong> 
+            • <strong>info 1:</strong> Les produits ont été reconnus automatiquement<br>
+            • <strong>info 2:</strong> Les quantités à 0 seront ignorées<br>
+            • <strong>info 3:</strong> Les doublons sont détectés automatiquement<br>
+            • <strong>NOUVEAU 1:</strong> Les quantités sont FORCÉES en nombres ENTIERS (pas de virgules)<br>
+            • <strong>NOUVEAU 2:</strong> Le champ Client a maintenant des suggestions (ULYS, S2M, DLP)<br>
+            • <strong>AMÉLIORATION:</strong> Détection précise DLP/S2M/ULYS avec valeurs forcées<br>
+            • <strong>CHANGEMENT IMPORTANT:</strong> "N° BDC" est maintenant "FACT" (numéro manuscrit)<br>
+            • Colonne "Produit Brute" : texte original extrait par l'IA de Chanfoui AI<br>
+            • Colonne "Produit Standard" : standardisé automatiquement par Chafoui AI (éditable)<br>
+            • <strong>Note :</strong> Veuillez prendre la photo le plus près possible du document et avec une netteté maximale.
             </small>
         </div>
         """, unsafe_allow_html=True)
@@ -3457,21 +3350,20 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
-    # Informations sur l'export avec mention des améliorations
+    # Informations sur l'export avec mention des filtres
     st.markdown(f"""
     <div class="info-box">
         <strong style="color: #1A1A1A !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
         <strong style="color: #1A1A1A !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
         <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
         <strong style="color: #1A1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS V1.3 :</strong> 
-        • Détection écriture manuscrite ROUGE<br>
-        • "N° BDC" → "Num Facture" pour BDC ULYS/DLP/S2M<br>
-        • Centrage amélioré champ Client<br>
-        • Alerte si numéro facture non détecté<br>
-        • <strong>Filtres actifs :</strong> 
+        <strong style="color: #1A1A1A !important;">⚠️ Filtres actifs :</strong> 
         • Suppression lignes quantité 0 | • Standardisation "Chan Foui 75cl" | • Détection doublons BDC<br>
-        • <strong>NOUVEAUTÉS :</strong> Quantités FORCÉES en entiers | Suggestions client (ULYS/S2M/DLP)
+        <strong style="color: #1A1A1A !important;">✨ NOUVEAUTÉS V1.2 :</strong>
+        • Quantités FORCÉES en entiers | • Suggestions client (ULYS/S2M/DLP)<br>
+        • Détection précise DLP/S2M/ULYS | • Valeurs forcées pour Client/Adresse<br>
+        • <strong>CHANGEMENT:</strong> "N° BDC" → "FACT" (numéro manuscrit après F/Fact)<br>
+        • Adresse S2M nettoyée automatiquement
     </div>
     """, unsafe_allow_html=True)
     
@@ -3492,7 +3384,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
             <div style="font-size: 1.5rem; color: #3B82F6 !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Version V1.3 active</div>
+            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Version V1.2 active</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -3565,7 +3457,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: #1A1A1A !important;">
                     <div><strong>Type :</strong> {doc_type}</div>
                     <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
-                    <div><strong>Num Facture :</strong> {st.session_state.data_for_sheets.get('numero', 'Non détecté')}</div>
+                    <div><strong>FACT :</strong> {st.session_state.data_for_sheets.get('numero', 'Non détecté')}</div>
                     <div><strong>Doublons :</strong> {len(st.session_state.duplicate_rows)} trouvé(s)</div>
                 </div>
             </div>
@@ -3632,21 +3524,21 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             
             if success:
                 st.session_state.export_status = "completed"
-                # Afficher un message de succès stylé avec mention des améliorations
+                # Afficher un message de succès stylé avec mention des filtres
                 st.markdown("""
                 <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white !important; border-radius: 18px; text-align: center; margin: 20px 0;">
                     <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
                     <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
                     <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
                     <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
-                        ✓ <strong>AMÉLIORATION 1:</strong> Détection écriture manuscrite rouge<br>
-                        ✓ <strong>AMÉLIORATION 2:</strong> "N° BDC" → "Num Facture" pour BDC<br>
-                        ✓ <strong>AMÉLIORATION 3:</strong> Champ Client centré<br>
                         ✓ Filtre 1: Lignes quantité 0 supprimées<br>
                         ✓ Filtre 2: Standardisation Chan Foui appliquée<br>
                         ✓ Filtre 3: Détection doublons BDC activée<br>
                         ✓ <strong>NOUVEAU 1:</strong> Quantités en entiers sans virgule<br>
-                        ✓ <strong>NOUVEAU 2:</strong> Suggestions client (ULYS/S2M/DLP)
+                        ✓ <strong>NOUVEAU 2:</strong> Suggestions client (ULYS/S2M/DLP)<br>
+                        ✓ <strong>AMÉLIORATION:</strong> Détection précise DLP/S2M/ULYS<br>
+                        ✓ <strong>CHANGEMENT:</strong> "N° BDC" → "FACT" manuscrit<br>
+                        ✓ <strong>AMÉLIORATION:</strong> Adresse S2M nettoyée automatiquement
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -3740,7 +3632,7 @@ with st.container():
     
     with col1:
         st.markdown(f"<center style='color: #1A1A1A !important;'>🤖</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision V1.3</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision V1.2</small></center>", unsafe_allow_html=True)
     
     with col2:
         st.markdown(f"<center style='color: #1A1A1A !important;'>⚡</center>", unsafe_allow_html=True)
@@ -3754,26 +3646,27 @@ with st.container():
     st.markdown(f"""
     <center style='margin: 15px 0;'>
         <span style='font-weight: 700; color: #27414A !important;'>{BRAND_TITLE}</span>
-        <span style='color: #4B5563 !important;'> • Système IA V1.3 • © {datetime.now().strftime("%Y")}</span>
+        <span style='color: #4B5563 !important;'> • Système IA V1.2 • © {datetime.now().strftime("%Y")}</span>
     </center>
     """, unsafe_allow_html=True)
     
-    # Troisième ligne : Statut avec mention des améliorations
+    # Troisième ligne : Statut avec mention des filtres
     st.markdown(f"""
     <center style='font-size: 0.8rem; color: #4B5563 !important;'>
         <span style='color: #10B981 !important;'>●</span> 
         Système actif • Session : 
         <strong style='color: #1A1A1A !important;'>{st.session_state.username}</strong>
-        • Améliorations V1.3 actives • {datetime.now().strftime("%H:%M:%S")}
+        • Filtres actifs • {datetime.now().strftime("%H:%M:%S")}
     </center>
     """, unsafe_allow_html=True)
     
     # Quatrième ligne : Nouvelles fonctionnalités
     st.markdown(f"""
     <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
-        <strong>✨ AMÉLIORATIONS V1.3 :</strong> Détection écriture rouge • "N° BDC" → "Num Facture" • Client centré
+        <strong>✨ NOUVEAUTÉS V1.2 :</strong> "N° BDC" → "FACT" manuscrit • Adresse S2M nettoyée
     </center>
     """, unsafe_allow_html=True)
     
     # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
