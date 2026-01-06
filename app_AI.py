@@ -19,10 +19,10 @@ import unicodedata
 import jellyfish  # Pour la distance de Jaro-Winkler
 
 # ============================================================
-# STANDARDISATION INTELLIGENTE DES PRODUITS
+# STANDARDISATION INTELLIGENTE DES PRODUITS - MIS À JOUR
 # ============================================================
 
-# Liste officielle des produits
+# Liste officielle des produits mise à jour
 STANDARD_PRODUCTS = [
     "Côte de Fianar Rouge 75 cl",
     "Côte de Fianar Rouge 37 cl",
@@ -57,7 +57,14 @@ STANDARD_PRODUCTS = [
     "Jus de raisin Rouge 20 cl",
     "Jus de raisin Blanc 70 cl",
     "Jus de raisin Blanc 20 cl",
-    "Sambatra 20 cl"
+    "Rhum Sambatra 20 cl",
+    "Consignation Btl 75 cl",
+    # Ajout des nouveaux produits demandés
+    "Côte de Fianar Gris 3L",
+    "Côteau d'Ambalavao Special 75 cl",  # Alternative orthographe
+    "Aperao Peche 37 cl",  # Alternative orthographe
+    "Côteau d'Ambalavao Special 75 cl",  # Pour "Côteau d'Ambalavao Rouge" conversion
+    "Cuvee Speciale 75cls"  # Conversion demandée
 ]
 
 # ============================================================
@@ -157,7 +164,7 @@ def clean_adresse(adresse: str) -> str:
     
     return adresse.strip()
 
-# Dictionnaire de synonymes et normalisations
+# Dictionnaire de synonymes et normalisations MIS À JOUR
 SYNONYMS = {
     # Marques principales
     "cote de fianar": "côte de fianar",
@@ -223,6 +230,27 @@ SYNONYMS = {
     "500 ml": "50 cl",
     "200ml": "20 cl",
     "200 ml": "20 cl",
+    
+    # NOUVEAUX SYNONYMES POUR AMÉLIORATION
+    "coteau d'ambalavao rouge": "cuvee speciale 75cls",  # Conversion demandée
+    "coteau d ambalavao rouge": "cuvee speciale 75cls",
+    "ambalavao rouge": "cuvee speciale 75cls",
+    "coteau ambalavao rouge": "cuvee speciale 75cls",
+    "côteau d'ambalavao rouge": "cuvee speciale 75cls",
+    "côteau ambalavao rouge": "cuvee speciale 75cls",
+    
+    # Standardisation améliorée
+    "cote fianar": "côte de fianar",
+    "cote de fianar 3l": "côte de fianar 3l",
+    "cote fianar 3l": "côte de fianar 3l",
+    "maroparasy doux": "blanc doux maroparasy",
+    "maroparas doux": "blanc doux maroparasy",
+    "aperao peche": "aperao pêche",
+    "aperitif aperao": "aperao",
+    "vin champetre": "vin de champêtre",
+    "jus raisin": "jus de raisin",
+    "rhum": "sambatra",
+    "consignation": "consignation btl",
 }
 
 # Mapping des équivalences de volume
@@ -251,6 +279,16 @@ VOLUME_EQUIVALENTS = {
     "200 ml": "20",
     "75cl": "75",
     "75 cl": "75",
+    "37cl": "37",
+    "37 cl": "37",
+    "70cl": "70",
+    "70 cl": "70",
+    "20cl": "20",
+    "20 cl": "20",
+    "100cl": "100",
+    "100 cl": "100",
+    "50cl": "50",
+    "50 cl": "50",
 }
 
 def preprocess_text(text: str) -> str:
@@ -607,6 +645,50 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
             produit_standard = "Côte de Fianar Blanc 3L"
             confidence = 0.9
             status = "matched"
+        elif "ROSE" in produit_upper and "FIANAR" in produit_upper:
+            produit_standard = "Côte de Fianar Rosé 3L"
+            confidence = 0.9
+            status = "matched"
+        elif "GRIS" in produit_upper and "FIANAR" in produit_upper:
+            produit_standard = "Côte de Fianar Gris 3L"
+            confidence = 0.9
+            status = "matched"
+    
+    # CONVERSION SPÉCIFIQUE DEMANDÉE : "Coteau d'Ambalavao Rouge" -> "Cuvee Speciale 75cls"
+    if "COTEAU" in produit_upper and "AMBALAVAO" in produit_upper and "ROUGE" in produit_upper:
+        produit_standard = "Cuvee Speciale 75cls"
+        confidence = 0.95
+        status = "matched"
+    
+    # Standardisation améliorée pour les produits avec fautes d'orthographe
+    if "COTEAU" in produit_upper and "DAMBALAVAO" in produit_upper:
+        if "ROUGE" in produit_upper:
+            produit_standard = "Cuvee Speciale 75cls"
+            confidence = 0.9
+            status = "matched"
+        elif "BLANC" in produit_upper:
+            produit_standard = "Côteau d'Ambalavao Blanc 75 cl"
+            confidence = 0.9
+            status = "matched"
+        elif "ROSE" in produit_upper:
+            produit_standard = "Côteau d'Ambalavao Rosé 75 cl"
+            confidence = 0.9
+            status = "matched"
+    
+    # Standardisation pour Aperao Peche
+    if "APERAO" in produit_upper and "PECHE" in produit_upper:
+        if "37" in produit_upper or "370" in produit_upper:
+            produit_standard = "Aperao Peche 37 cl"
+        else:
+            produit_standard = "Aperao Pêche 75 cl"
+        confidence = 0.9
+        status = "matched"
+    
+    # Standardisation pour Côteau d'Ambalavao Special
+    if "COTEAU" in produit_upper and "AMBALAVAO" in produit_upper and "SPECIAL" in produit_upper:
+        produit_standard = "Côteau d'Ambalavao Special 75 cl"
+        confidence = 0.9
+        status = "matched"
     
     return produit_brut, produit_standard, confidence, status
 
@@ -780,7 +862,7 @@ if not check_authentication():
         }
         
         .login-subtitle {
-            color: #1E293B !important;  /* Texte sombre */
+            color: #1E293B !important;
             margin-bottom: 32px;
             font-size: 1rem;
             font-weight: 400;
@@ -801,7 +883,7 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
-            color: #1E293B !important;  /* Texte noir */
+            color: #1E293B !important;
         }
         
         .stSelectbox > div > div:hover {
@@ -830,19 +912,19 @@ if not check_authentication():
             font-size: 15px;
             transition: all 0.2s ease;
             background: white;
-            color: #1E293B !important;  /* Texte noir */
+            color: #1E293B !important;
         }
         
         .stTextInput > div > div > input:focus {
             border-color: #27414A;
             box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
             outline: none;
-            color: #1E293B !important;  /* Texte noir */
+            color: #1E293B !important;
         }
         
         /* Correction pour le placeholder */
         .stTextInput > div > div > input::placeholder {
-            color: #64748b !important;  /* Placeholder en gris */
+            color: #64748b !important;
         }
         
         /* Labels en noir */
@@ -894,7 +976,7 @@ if not check_authentication():
             padding: 18px;
             margin-top: 28px;
             font-size: 0.9rem;
-            color: #856404 !important;  /* Texte sombre */
+            color: #856404 !important;
             text-align: left;
             font-family: 'Inter', sans-serif;
             box-shadow: 0 4px 12px rgba(255, 193, 7, 0.1);
@@ -1014,9 +1096,9 @@ PALETTE = {
     "background": "#F5F5F3",
     "card_bg": "#FFFFFF",
     "card_bg_alt": "#F4F6F3",
-    "text_dark": "#1A1A1A",        # Couleur de texte principale
-    "text_medium": "#333333",      # Texte secondaire
-    "text_light": "#4B5563",       # Texte tertiaire
+    "text_dark": "#1A1A1A",
+    "text_medium": "#333333",
+    "text_light": "#4B5563",
     "accent": "#2C5F73",
     "success": "#10B981",
     "warning": "#F59E0B",
@@ -1568,12 +1650,10 @@ st.markdown(f"""
 # ============================================================
 # GOOGLE SHEETS CONFIGURATION - VERSION PRODUCTION
 # ============================================================
-# Mise à jour avec les nouveaux liens de production
-SHEET_ID = "1h4xT-cw9Ys1HbkhMWVtRnDOxsZ0fBOaskjPgRyIj3K8"  # ID de la feuille de production
+SHEET_ID = "1h4xT-cw9Ys1HbkhMWVtRnDOxsZ0fBOaskjPgRyIj3K8"
 
-# Mise à jour des GIDs pour la production
 SHEET_GIDS = {
-    "FACTURE EN COMPTE": 0,  # gid=0 pour la feuille de factures
+    "FACTURE EN COMPTE": 0,
     "BDC LEADERPRICE": 581432835,
     "BDC S2M": 581432835,
     "BDC ULYS": 581432835
@@ -1589,7 +1669,6 @@ def normalize_document_type(doc_type: str) -> str:
     
     doc_type_upper = doc_type.upper()
     
-    # DÉTECTION RENFORCÉE DES FACTURES - Inspiration V2
     facture_keywords = [
         "FACTURE", "INVOICE", "BILL", "FACTURA",
         "FACTURE EN COMPTE", "FACTURE N°", "FACTURE NO",
@@ -1602,17 +1681,13 @@ def normalize_document_type(doc_type: str) -> str:
         "DATE ÉMISSION", "DATE EMISSION", "BON DE COMMANDE N°"
     ]
     
-    # Compter les occurrences
     facture_score = sum(1 for keyword in facture_keywords if keyword in doc_type_upper)
     bdc_score = sum(1 for keyword in bdc_keywords if keyword in doc_type_upper)
     
-    # HEURISTIQUES DE DÉCISION AMÉLIORÉES
     if facture_score > bdc_score:
-        # C'est probablement une facture
         return "FACTURE EN COMPTE"
     
     elif bdc_score > facture_score:
-        # C'est probablement un BDC
         if "LEADERPRICE" in doc_type_upper or "DLP" in doc_type_upper:
             return "BDC LEADERPRICE"
         elif "ULYS" in doc_type_upper:
@@ -1623,7 +1698,6 @@ def normalize_document_type(doc_type: str) -> str:
             return "BDC LEADERPRICE"
     
     else:
-        # Égalité ou indéterminé, utiliser l'heuristique
         if "FACTURE" in doc_type_upper and "COMPTE" in doc_type_upper:
             return "FACTURE EN COMPTE"
         elif "BDC" in doc_type_upper or "BON DE COMMANDE" in doc_type_upper:
@@ -1636,7 +1710,6 @@ def normalize_document_type(doc_type: str) -> str:
             else:
                 return "BDC LEADERPRICE"
         else:
-            # Essayer de deviner le type
             if any(word in doc_type_upper for word in ["FACTURE", "INVOICE", "BILL", "DOIT"]):
                 return "FACTURE EN COMPTE"
             elif any(word in doc_type_upper for word in ["COMMANDE", "ORDER", "PO", "BDC"]):
@@ -1672,7 +1745,6 @@ def detect_document_type_from_text(text: str) -> Dict[str, Any]:
     """Détecte précisément le type de document basé sur les indices fournis"""
     text_upper = text.upper()
     
-    # Détection DLP
     dlp_indicators = [
         "DISTRIBUTION LEADER PRICE",
         "D.L.P.M.S.A.R.L",
@@ -1680,32 +1752,27 @@ def detect_document_type_from_text(text: str) -> Dict[str, Any]:
         "2000003904"
     ]
     
-    # Détection S2M
     s2m_indicators = [
         "SUPERMAKI",
         "RAYON"
     ]
     
-    # Détection ULYS
     ulys_indicators = [
         "BON DE COMMANDE FOURNISSEUR",
         "NOM DU MAGASIN"
     ]
     
-    # Détection Facture
     facture_indicators = [
         "FACTURE EN COMPTE",
         "FACTURE À PAYER AVANT LE",
         "FACTURE A PAYER AVANT LE"
     ]
     
-    # Calcul des scores
     dlp_score = sum(1 for indicator in dlp_indicators if indicator in text_upper)
     s2m_score = sum(1 for indicator in s2m_indicators if indicator in text_upper)
     ulys_score = sum(1 for indicator in ulys_indicators if indicator in text_upper)
     facture_score = sum(1 for indicator in facture_indicators if indicator in text_upper)
     
-    # Détermination du type
     detection_result = {
         "type": "UNKNOWN",
         "scores": {
@@ -1717,25 +1784,21 @@ def detect_document_type_from_text(text: str) -> Dict[str, Any]:
         "indicators_found": []
     }
     
-    # Trouver le type avec le score le plus élevé
     max_score = max(dlp_score, s2m_score, ulys_score, facture_score)
     
     if max_score == 0:
         detection_result["type"] = "UNKNOWN"
     elif dlp_score == max_score:
         detection_result["type"] = "DLP"
-        # Ajouter les indicateurs trouvés
         detection_result["indicators_found"] = [ind for ind in dlp_indicators if ind in text_upper]
     elif s2m_score == max_score:
         detection_result["type"] = "S2M"
         detection_result["indicators_found"] = [ind for ind in s2m_indicators if ind in text_upper]
         
-        # Extraire le quartier pour S2M
         if "SUPERMAKI" in text_upper:
             lines = text.split('\n')
             for i, line in enumerate(lines):
                 if "SUPERMAKI" in line.upper():
-                    # Chercher le quartier dans la ligne suivante
                     if i + 1 < len(lines):
                         next_line = lines[i + 1].strip()
                         if next_line and len(next_line) > 0:
@@ -1745,12 +1808,10 @@ def detect_document_type_from_text(text: str) -> Dict[str, Any]:
         detection_result["type"] = "ULYS"
         detection_result["indicators_found"] = [ind for ind in ulys_indicators if ind in text_upper]
         
-        # Extraire le nom du magasin pour ULYS
         if "NOM DU MAGASIN" in text_upper:
             lines = text.split('\n')
             for i, line in enumerate(lines):
                 if "NOM DU MAGASIN" in line.upper():
-                    # Chercher le nom du magasin dans la ligne suivante
                     if i + 1 < len(lines):
                         next_line = lines[i + 1].strip()
                         if next_line and len(next_line) > 0:
@@ -1778,7 +1839,6 @@ def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
         'bdc_score': 0
     }
     
-    # Mots-clés pour les factures (inspiré du V2)
     facture_keywords = [
         "FACTURE", "FACTURE EN COMPTE", "N° FACTURE", "NUMERO FACTURE",
         "DOIT", "AU NOM DE", "CLIENT", "ADRESSE DE LIVRAISON",
@@ -1786,7 +1846,6 @@ def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
         "QUANTITE", "BOUTEILLES", "MONTANT", "TOTAL", "TVA"
     ]
     
-    # Mots-clés pour les BDC (inspiré du V2)
     bdc_keywords = [
         "BDC", "BON DE COMMANDE", "COMMANDE", "DATE EMISSION",
         "DATE ÉMISSION", "ADRESSE FACTURATION", "ADRESSE LIVRAISON",
@@ -1794,7 +1853,6 @@ def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
         "CODE ARTICLE", "PRIX UNITAIRE", "SOUS TOTAL"
     ]
     
-    # Compter les occurrences
     for keyword in facture_keywords:
         if keyword in text_upper:
             features['facture_keywords'].append(keyword)
@@ -1807,7 +1865,6 @@ def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
             features['bdc_score'] += 1
             features['has_bdc'] = True
     
-    # Heuristiques supplémentaires
     if "FACTURE" in text_upper and "COMPTE" in text_upper:
         features['facture_score'] += 3
     
@@ -1829,10 +1886,9 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         if not client:
             return None
         
-        # Encoder l'image
         base64_image = encode_image_to_base64(image_bytes)
         
-        # PROMPT AMÉLIORÉ V1.2 avec détection précise des types et extraction du FACT
+        # PROMPT AMÉLIORÉ AVEC CORRECTION DLP POUR ADRESSE
         prompt = """
         ANALYSE CE DOCUMENT ET EXTRACT LES INFORMATIONS SUIVANTES:
 
@@ -1860,7 +1916,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         
         1. SI C'EST UNE FACTURE (FACTURE EN COMPTE):
             "numero_facture": "...",
-            "date": "...",
+            "date": "...",  (IMPORTANT: extraire la date de la facture, pas la date du scan)
             "bon_commande": "...",
             "articles": [
                 {
@@ -1871,7 +1927,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         
         2. SI C'EST UN BDC (DLP, S2M, ULYS):
             "numero": "...",  (IMPORTANT: utiliser TOUJOURS le fact_manuscrit si disponible, sinon vide)
-            "date": "...",
+            "date": "...",  (IMPORTANT: extraire la date du BDC, pas la date du scan)
             "articles": [
                 {
                     "article_brut": "TEXT EXACT de la colonne Désignation",
@@ -1880,7 +1936,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             ]
         
         RÈGLES SPÉCIFIQUES POUR CHAQUE TYPE:
-        • DLP: client = "DLP", adresse = "Score Tanjombato"
+        • DLP: client = "DLP", adresse = "Leader Price Akadimbahoaka"  (TOUJOURS CETTE ADRESSE POUR DLP)
         • S2M: client = "S2M", adresse = "Supermaki " + quartier_s2m (nettoyer format)
         • ULYS: client = "ULYS", adresse = nom_magasin_ulys
         
@@ -1900,9 +1956,13 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         "fact_manuscrit_trouve": "non",
         "fact_manuscrit": "",
         "numero": ""
+        
+        IMPORTANT POUR LA DATE: 
+        - Extraire la date qui est écrite sur le document (facture ou BDC)
+        - Ne pas utiliser la date actuelle ou une date estimée
+        - Formater la date en format clair (ex: 15/01/2024)
         """
         
-        # Appel à l'API OpenAI Vision
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -1923,44 +1983,35 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             temperature=0.1
         )
         
-        # Extraire et parser la réponse JSON
         content = response.choices[0].message.content
         
-        # Sauvegarder le texte brut pour analyse
         st.session_state.ocr_raw_text = content
         
-        # Nettoyer la réponse pour extraire le JSON
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             json_str = json_match.group()
             try:
                 data = json.loads(json_str)
                 
-                # GESTION DU FACT MANUSCRIT POUR TOUS LES BDC
                 document_subtype = data.get("document_subtype", "").upper()
                 
                 if document_subtype in ["DLP", "S2M", "ULYS"]:
-                    # C'est un BDC, utiliser le fact_manuscrit
                     fact_manuscrit = data.get("fact_manuscrit", "")
                     
-                    # Sauvegarder dans la session
                     st.session_state.fact_manuscrit = fact_manuscrit
                     
-                    # Utiliser le fact_manuscrit pour le champ "numero"
                     data["numero"] = fact_manuscrit
                 
-                # Appliquer les règles de correction spécifiques
-                # Correction DLP
+                # CORRECTION DLP: FORCER L'ADRESSE À "Leader Price Akadimbahoaka"
                 if document_subtype == "DLP":
                     data["client"] = "DLP"
-                    data["adresse_livraison"] = "Score Tanjombato"
+                    data["adresse_livraison"] = "Leader Price Akadimbahoaka"  # CORRECTION APPLIQUÉE
                 
                 # Correction S2M
                 elif document_subtype == "S2M":
                     data["client"] = "S2M"
                     quartier = data.get("quartier_s2m", "")
                     if quartier:
-                        # Nettoyer l'adresse
                         quartier_nettoye = clean_quartier(quartier)
                         adresse_nettoyee = clean_adresse(f"Supermaki {quartier_nettoye}")
                         data["adresse_livraison"] = adresse_nettoyee
@@ -1982,16 +2033,13 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
                 return data
                 
             except json.JSONDecodeError:
-                # Essayer de nettoyer le JSON
                 json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
                 try:
                     data = json.loads(json_str)
                     return data
                 except:
-                    # Si JSON invalide, utiliser la détection par texte
                     return guess_document_type_from_text(content)
         else:
-            # Pas de JSON trouvé, utiliser la détection par texte
             return guess_document_type_from_text(content)
             
     except Exception as e:
@@ -2000,10 +2048,8 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
 
 def guess_document_type_from_text(text: str) -> Dict:
     """Devine le type de document à partir du texte OCR"""
-    # Détection précise avec les nouveaux indices
     detection = detect_document_type_from_text(text)
     
-    # Extraire le fact manuscrit du texte
     fact_manuscrit = extract_fact_number_from_handwritten(text)
     
     if detection["type"] == "DLP":
@@ -2011,9 +2057,9 @@ def guess_document_type_from_text(text: str) -> Dict:
             "type_document": "BDC",
             "document_subtype": "DLP",
             "client": "DLP",
-            "adresse_livraison": "Score Tanjombato",
+            "adresse_livraison": "Leader Price Akadimbahoaka",  # CORRECTION APPLIQUÉE
             "fact_manuscrit": fact_manuscrit,
-            "numero": fact_manuscrit,  # Utiliser le fact manuscrit
+            "numero": fact_manuscrit,
             "articles": []
         }
     elif detection["type"] == "S2M":
@@ -2024,7 +2070,7 @@ def guess_document_type_from_text(text: str) -> Dict:
             "client": "S2M",
             "adresse_livraison": clean_adresse(f"Supermaki {quartier}" if quartier else "Supermaki"),
             "fact_manuscrit": fact_manuscrit,
-            "numero": fact_manuscrit,  # Utiliser le fact manuscrit
+            "numero": fact_manuscrit,
             "articles": []
         }
     elif detection["type"] == "ULYS":
@@ -2035,7 +2081,7 @@ def guess_document_type_from_text(text: str) -> Dict:
             "client": "ULYS",
             "adresse_livraison": nom_magasin if nom_magasin else "ULYS Magasin",
             "fact_manuscrit": fact_manuscrit,
-            "numero": fact_manuscrit,  # Utiliser le fact manuscrit
+            "numero": fact_manuscrit,
             "articles": []
         }
     elif detection["type"] == "FACTURE":
@@ -2045,7 +2091,6 @@ def guess_document_type_from_text(text: str) -> Dict:
             "articles": []
         }
     else:
-        # Fallback à l'ancienne méthode
         features = extract_text_features_for_detection(text)
         
         if features['facture_score'] > features['bdc_score']:
@@ -2055,19 +2100,15 @@ def guess_document_type_from_text(text: str) -> Dict:
 
 def analyze_document_with_backup(image_bytes: bytes) -> Dict:
     """Analyse le document avec vérification de cohérence"""
-    # 1. Analyse OpenAI principale
     result = openai_vision_ocr_improved(image_bytes)
     
     if not result:
         return {"type_document": "DOCUMENT INCONNU", "articles": []}
     
-    # 2. Vérification et extraction supplémentaire du fact manuscrit
     if st.session_state.ocr_raw_text:
-        # Extraire le fact manuscrit du texte brut si pas déjà fait
         if result.get("type_document") == "BDC":
             fact_manuscrit = extract_fact_number_from_handwritten(st.session_state.ocr_raw_text)
             
-            # Si OpenAI n'a pas trouvé de fact mais nous en trouvons un
             if fact_manuscrit and not result.get("fact_manuscrit"):
                 result["fact_manuscrit"] = fact_manuscrit
                 result["numero"] = fact_manuscrit
@@ -2077,16 +2118,13 @@ def analyze_document_with_backup(image_bytes: bytes) -> Dict:
                     "fact": fact_manuscrit
                 }
     
-    # 3. Vérification de cohérence avec détection par texte
     if st.session_state.ocr_raw_text:
         text_detection = detect_document_type_from_text(st.session_state.ocr_raw_text)
         
-        # Si contradiction forte, ajuster
         ai_subtype = result.get("document_subtype", "").upper()
         text_type = text_detection["type"]
         
         if ai_subtype != text_type and text_type != "UNKNOWN":
-            # Détection par texte plus fiable
             st.session_state.document_analysis_details = {
                 "original_type": ai_subtype,
                 "adjusted_type": text_type,
@@ -2094,11 +2132,10 @@ def analyze_document_with_backup(image_bytes: bytes) -> Dict:
                 "indicators": text_detection["indicators_found"]
             }
             
-            # Ajuster les valeurs selon le type détecté
             if text_type == "DLP":
                 result["document_subtype"] = "DLP"
                 result["client"] = "DLP"
-                result["adresse_livraison"] = "Score Tanjombato"
+                result["adresse_livraison"] = "Leader Price Akadimbahoaka"  # CORRECTION APPLIQUÉE
             elif text_type == "S2M":
                 result["document_subtype"] = "S2M"
                 result["client"] = "S2M"
@@ -2138,28 +2175,31 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 def format_date_french(date_str: str) -> str:
-    """Formate la date au format français"""
+    """Formate la date au format français JJ/MM/AAAA"""
     try:
+        # Essayer de parser la date avec différents formats
         formats = [
             "%d/%m/%Y", "%d-%m-%Y", "%d %m %Y",
             "%d/%m/%y", "%d-%m-%y", "%d %m %y",
-            "%d %B %Y", "%d %b %Y"
+            "%d %B %Y", "%d %b %Y", "%Y-%m-%d"
         ]
         
         for fmt in formats:
             try:
                 date_obj = datetime.strptime(date_str, fmt)
-                return date_obj.strftime("%Y-%m-%d")
+                return date_obj.strftime("%d/%m/%Y")  # FORMAT CORRIGÉ: JJ/MM/AAAA
             except:
                 continue
         
+        # Essayer avec dateutil.parser
         try:
             date_obj = parser.parse(date_str, dayfirst=True)
-            return date_obj.strftime("%Y-%m-%d")
+            return date_obj.strftime("%d/%m/%Y")  # FORMAT CORRIGÉ: JJ/MM/AAAA
         except:
-            return datetime.now().strftime("%Y-%m-%d")
+            # Si aucune date n'est trouvée, retourner la date d'aujourd'hui
+            return datetime.now().strftime("%d/%m/%Y")
     except:
-        return datetime.now().strftime("%Y-%m-%d")
+        return datetime.now().strftime("%d/%m/%Y")
 
 def get_month_from_date(date_str: str) -> str:
     """Extrait le mois français d'une date"""
@@ -2170,9 +2210,11 @@ def get_month_from_date(date_str: str) -> str:
     }
     
     try:
+        # Essayer de parser la date
         date_obj = parser.parse(date_str, dayfirst=True)
         return months_fr[date_obj.month]
     except:
+        # Si la date n'est pas valide, utiliser le mois actuel
         return months_fr[datetime.now().month]
 
 def format_quantity(qty: Any) -> str:
@@ -2181,24 +2223,19 @@ def format_quantity(qty: Any) -> str:
         return "0"
     
     try:
-        # Convertir en float pour gérer les chaînes avec virgules
         if isinstance(qty, str):
             qty = qty.replace(',', '.')
         
-        # Convertir en float puis arrondir à l'entier le plus proche
         qty_num = float(qty)
         
-        # FORCER UN ENTIER SANS DÉCIMALES
         qty_int = int(round(qty_num))
         
-        # S'assurer que c'est un entier positif
         if qty_int < 0:
             qty_int = 0
             
         return str(qty_int)
         
     except (ValueError, TypeError):
-        # Si la conversion échoue, retourner "0"
         return "0"
 
 def map_client(client: str) -> str:
@@ -2218,44 +2255,34 @@ def map_client(client: str) -> str:
 # FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS (PRODUCTION)
 # ============================================================
 def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les factures (PRODUCTION - 8 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
+    """Prépare les lignes pour les factures (PRODUCTION - 8 colonnes) - CORRECTION DATE APPLIQUÉE"""
     rows = []
     
     try:
         mois = data.get("mois", get_month_from_date(data.get("date", "")))
-        date_facture = data.get("date", "")
-        # Convertir la date au format JJ/MM/AAAA
-        date_formatted = ""
-        if date_facture:
-            try:
-                date_obj = parser.parse(date_facture, dayfirst=True)
-                date_formatted = date_obj.strftime("%d/%m/%Y")
-            except:
-                date_formatted = datetime.now().strftime("%d/%m/%Y")
-        else:
-            date_formatted = datetime.now().strftime("%d/%m/%Y")
         
-        client = data.get("client", "")  # Utiliser la valeur du selectbox
+        # CORRECTION 1: Utiliser la date extraite et la formater en JJ/MM/AAAA
+        date_facture = data.get("date", "")
+        date_formatted = format_date_french(date_facture)  # FORMAT CORRIGÉ
+        
+        client = data.get("client", "")
         numero_facture = data.get("numero_facture", "")
         magasin = data.get("adresse_livraison", "")
-        editeur = st.session_state.username  # Nom de l'utilisateur connecté
+        editeur = st.session_state.username
         
         for _, row in articles_df.iterrows():
-            # FILTRE 1: Vérifier si la quantité est différente de 0
             quantite = row.get("Quantité", 0)
             if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
-                continue  # Passer à la ligne suivante
+                continue
             
-            # FORCER LA QUANTITÉ À ÊTRE UN ENTIER
             quantite_str = format_quantity(quantite)
             
-            # Vérifier que c'est bien un entier
             try:
                 quantite_int = int(float(quantite_str))
                 quantite_str = str(quantite_int)
             except:
                 quantite_str = "0"
-                continue  # Si conversion échoue, ignorer la ligne
+                continue
             
             designation = str(row.get("Produit Standard", "")).strip()
             if not designation:
@@ -2263,12 +2290,12 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
             
             rows.append([
                 mois,           # Mois
-                date_formatted, # Date au format JJ/MM/AAAA
-                client,         # Client (S2M, DLP ou ULYS)
+                date_formatted, # Date au format JJ/MM/AAAA (CORRIGÉ)
+                client,         # Client
                 numero_facture, # N* facture
                 magasin,        # Magasin
-                designation,    # Désignation (anciennement Produit)
-                quantite_str,   # Quantité (ENTIER SANS VIRGULE)
+                designation,    # Désignation
+                quantite_str,   # Quantité
                 editeur         # Editeur
             ])
         
@@ -2279,45 +2306,34 @@ def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str
         return []
 
 def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les BDC (PRODUCTION - 8 colonnes) - FILTRE 1: Supprimer lignes avec quantité 0"""
+    """Prépare les lignes pour les BDC (PRODUCTION - 8 colonnes) - CORRECTION DATE APPLIQUÉE"""
     rows = []
     
     try:
         date_emission = data.get("date", "")
         mois = get_month_from_date(date_emission)
         
-        # Convertir la date au format JJ/MM/AAAA
-        date_formatted = ""
-        if date_emission:
-            try:
-                date_obj = parser.parse(date_emission, dayfirst=True)
-                date_formatted = date_obj.strftime("%d/%m/%Y")
-            except:
-                date_formatted = datetime.now().strftime("%d/%m/%Y")
-        else:
-            date_formatted = datetime.now().strftime("%d/%m/%Y")
+        # CORRECTION 1: Utiliser la date extraite et la formater en JJ/MM/AAAA
+        date_formatted = format_date_french(date_emission)  # FORMAT CORRIGÉ
         
-        client = data.get("client", "")  # Utiliser la valeur du selectbox
-        numero_bdc = data.get("numero", "")  # C'est maintenant le FACT manuscrit
+        client = data.get("client", "")
+        numero_bdc = data.get("numero", "")
         magasin = data.get("adresse_livraison", "")
-        editeur = st.session_state.username  # Nom de l'utilisateur connecté
+        editeur = st.session_state.username
         
         for _, row in articles_df.iterrows():
-            # FILTRE 1: Vérifier si la quantité est différente de 0
             quantite = row.get("Quantité", 0)
             if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
-                continue  # Passer à la ligne suivante
+                continue
             
-            # FORCER LA QUANTITÉ À ÊTRE UN ENTIER
             quantite_str = format_quantity(quantite)
             
-            # Vérifier que c'est bien un entier
             try:
                 quantite_int = int(float(quantite_str))
                 quantite_str = str(quantite_int)
             except:
                 quantite_str = "0"
-                continue  # Si conversion échoue, ignorer la ligne
+                continue
             
             designation = str(row.get("Produit Standard", "")).strip()
             if not designation:
@@ -2325,12 +2341,12 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
             
             rows.append([
                 mois,           # Colonne 1 (mois)
-                date_formatted, # Date
-                client,         # Client (S2M, DLP ou ULYS)
-                numero_bdc,     # FACT (anciennement Numéro BDC)
+                date_formatted, # Date au format JJ/MM/AAAA (CORRIGÉ)
+                client,         # Client
+                numero_bdc,     # FACT
                 magasin,        # Magasin
-                designation,    # Désignation (anciennement Produit)
-                quantite_str,   # Quantité (ENTIER SANS VIRGULE)
+                designation,    # Désignation
+                quantite_str,   # Quantité
                 editeur         # Editeur
             ])
         
@@ -2341,7 +2357,7 @@ def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
         return []
 
 def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document - FILTRE 1 appliqué"""
+    """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document"""
     if "FACTURE" in document_type.upper():
         return prepare_facture_rows(data, articles_df)
     else:
@@ -2351,29 +2367,22 @@ def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataF
 # FONCTIONS DE DÉTECTION DE DOUBLONS - FILTRE 3: Même logique pour BDC et factures
 # ============================================================
 def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
-    """Vérifie si un document existe déjà dans Google Sheets - FILTRE 3: Même logique pour BDC et factures"""
+    """Vérifie si un document existe déjà dans Google Sheets"""
     try:
         all_data = worksheet.get_all_values()
         
         if len(all_data) <= 1:
             return False, []
         
-        # FILTRE 3: Même logique de détection pour BDC et factures
-        # Recherche basée sur client et numéro de document
-        
-        # Pour les factures: colonne 3 = Client, colonne 4 = N* facture
-        # Pour les BDC: colonne 3 = Client, colonne 4 = FACT (anciennement Numéro BDC)
-        client_col = 2  # Colonne Client (index 2, 3ème colonne)
-        
+        client_col = 2
         current_client = extracted_data.get('client', '')
         
-        # Colonne pour le numéro de document selon le type
         if "FACTURE" in document_type.upper():
-            doc_num_col = 3  # Colonne N* facture (index 3, 4ème colonne)
+            doc_num_col = 3
             current_doc_num = extracted_data.get('numero_facture', '')
         else:
-            doc_num_col = 3  # Colonne FACT (index 3, 4ème colonne)
-            current_doc_num = extracted_data.get('numero', '')  # C'est maintenant le FACT manuscrit
+            doc_num_col = 3
+            current_doc_num = extracted_data.get('numero', '')
         
         duplicates = []
         for i, row in enumerate(all_data[1:], start=2):
@@ -2385,13 +2394,10 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
                     row_doc_num == current_doc_num and 
                     current_client != '' and current_doc_num != ''):
                     
-                    # Vérifier aussi les articles similaires
                     match_type = 'Client et Numéro identiques'
                     
-                    # Vérification supplémentaire pour les BDC ULYS
                     if "ULYS" in current_client.upper() and "BDC" in document_type.upper():
-                        # Pour ULYS, vérifier aussi la date
-                        date_col = 1  # Colonne date (index 1, 2ème colonne)
+                        date_col = 1
                         current_date = ""
                         date_facture = extracted_data.get('date', '')
                         if date_facture:
@@ -2428,10 +2434,8 @@ def get_worksheet(document_type: str):
             st.error("❌ Les credentials Google Sheets ne sont pas configurés")
             return None
         
-        # Normaliser le type de document
         normalized_type = normalize_document_type(document_type)
         
-        # Si le type n'est pas dans SHEET_GIDS, utiliser une feuille par défaut
         if normalized_type not in SHEET_GIDS:
             st.warning(f"⚠️ Type de document '{document_type}' non reconnu. Utilisation de la feuille par défaut.")
             normalized_type = "FACTURE EN COMPTE"
@@ -2444,14 +2448,12 @@ def get_worksheet(document_type: str):
         
         if target_gid is None:
             st.error(f"❌ GID non trouvé pour le type: {normalized_type}")
-            # Utiliser la première feuille par défaut
             return sh.get_worksheet(0)
         
         for worksheet in sh.worksheets():
             if int(worksheet.id) == target_gid:
                 return worksheet
         
-        # Si la feuille spécifique n'est pas trouvée, utiliser la première feuille
         st.warning(f"⚠️ Feuille avec GID {target_gid} non trouvée. Utilisation de la première feuille.")
         return sh.get_worksheet(0)
         
@@ -2465,10 +2467,8 @@ def find_table_range(worksheet, num_columns=8):
         all_data = worksheet.get_all_values()
         
         if not all_data:
-            # Pour la production, toutes les feuilles ont 8 colonnes
             return "A1:H1"
         
-        # Déterminer les headers selon le nombre de colonnes (8 colonnes pour la production)
         headers = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
         
         first_row = all_data[0] if all_data else []
@@ -2522,10 +2522,8 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.warning("⏸️ Import annulé - Document ignoré")
             return True, "Document ignoré (doublon)"
         
-        # Afficher l'aperçu des données à enregistrer
         st.info(f"📋 **Aperçu des données à enregistrer (lignes avec quantité > 0):**")
         
-        # Définir les colonnes selon le type de document (8 colonnes pour la production)
         if "FACTURE" in document_type.upper():
             columns = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
         else:
@@ -2534,7 +2532,6 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         preview_df = pd.DataFrame(new_rows, columns=columns)
         st.dataframe(preview_df, use_container_width=True)
         
-        # Pour la production, toutes les feuilles ont 8 colonnes
         table_range = find_table_range(ws, num_columns=8)
         
         try:
@@ -2551,7 +2548,6 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             
             st.success(f"✅ {len(new_rows)} ligne(s) {action_msg} avec succès dans Google Sheets!")
             
-            # Utiliser le type normalisé pour l'URL
             normalized_type = normalize_document_type(document_type)
             sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={SHEET_GIDS.get(normalized_type, '')}"
             st.markdown(f'<div class="info-box">🔗 <a href="{sheet_url}" target="_blank">Ouvrir Google Sheets</a></div>', unsafe_allow_html=True)
@@ -2588,7 +2584,6 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
 # ============================================================
 st.markdown('<div class="header-container slide-in">', unsafe_allow_html=True)
 
-# Badge utilisateur avec style tech
 st.markdown(f'''
 <div class="user-info">
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 6px;">
@@ -2599,12 +2594,10 @@ st.markdown(f'''
 </div>
 ''', unsafe_allow_html=True)
 
-# Grille technologique en arrière-plan
 st.markdown('<div class="tech-grid"></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="logo-title-wrapper">', unsafe_allow_html=True)
 
-# Logo avec effet
 if os.path.exists(LOGO_FILENAME):
     st.image(LOGO_FILENAME, width=100)
 else:
@@ -2614,10 +2607,8 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Titre avec effet gradient
 st.markdown(f'<h1 class="brand-title">{BRAND_TITLE}</h1>', unsafe_allow_html=True)
 
-# Sous-titre avec badges technologiques
 st.markdown(f'''
 <div style="margin-top: 10px;">
     <span class="tech-badge">GPT-4 Vision</span>
@@ -2633,7 +2624,6 @@ st.markdown(f'''
 </p>
 ''', unsafe_allow_html=True)
 
-# Indicateurs de statut
 col1, col2, col3 = st.columns(3)
 with col1:
     st.markdown(f'<div style="text-align: center; color: #1A1A1A !important;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
@@ -2674,7 +2664,6 @@ uploaded = st.file_uploader(
 )
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Indicateur de compatibilité
 st.markdown(f"""
 <div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: #333333 !important;">
     <div style="text-align: center;">
@@ -2722,16 +2711,13 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.nom_magasin_ulys = ""
     st.session_state.fact_manuscrit = ""
     
-    # Barre de progression avec style tech
     progress_container = st.empty()
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
         st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.2</h3>', unsafe_allow_html=True)
-        # Texte en noir comme demandé
         st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision amélioré...</p>', unsafe_allow_html=True)
         
-        # Barre de progression animée
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -2768,23 +2754,19 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Traitement OCR avec système amélioré V1.2
     try:
         buf = BytesIO()
         st.session_state.uploaded_image.save(buf, format="JPEG")
         image_bytes = buf.getvalue()
         
-        # Prétraitement de l'image
         img_processed = preprocess_image(image_bytes)
         
-        # ANALYSE AMÉLIORÉE V1.2 avec vérification de cohérence
         result = analyze_document_with_backup(img_processed)
         
         if result:
             raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
             document_subtype = result.get("document_subtype", "").upper()
             
-            # Déterminer le type final
             if document_subtype == "DLP":
                 final_doc_type = "BDC LEADERPRICE"
             elif document_subtype == "S2M":
@@ -2794,18 +2776,14 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             elif document_subtype == "FACTURE":
                 final_doc_type = "FACTURE EN COMPTE"
             else:
-                # Fallback à l'ancienne méthode
                 final_doc_type = normalize_document_type(raw_doc_type)
             
             st.session_state.detected_document_type = final_doc_type
             
-            # CORRECTION MANUELLE SI NÉCESSAIRE
             if st.session_state.document_analysis_details:
-                # Une correction a été appliquée
                 correction = st.session_state.document_analysis_details
                 st.info(f"⚠️ Correction appliquée: {correction.get('original_type')} → {correction.get('adjusted_type')}")
             
-            # Afficher le FACT manuscrit extrait
             fact_manuscrit = result.get("fact_manuscrit", "")
             if fact_manuscrit and document_subtype in ["DLP", "S2M", "ULYS"]:
                 st.success(f"✅ FACT manuscrit détecté: {fact_manuscrit}")
@@ -2814,24 +2792,20 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             st.session_state.show_results = True
             st.session_state.processing = False
             
-            # Préparer les données standardisées avec les nouvelles colonnes
             if "articles" in result:
                 std_data = []
                 for article in result["articles"]:
                     raw_name = article.get("article_brut", article.get("article", ""))
                     
-                    # Filtrer les catégories (lignes qui ne sont pas des produits)
                     if any(cat in raw_name.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE"]):
-                        # C'est une catégorie, on la garde mais on ne la standardise pas
                         std_data.append({
                             "Produit Brute": raw_name,
-                            "Produit Standard": raw_name,  # Garder tel quel
+                            "Produit Standard": raw_name,
                             "Quantité": 0,
                             "Confiance": "0%",
                             "Auto": False
                         })
                     else:
-                        # C'est un produit, on le standardise
                         produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
                         
                         std_data.append({
@@ -2839,10 +2813,9 @@ if uploaded and uploaded != st.session_state.uploaded_file:
                             "Produit Standard": produit_standard,
                             "Quantité": article.get("quantite", 0),
                             "Confiance": f"{confidence*100:.1f}%",
-                            "Auto": confidence >= 0.7  # True si confiance élevée
+                            "Auto": confidence >= 0.7
                         })
                 
-                # Créer le dataframe standardisé pour l'édition
                 st.session_state.edited_standardized_df = pd.DataFrame(std_data)
             
             progress_container.empty()
@@ -2862,7 +2835,6 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>👁️ Aperçu du document analysé</h4>', unsafe_allow_html=True)
     
-    # Ajouter un effet de cadre moderne
     col_img, col_info = st.columns([2, 1])
     
     with col_img:
@@ -2889,7 +2861,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
     
-    # SECTION DÉBUGAGE V1.2 (optionnelle)
     with st.expander("🔍 Analyse de détection V1.2 (debug)"):
         st.write("**Type brut détecté par l'IA:**", result.get("type_document", "Non détecté"))
         st.write("**Sous-type détecté:**", result.get("document_subtype", "Non détecté"))
@@ -2899,7 +2870,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         if st.session_state.document_analysis_details:
             st.write("**Corrections appliquées:**", st.session_state.document_analysis_details)
         
-        # Afficher la détection par texte
         if st.session_state.ocr_raw_text:
             detection = detect_document_type_from_text(st.session_state.ocr_raw_text)
             st.write("**Détection par texte:**")
@@ -2912,12 +2882,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             if st.session_state.nom_magasin_ulys:
                 st.write(f"- Nom magasin ULYS extrait: {st.session_state.nom_magasin_ulys}")
             
-            # Extraire et afficher le FACT manuscrit du texte
             fact_extrait = extract_fact_number_from_handwritten(st.session_state.ocr_raw_text)
             if fact_extrait:
                 st.write(f"- FACT manuscrit extrait du texte: {fact_extrait}")
     
-    # Message de succès avec style tech
     st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
     st.markdown(f'''
     <div style="display: flex; align-items: start; gap: 15px;">
@@ -2931,7 +2899,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     ''', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Titre du mode détecté avec icône tech
     icon_map = {
         "FACTURE": "📄",
         "BDC": "📋",
@@ -2950,24 +2917,20 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     )
     
     # ========================================================
-    # INFORMATIONS EXTRAITES - AVEC CHANGEMENT: N° BDC → FACT
+    # INFORMATIONS EXTRAITES - AVEC CHANGEMENTS APPLIQUÉS
     # ========================================================
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>📋 Informations extraites</h4>', unsafe_allow_html=True)
     
-    # Afficher les informations selon le type de document
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
             
-            # NOUVELLE FONCTIONNALITÉ: Sélecteur avec suggestions pour le client
             client_options = ["ULYS", "S2M", "DLP", "Autre"]
             
-            # Déterminer la valeur par défaut basée sur le type détecté
             extracted_client = result.get("client", "")
             
-            # Si DLP, S2M ou ULYS détecté, forcer la valeur
             document_subtype = result.get("document_subtype", "").upper()
             if document_subtype == "DLP":
                 extracted_client = "DLP"
@@ -2976,15 +2939,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             elif document_subtype == "ULYS":
                 extracted_client = "ULYS"
             
-            # Essayer de mapper le client extrait aux options
             mapped_client = map_client(extracted_client)
-            default_index = 3  # Par défaut "Autre"
+            default_index = 3
             if mapped_client in client_options:
                 default_index = client_options.index(mapped_client)
             elif extracted_client in client_options:
                 default_index = client_options.index(extracted_client)
             
-            # Sélecteur avec options
             client_choice = st.selectbox(
                 "Sélectionnez le client",
                 options=client_options,
@@ -2993,7 +2954,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 label_visibility="collapsed"
             )
             
-            # Si "Autre" est sélectionné, afficher un champ de texte
             if client_choice == "Autre":
                 client = st.text_input("Autre client", value=extracted_client, key="facture_client_other")
             else:
@@ -3007,8 +2967,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         with col2:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
             adresse = st.text_input("", value=result.get("adresse_livraison", ""), key="facture_adresse", label_visibility="collapsed")
+            
+            # CORRECTION 1: Afficher la date extraite avec format JJ/MM/AAAA
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
-            date = st.text_input("", value=result.get("date", ""), key="facture_date", label_visibility="collapsed")
+            date_extracted = result.get("date", "")
+            date_formatted = format_date_french(date_extracted)  # Formater en JJ/MM/AAAA
+            date = st.text_input("", value=date_formatted, key="facture_date", label_visibility="collapsed")
+            
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Mois</div>', unsafe_allow_html=True)
             mois = st.text_input("", value=result.get("mois", get_month_from_date(result.get("date", ""))), key="facture_mois", label_visibility="collapsed")
         
@@ -3017,7 +2982,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             "numero_facture": numero_facture,
             "bon_commande": bon_commande,
             "adresse_livraison": adresse,
-            "date": date,
+            "date": date,  # Date formatée en JJ/MM/AAAA
             "mois": mois
         }
     
@@ -3026,13 +2991,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         with col1:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
             
-            # NOUVELLE FONCTIONNALITÉ: Sélecteur avec suggestions pour le client
             client_options = ["ULYS", "S2M", "DLP", "Autre"]
             
-            # Déterminer la valeur par défaut basée sur le type détecté
             extracted_client = result.get("client", "")
             
-            # Si DLP, S2M ou ULYS détecté, forcer la valeur
             document_subtype = result.get("document_subtype", "").upper()
             if document_subtype == "DLP":
                 extracted_client = "DLP"
@@ -3041,15 +3003,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             elif document_subtype == "ULYS":
                 extracted_client = "ULYS"
             
-            # Essayer de mapper le client extrait aux options
             mapped_client = map_client(extracted_client)
-            default_index = 0  # Par défaut ULYS pour les BDC
+            default_index = 0
             if mapped_client in client_options:
                 default_index = client_options.index(mapped_client)
             elif extracted_client in client_options:
                 default_index = client_options.index(extracted_client)
             
-            # Sélecteur avec options
             client_choice = st.selectbox(
                 "Sélectionnez le client",
                 options=client_options,
@@ -3058,20 +3018,16 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 label_visibility="collapsed"
             )
             
-            # Si "Autre" est sélectionné, afficher un champ de texte
             if client_choice == "Autre":
                 client = st.text_input("Autre client", value=extracted_client, key="bdc_client_other")
             else:
                 client = client_choice
             
-            # CHANGEMENT: N° BDC → FACT
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">FACT</div>', unsafe_allow_html=True)
             
-            # FORCER l'utilisation du fact manuscrit
             fact_manuscrit = result.get("fact_manuscrit", "")
             numero_standard = result.get("numero", "")
             
-            # Priorité absolue au fact manuscrit
             if fact_manuscrit:
                 numero_a_afficher = fact_manuscrit
                 st.info(f"🔍 FACT manuscrit détecté: {fact_manuscrit}")
@@ -3085,24 +3041,25 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                                   help="Numéro manuscrit extrait après 'F' ou 'Fact' (peut être vide si non trouvé)")
         
         with col2:
+            # CORRECTION 1: Afficher la date extraite avec format JJ/MM/AAAA
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
-            date = st.text_input("", value=result.get("date", ""), key="bdc_date", label_visibility="collapsed")
+            date_extracted = result.get("date", "")
+            date_formatted = format_date_french(date_extracted)  # Formater en JJ/MM/AAAA
+            date = st.text_input("", value=date_formatted, key="bdc_date", label_visibility="collapsed")
+            
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
             
-            # Afficher l'adresse selon le type détecté
             adresse_value = result.get("adresse_livraison", "")
             
-            # Si DLP, forcer "Score Tanjombato"
+            # CORRECTION 2: FORCER "Leader Price Akadimbahoaka" pour DLP
             if document_subtype == "DLP":
-                adresse_value = "Score Tanjombato"
-            # Si S2M, utiliser le format nettoyé
+                adresse_value = "Leader Price Akadimbahoaka"  # CORRECTION APPLIQUÉE
             elif document_subtype == "S2M":
                 quartier = st.session_state.quartier_s2m or ""
                 if quartier:
                     adresse_value = clean_adresse(f"Supermaki {quartier}")
                 else:
                     adresse_value = clean_adresse(adresse_value) if adresse_value else "Supermaki"
-            # Si ULYS, utiliser le nom du magasin
             elif document_subtype == "ULYS":
                 nom_magasin = st.session_state.nom_magasin_ulys or ""
                 if nom_magasin:
@@ -3114,14 +3071,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         
         data_for_sheets = {
             "client": client,
-            "numero": numero,  # C'est maintenant le FACT
-            "date": date,
+            "numero": numero,
+            "date": date,  # Date formatée en JJ/MM/AAAA
             "adresse_livraison": adresse
         }
     
     st.session_state.data_for_sheets = data_for_sheets
     
-    # Indicateur de validation amélioré
     fields_filled = sum([1 for v in data_for_sheets.values() if str(v).strip()])
     total_fields = len(data_for_sheets)
     
@@ -3143,24 +3099,19 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # TABLEAU STANDARDISÉ ÉDITABLE - FILTRE 1 appliqué automatiquement
+    # TABLEAU STANDARDISÉ ÉDITABLE
     # ========================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
         st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
         st.markdown('<h4>📘 Standardisation des Produits</h4>', unsafe_allow_html=True)
         
-        # Instructions avec mention des filtres
         st.markdown(f"""
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
             <small style="color: #1A1A1A !important;">
-            💡 <strong>Mode édition activé avec filtres :</strong> 
-            • <strong>info 1:</strong> Les produits ont été reconnus automatiquement<br>
-            • <strong>info 2:</strong> Les quantités à 0 seront ignorées<br>
-            • <strong>info 3:</strong> Les doublons sont détectés automatiquement<br>
-            • <strong>NOUVEAU 1:</strong> Les quantités sont FORCÉES en nombres ENTIERS (pas de virgules)<br>
-            • <strong>NOUVEAU 2:</strong> Le champ Client a maintenant des suggestions (ULYS, S2M, DLP)<br>
-            • <strong>AMÉLIORATION:</strong> Détection précise DLP/S2M/ULYS avec valeurs forcées<br>
-            • <strong>CHANGEMENT IMPORTANT:</strong> "N° BDC" est maintenant "FACT" (numéro manuscrit)<br>
+            💡 <strong>Mode édition activé avec améliorations :</strong> 
+            • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
+            • <strong>Amélioration 2:</strong> Liste de produits étendue avec meilleure détection des fautes d'orthographe<br>
+            • <strong>Amélioration 3:</strong> Détection améliorée pour Aperao Peche, Côteau d'Ambalavao Special, etc.<br>
             • Colonne "Produit Brute" : texte original extrait par l'IA de Chanfoui AI<br>
             • Colonne "Produit Standard" : standardisé automatiquement par Chafoui AI (éditable)<br>
             • <strong>Note :</strong> Veuillez prendre la photo le plus près possible du document et avec une netteté maximale.
@@ -3168,7 +3119,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         </div>
         """, unsafe_allow_html=True)
         
-        # Afficher un avertissement pour les lignes avec quantité 0
         df_with_zero_qty = st.session_state.edited_standardized_df[
             (st.session_state.edited_standardized_df["Quantité"] == 0) | 
             (st.session_state.edited_standardized_df["Quantité"].isna())
@@ -3177,7 +3127,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         if len(df_with_zero_qty) > 0:
             st.warning(f"⚠️ **Attention :** {len(df_with_zero_qty)} ligne(s) avec quantité 0 seront automatiquement supprimées lors de l'export")
         
-        # Éditeur de données avec les nouvelles colonnes
         edited_df = st.data_editor(
             st.session_state.edited_standardized_df,
             num_rows="dynamic",
@@ -3196,8 +3145,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     "Quantité",
                     min_value=0,
                     help="Quantité commandée (lignes avec 0 seront supprimées à l'export) - FORCÉ EN ENTIER",
-                    format="%d",  # Format entier
-                    step=1  # Forcer l'incrément à 1
+                    format="%d",
+                    step=1
                 ),
                 "Confiance": st.column_config.TextColumn(
                     "Confiance",
@@ -3213,16 +3162,13 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             key="standardized_data_editor"
         )
         
-        # Forcer les quantités à être des entiers dans le dataframe
         if "Quantité" in edited_df.columns:
             edited_df["Quantité"] = edited_df["Quantité"].apply(
                 lambda x: int(round(float(x))) if pd.notna(x) else 0
             )
         
-        # Mettre à jour le dataframe édité
         st.session_state.edited_standardized_df = edited_df
         
-        # Afficher les statistiques
         total_items = len(edited_df)
         auto_standardized = edited_df["Auto"].sum() if "Auto" in edited_df.columns else 0
         items_with_qty = len(edited_df[edited_df["Quantité"] > 0])
@@ -3259,18 +3205,14 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 unsafe_allow_html=True
             )
         
-        # Bouton pour forcer la re-standardisation
         if st.button("🔄 Re-standardiser tous les produits", 
                     key="restandardize_button",
                     help="Appliquer la standardisation intelligente à tous les produits"):
-            # Réappliquer la standardisation
             new_data = []
             for _, row in edited_df.iterrows():
                 produit_brut = row["Produit Brute"]
                 
-                # Vérifier si c'est une catégorie
                 if any(cat in produit_brut.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE", "122111", "122112", "122113"]):
-                    # Garder les catégories telles quelles
                     new_data.append({
                         "Produit Brute": produit_brut,
                         "Produit Standard": produit_brut,
@@ -3279,7 +3221,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                         "Auto": False
                     })
                 else:
-                    # Standardiser les produits
                     produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(produit_brut)
                     
                     new_data.append({
@@ -3296,30 +3237,28 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ============================================================
-    # TEST DE STANDARDISATION ULYS - FILTRE 2 test
+    # TEST DE STANDARDISATION AMÉLIORÉE
     # ============================================================
-    with st.expander("🧪 Tester la standardisation ULYS (Filtre 2)"):
-        # Exemples de test avec focus sur FILTRE 2
+    with st.expander("🧪 Tester la standardisation améliorée"):
         test_examples = [
-            "CONS. CHAN FOUI 75CL",
-            "CONS. CHAN FOUL 75CL",
-            "CONS CHAN FOUI 75CL",
-            "CONS CHAN FOUL 75CL",
-            "CONS.CHAN FOUI 75CL",  # Nouveau test
-            "CONS.CHAN FOUL 75CL",  # Nouveau test
-            "VIN ROUGE COTE DE FIANAR 3L",
-            "VIN ROUGE COTE DE FIANARA 750ML NU",
-            "VIN BLANC COTE DE FIANAR 3L",
-            "VIN BLANC DOUX MAROPARASY 750ML NU",
-            "VIN BLANC COTE DE FIANARA 750ML NU",
-            "VIN GRIS COTE DE FIANARA 750ML NU",
-            "VIN ROUGE DOUX MAROPARASY 750ML NU",
-            "COTE DE FIANAR 3L",
-            "MAROPARASY 750ML",
-            "VIN ROUGE COTE DE FLANAR 3L",
+            "Coteau d'Ambalavao Rouge",
+            "Coteau d'Ambalavao Rouge 75cl",
+            "Côteau d'Ambalavao Rouge",
+            "Coteau d Ambalavao Rouge",
+            "Coteau d'ambalavao rouge",
+            "Côte de Fianar Gris 3L",
+            "Cote de Fianar Gris 3L",
+            "Aperao Peche 37 cl",
+            "Aperao Peche 37cl",
+            "Côteau d'Ambalavao Special 75cl",
+            "Coteau d'Ambalavao Special 75cl",
+            "Consignation Btl 75cl",
+            "Jus de raisin Rouge 70 cl",
+            "Jus de raisin Blanc 20 cl",
+            "Rhum Sambatra 20 cl"
         ]
         
-        if st.button("Tester les filtres avec des exemples typiques ULYS"):
+        if st.button("Tester les améliorations de standardisation"):
             results = []
             for example in test_examples:
                 produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(example)
@@ -3333,16 +3272,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             test_df = pd.DataFrame(results)
             st.dataframe(test_df, use_container_width=True)
             
-            # Vérification spécifique du FILTRE 2
-            filter2_test = test_df[test_df["Produit Brute"].str.contains("CHAN FOUI|CHAN FOUL", case=False, na=False)]
-            if not filter2_test.empty:
-                st.info(f"**Filtre 2 testé:** 'CONS. CHAN FOUI 75CL' → '{filter2_test.iloc[0]['Produit Standard']}'")
-            
-            # Calculer l'accuracy
             perfect_matches = sum(1 for _, row in test_df.iterrows() 
                                 if float(row["Confiance"].replace('%', '')) >= 85.0 and row["Statut"] == "matched")
             accuracy = (perfect_matches / len(test_df)) * 100
-            st.success(f"📈 Précision pour ULYS : {accuracy:.1f}%")
+            st.success(f"📈 Précision améliorée : {accuracy:.1f}%")
+            
+            # Vérification spécifique de la conversion demandée
+            conversion_test = test_df[test_df["Produit Brute"].str.contains("Coteau.*Rouge", case=False, na=False)]
+            if not conversion_test.empty:
+                st.info(f"**Conversion testée:** 'Coteau d'Ambalavao Rouge' → '{conversion_test.iloc[0]['Produit Standard']}'")
     
     # ============================================================
     # BOUTON D'EXPORT PAR DÉFAUT
@@ -3350,24 +3288,21 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
-    # Informations sur l'export avec mention des filtres
     st.markdown(f"""
     <div class="info-box">
         <strong style="color: #1A1A1A !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
         <strong style="color: #1A1A1A !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
         <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
         <strong style="color: #1A1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: #1A1A1A !important;">⚠️ Filtres actifs :</strong> 
-        • Suppression lignes quantité 0 | • Standardisation "Chan Foui 75cl" | • Détection doublons BDC<br>
-        <strong style="color: #1A1A1A !important;">✨ NOUVEAUTÉS V1.2 :</strong>
-        • Quantités FORCÉES en entiers | • Suggestions client (ULYS/S2M/DLP)<br>
-        • Détection précise DLP/S2M/ULYS | • Valeurs forcées pour Client/Adresse<br>
-        • <strong>CHANGEMENT:</strong> "N° BDC" → "FACT" (numéro manuscrit après F/Fact)<br>
-        • Adresse S2M nettoyée automatiquement
+        <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES :</strong><br>
+        • <strong>Correction 1:</strong> Date extraite formatée JJ/MM/AAAA (pas la date du scan)<br>
+        • <strong>Correction 2:</strong> Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
+        • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
+        • <strong>Amélioration 2:</strong> Bibliothèque de produits étendue et améliorée<br>
+        • <strong>Amélioration 3:</strong> Meilleure détection des fautes d'orthographe
     </div>
     """, unsafe_allow_html=True)
     
-    # Bouton d'export avec style tech
     col_btn, col_info = st.columns([2, 1])
     
     with col_btn:
@@ -3384,25 +3319,22 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
             <div style="font-size: 1.5rem; color: #3B82F6 !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Version V1.2 active</div>
+            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Améliorations activées</div>
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ============================================================
-    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT - FILTRE 3
+    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
     # ============================================================
     if st.session_state.export_triggered and st.session_state.export_status is None:
         with st.spinner("🔍 Analyse des doublons en cours ..."):
-            # Normaliser le type de document
             normalized_doc_type = normalize_document_type(doc_type)
             
-            # Obtenir la feuille Google Sheets
             ws = get_worksheet(normalized_doc_type)
             
             if ws:
-                # Vérifier les doublons avec la même logique pour BDC et factures
                 duplicate_found, duplicates = check_for_duplicates(
                     normalized_doc_type,
                     st.session_state.data_for_sheets,
@@ -3423,12 +3355,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.export_status = "error"
     
     # ============================================================
-    # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS - FILTRE 3
+    # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
     # ============================================================
     if st.session_state.export_status == "duplicates_found":
         st.markdown('<div class="duplicate-box fade-in">', unsafe_allow_html=True)
         
-        # En-tête avec icône
         st.markdown(f'''
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
             <div style="font-size: 2rem; color: #F59E0B !important;">⚠️</div>
@@ -3439,7 +3370,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         </div>
         ''', unsafe_allow_html=True)
         
-        # Détails du document
         if "FACTURE" in doc_type.upper():
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
@@ -3465,7 +3395,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         
         st.markdown(f'<div style="color: #1A1A1A !important; margin-bottom: 10px; font-weight: 600;">Sélectionnez une action :</div>', unsafe_allow_html=True)
         
-        # Boutons d'action avec style tech
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -3499,19 +3428,17 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ============================================================
-    # EXPORT EFFECTIF DES DONNÉES - FILTRE 1 appliqué ici
+    # EXPORT EFFECTIF DES DONNÉES
     # ============================================================
     if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
         if st.session_state.export_status == "no_duplicates":
             st.session_state.duplicate_action = "add_new"
         
-        # Préparer le dataframe pour l'export
         export_df = st.session_state.edited_standardized_df.copy()
         
-        # FILTRE 1: Afficher le nombre de lignes qui seront supprimées
         zero_qty_rows = export_df[export_df["Quantité"] == 0]
         if len(zero_qty_rows) > 0:
-            st.info(f"⚠️ **Filtre 1 actif :** {len(zero_qty_rows)} ligne(s) avec quantité 0 seront automatiquement exclues de l'export")
+            st.info(f"⚠️ {len(zero_qty_rows)} ligne(s) avec quantité 0 seront automatiquement exclues de l'export")
         
         try:
             success, message = save_to_google_sheets(
@@ -3524,21 +3451,17 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             
             if success:
                 st.session_state.export_status = "completed"
-                # Afficher un message de succès stylé avec mention des filtres
                 st.markdown("""
                 <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white !important; border-radius: 18px; text-align: center; margin: 20px 0;">
                     <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
                     <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
                     <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
                     <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
-                        ✓ Filtre 1: Lignes quantité 0 supprimées<br>
-                        ✓ Filtre 2: Standardisation Chan Foui appliquée<br>
-                        ✓ Filtre 3: Détection doublons BDC activée<br>
-                        ✓ <strong>NOUVEAU 1:</strong> Quantités en entiers sans virgule<br>
-                        ✓ <strong>NOUVEAU 2:</strong> Suggestions client (ULYS/S2M/DLP)<br>
-                        ✓ <strong>AMÉLIORATION:</strong> Détection précise DLP/S2M/ULYS<br>
-                        ✓ <strong>CHANGEMENT:</strong> "N° BDC" → "FACT" manuscrit<br>
-                        ✓ <strong>AMÉLIORATION:</strong> Adresse S2M nettoyée automatiquement
+                        ✓ Correction 1: Date formatée JJ/MM/AAAA (extraite du document)<br>
+                        ✓ Correction 2: Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
+                        ✓ Amélioration 1: Standardisation "Coteau d'Ambalavao Rouge" appliquée<br>
+                        ✓ Amélioration 2: Bibliothèque de produits étendue<br>
+                        ✓ Amélioration 3: Meilleure détection des fautes d'orthographe
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -3551,36 +3474,59 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.session_state.export_status = "error"
     
     # ============================================================
-    # BOUTONS DE NAVIGATION
+    # BOUTONS DE NAVIGATION - AMÉLIORATION DU BOUTON "NOUVEAU DOCUMENT"
     # ============================================================
     if st.session_state.document_scanned:
         st.markdown("---")
         
-        # Section de navigation avec style tech
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<h4>🧭 Navigation</h4>', unsafe_allow_html=True)
         
         col_nav1, col_nav2 = st.columns(2)
         
         with col_nav1:
+            # AMÉLIORATION 4: BOUTON "NOUVEAU DOCUMENT" AVEC FONCTIONNALITÉS AMÉLIORÉES
             if st.button("📄 Nouveau document", 
                         use_container_width=True, 
                         type="secondary",
                         key="new_doc_main_nav",
-                        help="Scanner un nouveau document"):
+                        help="Effacer toutes les informations et revenir au début"):
+                # a. Supprimer toutes les informations extraites
+                st.session_state.ocr_result = None
+                st.session_state.data_for_sheets = None
+                st.session_state.edited_standardized_df = None
+                st.session_state.product_matching_scores = {}
+                
+                # b. Supprimer l'aperçu du document analysé
                 st.session_state.uploaded_file = None
                 st.session_state.uploaded_image = None
-                st.session_state.ocr_result = None
+                st.session_state.image_preview_visible = False
+                
+                # c. Réinitialiser les autres états
                 st.session_state.show_results = False
                 st.session_state.detected_document_type = None
                 st.session_state.duplicate_check_done = False
                 st.session_state.duplicate_found = False
                 st.session_state.duplicate_action = None
-                st.session_state.image_preview_visible = False
                 st.session_state.document_scanned = False
                 st.session_state.export_triggered = False
                 st.session_state.export_status = None
-                st.session_state.product_matching_scores = {}
+                st.session_state.ocr_raw_text = None
+                st.session_state.document_analysis_details = {}
+                st.session_state.quartier_s2m = ""
+                st.session_state.nom_magasin_ulys = ""
+                st.session_state.fact_manuscrit = ""
+                
+                # Forcer le scroll vers le haut
+                st.markdown(
+                    """
+                    <script>
+                        window.scrollTo(0, 0);
+                    </script>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
                 st.rerun()
         
         with col_nav2:
@@ -3618,21 +3564,18 @@ if st.button("🔒 Déconnexion sécurisée",
     logout()
 
 # ============================================================
-# FOOTER - SOLUTION STREAMLIT NATIVE AMÉLIORÉE
+# FOOTER
 # ============================================================
 st.markdown("---")
 
-# Créer un conteneur stylé
 with st.container():
-    # Espacement
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
     
-    # Première ligne : Icônes
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown(f"<center style='color: #1A1A1A !important;'>🤖</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision V1.2</small></center>", unsafe_allow_html=True)
+        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision Amélioré</small></center>", unsafe_allow_html=True)
     
     with col2:
         st.markdown(f"<center style='color: #1A1A1A !important;'>⚡</center>", unsafe_allow_html=True)
@@ -3642,32 +3585,26 @@ with st.container():
         st.markdown(f"<center style='color: #1A1A1A !important;'>🔒</center>", unsafe_allow_html=True)
         st.markdown(f"<center><small style='color: #4B5563 !important;'>Secure Cloud</small></center>", unsafe_allow_html=True)
     
-    # Deuxième ligne : Titre
     st.markdown(f"""
     <center style='margin: 15px 0;'>
         <span style='font-weight: 700; color: #27414A !important;'>{BRAND_TITLE}</span>
-        <span style='color: #4B5563 !important;'> • Système IA V1.2 • © {datetime.now().strftime("%Y")}</span>
+        <span style='color: #4B5563 !important;'> • Système IA Amélioré • © {datetime.now().strftime("%Y")}</span>
     </center>
     """, unsafe_allow_html=True)
     
-    # Troisième ligne : Statut avec mention des filtres
     st.markdown(f"""
     <center style='font-size: 0.8rem; color: #4B5563 !important;'>
         <span style='color: #10B981 !important;'>●</span> 
         Système actif • Session : 
         <strong style='color: #1A1A1A !important;'>{st.session_state.username}</strong>
-        • Filtres actifs • {datetime.now().strftime("%H:%M:%S")}
+        • Améliorations activées • {datetime.now().strftime("%H:%M:%S")}
     </center>
     """, unsafe_allow_html=True)
     
-    # Quatrième ligne : Nouvelles fonctionnalités
     st.markdown(f"""
     <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
-        <strong>✨ NOUVEAUTÉS V1.2 :</strong> "N° BDC" → "FACT" manuscrit • Adresse S2M nettoyée
+        <strong>✨ AMÉLIORATIONS APPLIQUÉES :</strong> Date JJ/MM/AAAA • Adresse DLP corrigée • Standardisation améliorée
     </center>
     """, unsafe_allow_html=True)
     
-    # Espacement final
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-
