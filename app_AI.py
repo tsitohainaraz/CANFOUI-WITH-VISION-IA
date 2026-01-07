@@ -2161,82 +2161,110 @@ def guess_document_type_from_text(text: str) -> Dict:
             return {"type_document": "FACTURE", "document_subtype": "FACTURE", "articles": []}
         else:
             return {"type_document": "BDC", "document_subtype": "UNKNOWN", "fact_manuscrit": fact_manuscrit, "numero": fact_manuscrit, "articles": []}
-
+#=============================================================
 def analyze_document_with_backup(image_bytes: bytes) -> Dict:
     """Analyse le document avec vérification de cohérence - VERSION MISE À JOUR"""
+    
     result = openai_vision_ocr_improved(image_bytes)
     
     if not result:
         return {"type_document": "DOCUMENT INCONNU", "articles": []}
-    
-    if st.session_state.ocr_raw_text:
-        if result.get("type_document") == "BDC":
-            fact_manuscrit = extract_fact_number_from_handwritten(st.session_state.ocr_raw_text)
-            
-            if fact_manuscrit and not result.get("fact_manuscrit"):
-                result["fact_manuscrit"] = fact_manuscrit
-                result["numero"] = fact_manuscrit
-                
-                st.session_state.document_analysis_details = {
-                    "action": "Fact manuscrit extrait du texte brut",
-                    "fact": fact_manuscrit
-                }
+
+    ocr_text = st.session_state.ocr_raw_text or ""
+
+    # ============================================================
+    # 1. CAS BDC : extraction numéro manuscrit
+    # ============================================================
+    if ocr_text and result.get("type_document") == "BDC":
+        fact_manuscrit = extract_fact_number_from_handwritten(ocr_text)
         
-        # NOUVELLE VÉRIFICATION: Extraire doit_m depuis le texte brut si manquant
-        if result.get("type_document") == "FACTURE":
-            doit_m_from_text = extract_motel_name_from_doit(st.session_state.ocr_raw_text)
-            if doit_m_from_text and not result.get("doit_m"):
+        if fact_manuscrit and not result.get("fact_manuscrit"):
+            result["fact_manuscrit"] = fact_manuscrit
+            result["numero"] = fact_manuscrit
+            
+            st.session_state.document_analysis_details = {
+                "action": "Fact manuscrit extrait du texte brut",
+                "fact": fact_manuscrit
+            }
+
+    # ============================================================
+    # 2. CAS FACTURE : règle métier DOIT M (VERSION SÉCURISÉE)
+    # ============================================================
+    if ocr_text and result.get("type_document") == "FACTURE":
+        client_upper = result.get("client", "").upper()
+        adresse_upper = result.get("adresse_livraison", "").upper()
+
+        clients_bloques = ["DLP", "ULYS", "S2M"]
+
+        # Appliquer UNIQUEMENT pour autres clients
+        if client_upper not in clients_bloques:
+            doit_m_from_text = extract_motel_name_from_doit(ocr_text)
+
+            # 🔥 On corrige seulement si :
+            # - DOIT M existe
+            # - adresse absente OU adresse générique (MGTE)
+            if doit_m_from_text and (
+                not result.get("adresse_livraison")
+                or "MGTE" in adresse_upper
+            ):
                 result["doit_m"] = doit_m_from_text
-                
-                # Appliquer la règle si client n'est pas DLP, ULYS, S2M
-                client_value = result.get("client", "").upper()
-                if client_value not in ["DLP", "ULYS", "S2M"]:
-                    result["client"] = doit_m_from_text
-                    result["adresse_livraison"] = doit_m_from_text
-    
-    if st.session_state.ocr_raw_text:
-        text_detection = detect_document_type_from_text(st.session_state.ocr_raw_text)
+                result["client"] = doit_m_from_text
+                result["adresse_livraison"] = doit_m_from_text
+
+    # ============================================================
+    # 3. CONTRÔLE CROISÉ : détection par TEXTE vs IA
+    # ============================================================
+    if ocr_text:
+        text_detection = detect_document_type_from_text(ocr_text)
         
         ai_subtype = result.get("document_subtype", "").upper()
         text_type = text_detection["type"]
-        
-        if ai_subtype != text_type and text_type != "UNKNOWN":
+
+        if text_type != "UNKNOWN" and ai_subtype != text_type:
             st.session_state.document_analysis_details = {
                 "original_type": ai_subtype,
                 "adjusted_type": text_type,
                 "reason": "Contradiction détectée: détection par texte plus fiable",
                 "indicators": text_detection["indicators_found"]
             }
-            
+
             if text_type == "DLP":
+                result["type_document"] = "BDC"
                 result["document_subtype"] = "DLP"
                 result["client"] = "DLP"
                 result["adresse_livraison"] = "Leader Price Akadimbahoaka"
+
             elif text_type == "S2M":
+                result["type_document"] = "BDC"
                 result["document_subtype"] = "S2M"
                 result["client"] = "S2M"
                 quartier = st.session_state.quartier_s2m or ""
-                result["adresse_livraison"] = clean_adresse(f"Supermaki {quartier}" if quartier else "Supermaki")
+                result["adresse_livraison"] = clean_adresse(
+                    f"Supermaki {quartier}" if quartier else "Supermaki"
+                )
+
             elif text_type == "ULYS":
+                result["type_document"] = "BDC"
                 result["document_subtype"] = "ULYS"
                 result["client"] = "ULYS"
                 nom_magasin = st.session_state.nom_magasin_ulys or ""
                 result["adresse_livraison"] = nom_magasin if nom_magasin else "ULYS Magasin"
+
             elif text_type == "FACTURE":
-                result["document_subtype"] = "FACTURE"
                 result["type_document"] = "FACTURE"
-                
-                # Appliquer la règle doit_m si nécessaire
-                doit_m_from_text = extract_motel_name_from_doit(st.session_state.ocr_raw_text)
-                if doit_m_from_text:
-                    client_value = result.get("client", "").upper()
-                    if client_value not in ["DLP", "ULYS", "S2M"]:
+                result["document_subtype"] = "FACTURE"
+
+                # Réappliquer proprement la règle DOIT M
+                client_upper = result.get("client", "").upper()
+                if client_upper not in ["DLP", "ULYS", "S2M"]:
+                    doit_m_from_text = extract_motel_name_from_doit(ocr_text)
+                    if doit_m_from_text:
                         result["client"] = doit_m_from_text
                         result["adresse_livraison"] = doit_m_from_text
-    
+
     return result
 
-# ============================================================
+#===============================================================
 # FONCTIONS UTILITAIRES
 # ============================================================
 def preprocess_image(b: bytes) -> bytes:
@@ -3695,3 +3723,4 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
