@@ -114,6 +114,44 @@ def extract_fact_number_from_handwritten(text: str) -> str:
     return all_matches[0]['number']
 
 # ============================================================
+# FONCTION POUR EXTRACTION DU NOM MAGASIN DEPUIS "DOIT M :"
+# ============================================================
+def extract_motel_name_from_doit(text: str) -> str:
+    """
+    Extrait le nom du magasin après "DOIT M :" pour les factures CLIENT EN COMPTE
+    lorsque le client n'est pas ULYS, DLP, S2M
+    """
+    if not text:
+        return ""
+    
+    text_upper = text.upper()
+    
+    # Chercher le motif "DOIT M :" (avec variations)
+    patterns = [
+        r'DOIT\s+M\s*:\s*(.+)',
+        r'DOIT\s+M\s*:\s*(.+?)(?:\n|$)',
+        r'DOIT\s*M\s*:\s*(.+)',
+        r'DOIT\s*:\s*(.+?)(?:\n|$)',  # Fallback pour "DOIT :"
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        if match:
+            motel_name = match.group(1).strip()
+            
+            # Nettoyer les caractères spéciaux
+            motel_name = re.sub(r'[\n\r\t]', ' ', motel_name)
+            motel_name = ' '.join(motel_name.split())
+            
+            # Retirer les espaces en trop et normaliser
+            motel_name = motel_name.strip()
+            
+            if motel_name:
+                return motel_name
+    
+    return ""
+
+# ============================================================
 # FONCTION POUR NETTOYER LE QUARTIER S2M
 # ============================================================
 def clean_quartier(quartier: str) -> str:
@@ -1032,7 +1070,7 @@ if not check_authentication():
         st.image("CF_LOGOS.png", width=90, output_format="PNG")
     else:
         st.markdown("""
-        <div style="font-size: 3rem; margin-bottom: 20px; color: #1E293B !important;">
+        <div style="font-size: 3rem; margin-bottom: 20px; color: #1A1A1A !important;">
             🍷
         </div>
         """, unsafe_allow_html=True)
@@ -1824,7 +1862,7 @@ def detect_document_type_from_text(text: str) -> Dict[str, Any]:
     return detection_result
 
 # ============================================================
-# FONCTIONS OCR AMÉLIORÉES POUR MEILLEURE DÉTECTION - V1.2
+# FONCTIONS OCR AMÉLIORÉES POUR MEILLEURE DÉTECTION - V1.3
 # ============================================================
 def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
     """Extrait les caractéristiques du texte pour aider à la détection du type de document"""
@@ -1880,7 +1918,7 @@ def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
     return features
 
 def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
-    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré pour la détection V1.2"""
+    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré pour la détection V1.3"""
     try:
         client = get_openai_client()
         if not client:
@@ -1888,7 +1926,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         
         base64_image = encode_image_to_base64(image_bytes)
         
-        # PROMPT AMÉLIORÉ AVEC CORRECTION DLP POUR ADRESSE ET AMÉLIORATIONS DEMANDÉES
+        # PROMPT AMÉLIORÉ AVEC EXTRACTION "DOIT M :"
         prompt = """
         ANALYSE CE DOCUMENT ET EXTRACT LES INFORMATIONS SUIVANTES:
 
@@ -1900,6 +1938,12 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
           prends TOUJOURS la valeur de Fact 7890 (donc 7890)
         - Si aucun "F" ou "Fact" manuscrit n'est trouvé, laisse ce champ vide
         
+        IMPORTANT RÈGLE SPÉCIALE POUR LES FACTURES:
+        - Pour les FACTURES EN COMPTE, cherche le texte après "DOIT M :" ou "DOIT M:"
+        - Ce texte contient le nom du magasin/client
+        - Exemple: "DOIT M : Motel d'Antananarivo -anosy- Antananarivo" → 
+          doit_m = "Motel d'Antananarivo -anosy- Antananarivo"
+        
         Pour TOUS les documents, extrais:
         {
             "type_document": "BDC" ou "FACTURE",
@@ -1908,6 +1952,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             "adresse_livraison": "...",
             "quartier_s2m": "...",  (uniquement si S2M: le quartier sous "SUPERMAKI")
             "nom_magasin_ulys": "...",  (uniquement si ULYS: le nom du magasin)
+            "doit_m": "...",  (uniquement si FACTURE: texte après "DOIT M :")
             "fact_manuscrit_trouve": "oui" ou "non",
             "fact_manuscrit": "...",  (le numéro exact après F ou Fact, SANS le F/Fact)
         }
@@ -1942,6 +1987,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         • FACTURE: 
           - Pour les colonnes: utiliser "Désignation" pour article_brut et "Nb bills" pour quantité
           - Si le client est "Autre client" (pas DLP, ULYS ou S2M), forcer client = adresse
+          - NOUVEAU: Si "doit_m" est présent, utiliser doit_m pour client et adresse
         
         IMPORTANT POUR LES FACTURES:
         - Utiliser la colonne "Désignation" pour les articles
@@ -1952,17 +1998,14 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         • "SUPERMAKI" = TOUJOURS S2M
         • "BON DE COMMANDE FOURNISSEUR" = TOUJOURS ULYS
         • "FACTURE EN COMPTE" = TOUJOURS FACTURE
+        • "DOIT M :" = TOUJOURS EXTRAIRE LE TEXTE APRÈS
         
-        EXEMPLE CORRECT POUR UN BDC:
-        Si tu vois "f251193" manuscrit en haut à droite → 
-        "fact_manuscrit_trouve": "oui",
-        "fact_manuscrit": "251193",
-        "numero": "251193"
-        
-        Si pas de "F" ou "Fact" manuscrit → 
-        "fact_manuscrit_trouve": "non",
-        "fact_manuscrit": "",
-        "numero": ""
+        EXEMPLE CORRECT POUR UNE FACTURE:
+        Si tu vois "DOIT M : Motel d'Antananarivo -anosy- Antananarivo" → 
+        "doit_m": "Motel d'Antananarivo -anosy- Antananarivo"
+        Si client n'est pas DLP, ULYS, S2M → 
+        "client": "Motel d'Antananarivo -anosy- Antananarivo"
+        "adresse_livraison": "Motel d'Antananarivo -anosy- Antananarivo"
         
         IMPORTANT POUR LA DATE: 
         - Extraire la date qui est écrite sur le document (facture ou BDC)
@@ -2037,13 +2080,18 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
                     else:
                         data["adresse_livraison"] = "ULYS Magasin"
                 
-                # NOUVELLE CORRECTION: Pour les factures avec "Autre client", forcer client = adresse
+                # NOUVELLE CORRECTION: Pour les factures avec "doit_m", forcer client = adresse = doit_m
                 elif document_subtype == "FACTURE":
-                    client_value = data.get("client", "")
+                    client_value = data.get("client", "").upper()
                     adresse_value = data.get("adresse_livraison", "")
+                    doit_m = data.get("doit_m", "")
                     
-                    # Si le client est "Autre" ou n'est pas DLP/ULYS/S2M, forcer client = adresse
-                    if client_value.upper() not in ["DLP", "ULYS", "S2M"]:
+                    # Si le client n'est pas DLP, ULYS, S2M et on a un doit_m
+                    if client_value not in ["DLP", "ULYS", "S2M"] and doit_m:
+                        data["client"] = doit_m
+                        data["adresse_livraison"] = doit_m
+                    # Si le client n'est pas DLP, ULYS, S2M (même sans doit_m)
+                    elif client_value not in ["DLP", "ULYS", "S2M"]:
                         data["client"] = adresse_value
                 
                 return data
@@ -2115,7 +2163,7 @@ def guess_document_type_from_text(text: str) -> Dict:
             return {"type_document": "BDC", "document_subtype": "UNKNOWN", "fact_manuscrit": fact_manuscrit, "numero": fact_manuscrit, "articles": []}
 
 def analyze_document_with_backup(image_bytes: bytes) -> Dict:
-    """Analyse le document avec vérification de cohérence"""
+    """Analyse le document avec vérification de cohérence - VERSION MISE À JOUR"""
     result = openai_vision_ocr_improved(image_bytes)
     
     if not result:
@@ -2133,6 +2181,18 @@ def analyze_document_with_backup(image_bytes: bytes) -> Dict:
                     "action": "Fact manuscrit extrait du texte brut",
                     "fact": fact_manuscrit
                 }
+        
+        # NOUVELLE VÉRIFICATION: Extraire doit_m depuis le texte brut si manquant
+        if result.get("type_document") == "FACTURE":
+            doit_m_from_text = extract_motel_name_from_doit(st.session_state.ocr_raw_text)
+            if doit_m_from_text and not result.get("doit_m"):
+                result["doit_m"] = doit_m_from_text
+                
+                # Appliquer la règle si client n'est pas DLP, ULYS, S2M
+                client_value = result.get("client", "").upper()
+                if client_value not in ["DLP", "ULYS", "S2M"]:
+                    result["client"] = doit_m_from_text
+                    result["adresse_livraison"] = doit_m_from_text
     
     if st.session_state.ocr_raw_text:
         text_detection = detect_document_type_from_text(st.session_state.ocr_raw_text)
@@ -2165,6 +2225,14 @@ def analyze_document_with_backup(image_bytes: bytes) -> Dict:
             elif text_type == "FACTURE":
                 result["document_subtype"] = "FACTURE"
                 result["type_document"] = "FACTURE"
+                
+                # Appliquer la règle doit_m si nécessaire
+                doit_m_from_text = extract_motel_name_from_doit(st.session_state.ocr_raw_text)
+                if doit_m_from_text:
+                    client_value = result.get("client", "").upper()
+                    if client_value not in ["DLP", "ULYS", "S2M"]:
+                        result["client"] = doit_m_from_text
+                        result["adresse_livraison"] = doit_m_from_text
     
     return result
 
@@ -2704,7 +2772,7 @@ st.markdown(f"""
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.2
+# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.3
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.uploaded_file = uploaded
@@ -2731,7 +2799,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
-        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.2</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.3</h3>', unsafe_allow_html=True)
         st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision amélioré...</p>', unsafe_allow_html=True)
         
         progress_bar = st.progress(0)
@@ -2743,6 +2811,7 @@ if uploaded and uploaded != st.session_state.uploaded_file:
             "Analyse par IA...",
             "Détection avancée du type...",
             "Extraction du FACT manuscrit...",
+            "Extraction DOIT M...",
             "Vérification de cohérence...",
             "Extraction des données...",
             "Finalisation..."
@@ -2763,10 +2832,12 @@ if uploaded and uploaded != st.session_state.uploaded_file:
                 status_text.text(steps[4])
             elif i < 82:
                 status_text.text(steps[5])
-            elif i < 95:
+            elif i < 90:
                 status_text.text(steps[6])
-            else:
+            elif i < 98:
                 status_text.text(steps[7])
+            else:
+                status_text.text(steps[8])
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -2862,7 +2933,7 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
             <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
-            • Statut : Analysé par IA V1.2<br>
+            • Statut : Analysé par IA V1.3<br>
             • Confiance : Élevée<br><br>
             <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
         </div>
@@ -2871,13 +2942,13 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# AFFICHAGE DES RÉSULTATS - AVEC SECTION DEBUG V1.2
+# AFFICHAGE DES RÉSULTATS - AVEC SECTION DEBUG V1.3
 # ============================================================
 if st.session_state.show_results and st.session_state.ocr_result and not st.session_state.processing:
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
     
-    with st.expander("🔍 Analyse de détection V1.2 (debug)"):
+    with st.expander("🔍 Analyse de détection V1.3 (debug)"):
         st.write("**Type brut détecté par l'IA:**", result.get("type_document", "Non détecté"))
         st.write("**Sous-type détecté:**", result.get("document_subtype", "Non détecté"))
         st.write("**Type normalisé:**", doc_type)
@@ -2901,14 +2972,18 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             fact_extrait = extract_fact_number_from_handwritten(st.session_state.ocr_raw_text)
             if fact_extrait:
                 st.write(f"- FACT manuscrit extrait du texte: {fact_extrait}")
+            
+            doit_m_extrait = extract_motel_name_from_doit(st.session_state.ocr_raw_text)
+            if doit_m_extrait:
+                st.write(f"- DOIT M extrait du texte: {doit_m_extrait}")
     
     st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
     st.markdown(f'''
     <div style="display: flex; align-items: start; gap: 15px;">
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
-            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.2 terminée avec succès</strong><br>
-            <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
+            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.3 terminée avec succès</strong><br>
+            <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong> | DOIT M : <strong>{"Activé" if result.get("doit_m") else "Non applicable"}</strong></span><br>
             <small style="color: #4B5563 !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
@@ -3127,6 +3202,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
             • <strong>Amélioration 2:</strong> Liste de produits étendue avec meilleure détection des fautes d'orthographe<br>
             • <strong>Amélioration 3:</strong> Détection améliorée pour Aperao Peche, Côteau d'Ambalavao Special, etc.<br>
+            • <strong>Amélioration 4:</strong> Extraction automatique DOIT M pour factures Autre client<br>
             • Colonne "Produit Brute" : texte original extrait par l'IA de Chanfoui AI<br>
             • Colonne "Produit Standard" : standardisé automatiquement par Chafoui AI (éditable)<br>
             • <strong>Note :</strong> Veuillez prendre la photo le plus près possible du document et avec une netteté maximale.
@@ -3307,11 +3383,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <strong style="color: #1A1A1A !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
         <strong style="color: #1A1A1A !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
         <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: #1A1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
+        <strong style="color: #1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
         <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES :</strong><br>
         • <strong>Correction 1:</strong> Date extraite formatée JJ/MM/AAAA (pas la date du scan)<br>
         • <strong>Correction 2:</strong> Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
-        • <strong>Correction 3:</strong> Pour factures "Autre client", client = adresse<br>
+        • <strong>Correction 3:</strong> Pour factures "Autre client", extraction automatique DOIT M<br>
         • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
         • <strong>Amélioration 2:</strong> Bibliothèque de produits étendue et améliorée<br>
         • <strong>Amélioration 3:</strong> Meilleure détection des fautes d'orthographe<br>
@@ -3475,7 +3551,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
                         ✓ Correction 1: Date formatée JJ/MM/AAAA (extraite du document)<br>
                         ✓ Correction 2: Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
-                        ✓ Correction 3: Pour factures "Autre client", client = adresse<br>
+                        ✓ Correction 3: Pour factures "Autre client", extraction DOIT M activée<br>
                         ✓ Amélioration 1: Standardisation "Coteau d'Ambalavao Rouge" appliquée<br>
                         ✓ Amélioration 2: Bibliothèque de produits étendue<br>
                         ✓ Amélioration 3: Meilleure détection des fautes d'orthographe<br>
@@ -3604,7 +3680,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown(f"""
-    <center style='font-size: 0.8rem; color: #4B5563 !important;'>
+    <center style='font-size: 0.8rem; color: #4B5563 !important;">
         <span style='color: #10B981 !important;'>●</span> 
         Système actif • Session : 
         <strong style='color: #1A1A1A !important;'>{st.session_state.username}</strong>
@@ -3614,9 +3690,8 @@ with st.container():
     
     st.markdown(f"""
     <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
-        <strong>✨ AMÉLIORATIONS APPLIQUÉES :</strong> Date JJ/MM/AAAA • Adresse DLP corrigée • Standardisation améliorée • Facture: colonnes corrigées
+        <strong>✨ AMÉLIORATIONS APPLIQUÉES :</strong> Date JJ/MM/AAAA • Adresse DLP corrigée • Standardisation améliorée • DOIT M extraction • Facture: colonnes corrigées
     </center>
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
