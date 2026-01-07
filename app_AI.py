@@ -1888,7 +1888,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         
         base64_image = encode_image_to_base64(image_bytes)
         
-        # PROMPT AMÉLIORÉ AVEC CORRECTION DLP POUR ADRESSE
+        # PROMPT AMÉLIORÉ AVEC CORRECTION DLP POUR ADRESSE ET AMÉLIORATIONS DEMANDÉES
         prompt = """
         ANALYSE CE DOCUMENT ET EXTRACT LES INFORMATIONS SUIVANTES:
 
@@ -1920,8 +1920,8 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
             "bon_commande": "...",
             "articles": [
                 {
-                    "article_brut": "TEXT EXACT de l'article",
-                    "quantite": nombre
+                    "article_brut": "TEXT EXACT de l'article (colonne 'Désignation')",
+                    "quantite": nombre  (colonne 'Nb bills', PAS 'Btlls/colis')
                 }
             ]
         
@@ -1939,6 +1939,13 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         • DLP: client = "DLP", adresse = "Leader Price Akadimbahoaka"  (TOUJOURS CETTE ADRESSE POUR DLP)
         • S2M: client = "S2M", adresse = "Supermaki " + quartier_s2m (nettoyer format)
         • ULYS: client = "ULYS", adresse = nom_magasin_ulys
+        • FACTURE: 
+          - Pour les colonnes: utiliser "Désignation" pour article_brut et "Nb bills" pour quantité
+          - Si le client est "Autre client" (pas DLP, ULYS ou S2M), forcer client = adresse
+        
+        IMPORTANT POUR LES FACTURES:
+        - Utiliser la colonne "Désignation" pour les articles
+        - Utiliser la colonne "Nb bills" pour la quantité (PAS "Btlls/colis")
         
         INDICES DÉCISIFS:
         • "DISTRIBUTION LEADER PRICE" = TOUJOURS DLP
@@ -2005,7 +2012,7 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
                 # CORRECTION DLP: FORCER L'ADRESSE À "Leader Price Akadimbahoaka"
                 if document_subtype == "DLP":
                     data["client"] = "DLP"
-                    data["adresse_livraison"] = "Leader Price Akadimbahoaka"  # CORRECTION APPLIQUÉE
+                    data["adresse_livraison"] = "Leader Price Akadimbahoaka"
                 
                 # Correction S2M
                 elif document_subtype == "S2M":
@@ -2029,6 +2036,15 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
                         st.session_state.nom_magasin_ulys = nom_magasin
                     else:
                         data["adresse_livraison"] = "ULYS Magasin"
+                
+                # NOUVELLE CORRECTION: Pour les factures avec "Autre client", forcer client = adresse
+                elif document_subtype == "FACTURE":
+                    client_value = data.get("client", "")
+                    adresse_value = data.get("adresse_livraison", "")
+                    
+                    # Si le client est "Autre" ou n'est pas DLP/ULYS/S2M, forcer client = adresse
+                    if client_value.upper() not in ["DLP", "ULYS", "S2M"]:
+                        data["client"] = adresse_value
                 
                 return data
                 
@@ -2057,7 +2073,7 @@ def guess_document_type_from_text(text: str) -> Dict:
             "type_document": "BDC",
             "document_subtype": "DLP",
             "client": "DLP",
-            "adresse_livraison": "Leader Price Akadimbahoaka",  # CORRECTION APPLIQUÉE
+            "adresse_livraison": "Leader Price Akadimbahoaka",
             "fact_manuscrit": fact_manuscrit,
             "numero": fact_manuscrit,
             "articles": []
@@ -2135,7 +2151,7 @@ def analyze_document_with_backup(image_bytes: bytes) -> Dict:
             if text_type == "DLP":
                 result["document_subtype"] = "DLP"
                 result["client"] = "DLP"
-                result["adresse_livraison"] = "Leader Price Akadimbahoaka"  # CORRECTION APPLIQUÉE
+                result["adresse_livraison"] = "Leader Price Akadimbahoaka"
             elif text_type == "S2M":
                 result["document_subtype"] = "S2M"
                 result["client"] = "S2M"
@@ -2925,6 +2941,16 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
+            # NOUVELLE AMÉLIORATION: Afficher l'adresse d'abord
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
+            adresse = st.text_input("", value=result.get("adresse_livraison", ""), key="facture_adresse", label_visibility="collapsed")
+            
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° Facture</div>', unsafe_allow_html=True)
+            numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
+            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Bon de commande</div>', unsafe_allow_html=True)
+            bon_commande = st.text_input("", value=result.get("bon_commande", ""), key="facture_bdc", label_visibility="collapsed")
+        
+        with col2:
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
             
             client_options = ["ULYS", "S2M", "DLP", "Autre"]
@@ -2940,7 +2966,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 extracted_client = "ULYS"
             
             mapped_client = map_client(extracted_client)
-            default_index = 3
+            default_index = 3  # Par défaut "Autre"
             if mapped_client in client_options:
                 default_index = client_options.index(mapped_client)
             elif extracted_client in client_options:
@@ -2954,24 +2980,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 label_visibility="collapsed"
             )
             
+            # NOUVELLE AMÉLIORATION: Forcer client = adresse si "Autre"
             if client_choice == "Autre":
-                client = st.text_input("Autre client", value=extracted_client, key="facture_client_other")
+                client = adresse
             else:
                 client = client_choice
             
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° Facture</div>', unsafe_allow_html=True)
-            numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Bon de commande</div>', unsafe_allow_html=True)
-            bon_commande = st.text_input("", value=result.get("bon_commande", ""), key="facture_bdc", label_visibility="collapsed")
-        
-        with col2:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
-            adresse = st.text_input("", value=result.get("adresse_livraison", ""), key="facture_adresse", label_visibility="collapsed")
-            
-            # CORRECTION 1: Afficher la date extraite avec format JJ/MM/AAAA
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
             date_extracted = result.get("date", "")
-            date_formatted = format_date_french(date_extracted)  # Formater en JJ/MM/AAAA
+            date_formatted = format_date_french(date_extracted)
             date = st.text_input("", value=date_formatted, key="facture_date", label_visibility="collapsed")
             
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Mois</div>', unsafe_allow_html=True)
@@ -2982,7 +2999,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             "numero_facture": numero_facture,
             "bon_commande": bon_commande,
             "adresse_livraison": adresse,
-            "date": date,  # Date formatée en JJ/MM/AAAA
+            "date": date,
             "mois": mois
         }
     
@@ -3041,19 +3058,17 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                                   help="Numéro manuscrit extrait après 'F' ou 'Fact' (peut être vide si non trouvé)")
         
         with col2:
-            # CORRECTION 1: Afficher la date extraite avec format JJ/MM/AAAA
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
             date_extracted = result.get("date", "")
-            date_formatted = format_date_french(date_extracted)  # Formater en JJ/MM/AAAA
+            date_formatted = format_date_french(date_extracted)
             date = st.text_input("", value=date_formatted, key="bdc_date", label_visibility="collapsed")
             
             st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
             
             adresse_value = result.get("adresse_livraison", "")
             
-            # CORRECTION 2: FORCER "Leader Price Akadimbahoaka" pour DLP
             if document_subtype == "DLP":
-                adresse_value = "Leader Price Akadimbahoaka"  # CORRECTION APPLIQUÉE
+                adresse_value = "Leader Price Akadimbahoaka"
             elif document_subtype == "S2M":
                 quartier = st.session_state.quartier_s2m or ""
                 if quartier:
@@ -3072,7 +3087,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         data_for_sheets = {
             "client": client,
             "numero": numero,
-            "date": date,  # Date formatée en JJ/MM/AAAA
+            "date": date,
             "adresse_livraison": adresse
         }
     
@@ -3277,7 +3292,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             accuracy = (perfect_matches / len(test_df)) * 100
             st.success(f"📈 Précision améliorée : {accuracy:.1f}%")
             
-            # Vérification spécifique de la conversion demandée
             conversion_test = test_df[test_df["Produit Brute"].str.contains("Coteau.*Rouge", case=False, na=False)]
             if not conversion_test.empty:
                 st.info(f"**Conversion testée:** 'Coteau d'Ambalavao Rouge' → '{conversion_test.iloc[0]['Produit Standard']}'")
@@ -3297,9 +3311,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES :</strong><br>
         • <strong>Correction 1:</strong> Date extraite formatée JJ/MM/AAAA (pas la date du scan)<br>
         • <strong>Correction 2:</strong> Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
+        • <strong>Correction 3:</strong> Pour factures "Autre client", client = adresse<br>
         • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
         • <strong>Amélioration 2:</strong> Bibliothèque de produits étendue et améliorée<br>
-        • <strong>Amélioration 3:</strong> Meilleure détection des fautes d'orthographe
+        • <strong>Amélioration 3:</strong> Meilleure détection des fautes d'orthographe<br>
+        • <strong>Amélioration 4:</strong> Extraction correcte colonnes facture: Désignation et Nb bills
     </div>
     """, unsafe_allow_html=True)
     
@@ -3459,9 +3475,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
                         ✓ Correction 1: Date formatée JJ/MM/AAAA (extraite du document)<br>
                         ✓ Correction 2: Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
+                        ✓ Correction 3: Pour factures "Autre client", client = adresse<br>
                         ✓ Amélioration 1: Standardisation "Coteau d'Ambalavao Rouge" appliquée<br>
                         ✓ Amélioration 2: Bibliothèque de produits étendue<br>
-                        ✓ Amélioration 3: Meilleure détection des fautes d'orthographe
+                        ✓ Amélioration 3: Meilleure détection des fautes d'orthographe<br>
+                        ✓ Amélioration 4: Extraction correcte colonnes facture
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -3485,24 +3503,18 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         col_nav1, col_nav2 = st.columns(2)
         
         with col_nav1:
-            # AMÉLIORATION 4: BOUTON "NOUVEAU DOCUMENT" AVEC FONCTIONNALITÉS AMÉLIORÉES
             if st.button("📄 Nouveau document", 
                         use_container_width=True, 
                         type="secondary",
                         key="new_doc_main_nav",
                         help="Effacer toutes les informations et revenir au début"):
-                # a. Supprimer toutes les informations extraites
                 st.session_state.ocr_result = None
                 st.session_state.data_for_sheets = None
                 st.session_state.edited_standardized_df = None
                 st.session_state.product_matching_scores = {}
-                
-                # b. Supprimer l'aperçu du document analysé
                 st.session_state.uploaded_file = None
                 st.session_state.uploaded_image = None
                 st.session_state.image_preview_visible = False
-                
-                # c. Réinitialiser les autres états
                 st.session_state.show_results = False
                 st.session_state.detected_document_type = None
                 st.session_state.duplicate_check_done = False
@@ -3517,7 +3529,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.nom_magasin_ulys = ""
                 st.session_state.fact_manuscrit = ""
                 
-                # Forcer le scroll vers le haut
                 st.markdown(
                     """
                     <script>
@@ -3603,7 +3614,7 @@ with st.container():
     
     st.markdown(f"""
     <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
-        <strong>✨ AMÉLIORATIONS APPLIQUÉES :</strong> Date JJ/MM/AAAA • Adresse DLP corrigée • Standardisation améliorée
+        <strong>✨ AMÉLIORATIONS APPLIQUÉES :</strong> Date JJ/MM/AAAA • Adresse DLP corrigée • Standardisation améliorée • Facture: colonnes corrigées
     </center>
     """, unsafe_allow_html=True)
     
