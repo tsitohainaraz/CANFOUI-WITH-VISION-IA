@@ -19,6 +19,306 @@ import unicodedata
 import jellyfish  # Pour la distance de Jaro-Winkler
 
 # ============================================================
+# NOUVEAU SYSTÈME DE SCORING MULTI-INDICES POUR DÉTECTION DE DOCUMENTS
+# ============================================================
+
+def detect_table_columns(text_upper: str) -> set:
+    """
+    Détecte les colonnes de tableau présentes dans le texte
+    """
+    columns = set()
+    
+    # Liste des colonnes courantes
+    common_columns = [
+        # Facture
+        "P.U HT", "MONTANT HT", "TVA", "TTC", "TOTAL HT",
+        "DESIGNATION", "QUANTITE", "PRIX UNITAIRE", "MONTANT",
+        "NB BILLS", "BTLLS/COLIS",
+        
+        # DLP
+        "QTÉ CÉDÉE", "QTE CEDEE", "QTÉ LIVRÉE", "QTE LIVREE",
+        "COND/MENT", "COND. MENT", "CONDITIONNEMENT",
+        
+        # S2M
+        "PCB", "NB COLIS", "QUANTITE", "PA UNITAIRE", "PA FACT",
+        "COLIS", "PIECES",
+        
+        # ULYS
+        "PAQ", "PC", "QUANTITE", "DESIGNATION",
+        
+        # Général
+        "ARTICLE", "REFERENCE", "CODE ARTICLE", "LIBELLE",
+        "UNITÉ", "UNITE", "PU", "PRIX"
+    ]
+    
+    for column in common_columns:
+        if column in text_upper:
+            columns.add(column)
+    
+    # Recherche de motifs spécifiques
+    if re.search(r'\b\d+C/\d+\b', text_upper):
+        columns.add("FORMAT_COND")
+    
+    if "1 PAQ = 12" in text_upper or "1PAQ=12" in text_upper:
+        columns.add("PAQ_12")
+    
+    return columns
+
+def calculate_document_scores(text: str) -> Dict[str, Any]:
+    """
+    Calcule les scores pour chaque type de document basé sur le système multi-indices
+    """
+    text_upper = text.upper()
+    
+    # Initialisation des scores
+    scores = {
+        "FACTURE": 0,
+        "DLP": 0,
+        "S2M": 0,
+        "ULYS": 0,
+        "AUTRE": 0
+    }
+    
+    # Détection des colonnes dans le texte
+    columns_found = detect_table_columns(text_upper)
+    
+    # ====================================================
+    # SCORING FACTURE EN COMPTE
+    # ====================================================
+    
+    # Entête & mentions légales
+    if "FACTURE EN COMPTE" in text_upper:
+        scores["FACTURE"] += 4
+    
+    if "CETTE FACTURE TIENT LIEU DE TITRE DE MOUVEMENT" in text_upper:
+        scores["FACTURE"] += 3
+    
+    if "NET A PAYER" in text_upper:
+        scores["FACTURE"] += 2
+    
+    if "TVA 20%" in text_upper or "TVA 20 %" in text_upper:
+        scores["FACTURE"] += 2
+    
+    if "STAT :" in text_upper or "NIF :" in text_upper:
+        scores["FACTURE"] += 2
+    
+    # Colonnes spécifiques facture
+    facture_columns = ["P.U HT", "MONTANT HT", "TVA", "TTC", "TOTAL HT"]
+    facture_cols_found = sum(1 for col in facture_columns if col in text_upper)
+    scores["FACTURE"] += facture_cols_found * 2
+    
+    # Mentions de paiement
+    if "FACTURE A PAYER AVANT" in text_upper:
+        scores["FACTURE"] += 2
+    
+    if "ARRETEE LA PRESENTE FACTURE A LA SOMME DE" in text_upper:
+        scores["FACTURE"] += 2
+    
+    # Structure de tableau facture
+    if {"P.U HT", "TVA", "TTC"}.issubset(columns_found):
+        scores["FACTURE"] += 3
+    
+    # ====================================================
+    # SCORING DLP (LEADER PRICE)
+    # ====================================================
+    
+    # Identité juridique
+    if "DISTRIBUTION LEADER PRICE" in text_upper:
+        scores["DLP"] += 5
+    
+    if "D.L.P.M.S.A.R.L" in text_upper:
+        scores["DLP"] += 3
+    
+    if "ANKADIMBAHOAKA" in text_upper or "PK 6 ROUTE D'ANOSIBE" in text_upper:
+        scores["DLP"] += 2
+    
+    # Vocabulaire logistique spécifique
+    if "QTÉ CÉDÉE" in text_upper or "QTE CEDEE" in text_upper:
+        scores["DLP"] += 3
+    
+    if "QTÉ LIVRÉE" in text_upper or "QTE LIVREE" in text_upper:
+        scores["DLP"] += 2
+    
+    if "COND/MENT" in text_upper or "COND. MENT" in text_upper:
+        scores["DLP"] += 2
+    
+    # Formats spécifiques DLP
+    if re.search(r'\b\d+C/\d+\b', text_upper):
+        scores["DLP"] += 2
+    
+    # Structure de tableau DLP
+    if {"QTÉ CÉDÉE", "COND/MENT"}.issubset(columns_found):
+        scores["DLP"] += 3
+    
+    # ====================================================
+    # SCORING S2M / SUPERMAKI
+    # ====================================================
+    
+    # Marque & localisation
+    if "SUPERMAKI" in text_upper:
+        scores["S2M"] += 5
+    
+    if "RAYON" in text_upper and "SECTEUR" in text_upper:
+        scores["S2M"] += 2
+    
+    # Structure du tableau S2M
+    s2m_columns = ["PCB", "NB COLIS", "PA UNITAIRE", "PA FACT"]
+    s2m_cols_found = sum(1 for col in s2m_columns if col in text_upper)
+    scores["S2M"] += s2m_cols_found * 2
+    
+    if "PCB" in text_upper and "NB COLIS" in text_upper:
+        scores["S2M"] += 3
+    
+    # Quartier détection
+    if "AMBOHIBAO" in text_upper or "IVANDRA" in text_upper:
+        scores["S2M"] += 1
+    
+    # Structure de tableau S2M
+    if {"PCB", "NB COLIS", "PA FACT"}.issubset(columns_found):
+        scores["S2M"] += 4
+    
+    # ====================================================
+    # SCORING ULYS
+    # ====================================================
+    
+    # Entête
+    if "BON DE COMMANDE FOURNISSEUR" in text_upper:
+        scores["ULYS"] += 5
+    
+    if "ULYS" in text_upper:
+        scores["ULYS"] += 3
+    
+    # Champs magasin
+    if "NOM DU MAGASIN" in text_upper:
+        scores["ULYS"] += 3
+    
+    if "N° MAGASIN" in text_upper or "NO MAGASIN" in text_upper:
+        scores["ULYS"] += 2
+    
+    # Unités spécifiques
+    if "PAQ" in text_upper and "1 PAQ = 12" in text_upper:
+        scores["ULYS"] += 2
+    
+    if "PC" in text_upper and "PAQ" in text_upper:
+        scores["ULYS"] += 1
+    
+    # Structure de tableau ULYS
+    if {"PAQ", "PC"}.issubset(columns_found):
+        scores["ULYS"] += 3
+    
+    # ====================================================
+    # DÉTECTION PAR STRUCTURE DE TABLEAU (BONUS)
+    # ====================================================
+    
+    # Bonus pour correspondance forte de structure
+    if {"P.U HT", "TVA", "TTC"}.issubset(columns_found):
+        scores["FACTURE"] += 2
+    
+    if {"PCB", "NB COLIS", "PA FACT"}.issubset(columns_found):
+        scores["S2M"] += 2
+    
+    if {"QTÉ CÉDÉE", "COND/MENT"}.issubset(columns_found):
+        scores["DLP"] += 2
+    
+    if {"PAQ", "PC"}.issubset(columns_found):
+        scores["ULYS"] += 2
+    
+    # ====================================================
+    # RÈGLES MÉTIER SPÉCIFIQUES (OVERRIDE)
+    # ====================================================
+    
+    # Règle 1: Si DLP détecté, c'est TOUJOURS un BDC (pas une facture)
+    if scores["DLP"] >= 4:
+        # Réduire le score facture si DLP fort
+        if scores["FACTURE"] > 0:
+            scores["FACTURE"] = max(0, scores["FACTURE"] - 3)
+    
+    # Règle 2: "FACTURE EN COMPTE" est décisif pour les factures
+    if "FACTURE EN COMPTE" in text_upper:
+        scores["FACTURE"] += 2
+        # Réduire les scores BDC si facture claire
+        for bdc_type in ["DLP", "S2M", "ULYS"]:
+            if scores[bdc_type] > 0:
+                scores[bdc_type] = max(0, scores[bdc_type] - 2)
+    
+    # Règle 3: "SUPERMAKI" est décisif pour S2M
+    if "SUPERMAKI" in text_upper:
+        scores["S2M"] += 2
+    
+    # ====================================================
+    # EXTRACTION DES INFORMATIONS SPÉCIFIQUES
+    # ====================================================
+    
+    extracted_info = {
+        "quartier_s2m": "",
+        "nom_magasin_ulys": "",
+        "fact_manuscrit": "",
+        "columns_detected": list(columns_found)
+    }
+    
+    # Extraction quartier S2M
+    if "SUPERMAKI" in text_upper:
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if "SUPERMAKI" in line.upper():
+                if i + 1 < len(lines):
+                    quartier_line = lines[i + 1].strip()
+                    if quartier_line and len(quartier_line) > 3:  # Au moins 3 caractères
+                        extracted_info["quartier_s2m"] = clean_quartier(quartier_line)
+                        break
+    
+    # Extraction nom magasin ULYS
+    if "NOM DU MAGASIN" in text_upper:
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if "NOM DU MAGASIN" in line.upper():
+                if i + 1 < len(lines):
+                    magasin_line = lines[i + 1].strip()
+                    if magasin_line:
+                        extracted_info["nom_magasin_ulys"] = magasin_line
+                        break
+    
+    # Extraction FACT manuscrit
+    extracted_info["fact_manuscrit"] = extract_fact_number_from_handwritten(text)
+    
+    # Détermination du type final
+    max_score = max(scores.values())
+    max_types = [doc_type for doc_type, score in scores.items() if score == max_score]
+    
+    if max_score < 3:  # Seuil minimum
+        document_type = "AUTRE"
+    elif len(max_types) == 1:
+        document_type = max_types[0]
+    else:
+        # En cas d'égalité, priorité: FACTURE > DLP > S2M > ULYS
+        priority_order = ["FACTURE", "DLP", "S2M", "ULYS", "AUTRE"]
+        for doc_type in priority_order:
+            if doc_type in max_types:
+                document_type = doc_type
+                break
+        else:
+            document_type = "AUTRE"
+    
+    # Mapping vers les types standardisés
+    type_mapping = {
+        "FACTURE": "FACTURE EN COMPTE",
+        "DLP": "BDC LEADERPRICE",
+        "S2M": "BDC S2M",
+        "ULYS": "BDC ULYS",
+        "AUTRE": "DOCUMENT INCONNU"
+    }
+    
+    final_type = type_mapping.get(document_type, "DOCUMENT INCONNU")
+    
+    return {
+        "document_type": final_type,
+        "raw_type": document_type,
+        "scores": scores,
+        "extracted_info": extracted_info,
+        "max_score": max_score
+    }
+
+# ============================================================
 # STANDARDISATION INTELLIGENTE DES PRODUITS - MIS À JOUR
 # ============================================================
 
@@ -1032,7 +1332,7 @@ if not check_authentication():
         st.image("CF_LOGOS.png", width=90, output_format="PNG")
     else:
         st.markdown("""
-        <div style="font-size: 3rem; margin-bottom: 20px; color: #1E293B !important;">
+        <div style="font-size: 3rem; margin-bottom: 20px; color: #1A1A1A !important;">
             🍷
         </div>
         """, unsafe_allow_html=True)
@@ -1274,7 +1574,7 @@ st.markdown(f"""
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08),
                     0 0 0 1px rgba(39, 65, 74, 0.05);
         margin-bottom: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(255, 255,255, 0.8);
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         backdrop-filter: blur(10px);
         position: relative;
@@ -1660,13 +1960,20 @@ SHEET_GIDS = {
 }
 
 # ============================================================
-# FONCTION DE NORMALISATION DU TYPE DE DOCUMENT - VERSION AMÉLIORÉE V1.1
+# FONCTION DE NORMALISATION DU TYPE DE DOCUMENT - VERSION AMÉLIORÉE V1.3
 # ============================================================
 def normalize_document_type(doc_type: str) -> str:
-    """Normalise le type de document pour correspondre aux clés SHEET_GIDS - VERSION AMÉLIORÉE V1.1"""
+    """Normalise le type de document pour correspondre aux clés SHEET_GIDS - VERSION AMÉLIORÉE V1.3"""
     if not doc_type:
         return "DOCUMENT INCONNU"
     
+    # Utiliser le système de scoring si possible
+    if st.session_state.ocr_raw_text:
+        scoring_result = calculate_document_scores(st.session_state.ocr_raw_text)
+        if scoring_result["max_score"] >= 3:
+            return scoring_result["document_type"]
+    
+    # Fallback à l'ancienne logique
     doc_type_upper = doc_type.upper()
     
     facture_keywords = [
@@ -1739,148 +2046,51 @@ def get_openai_client():
         return None
 
 # ============================================================
-# FONCTION DE DÉTECTION PRÉCISE DU TYPE DE DOCUMENT
+# FONCTION DE DÉTECTION PRÉCISE DU TYPE DE DOCUMENT (MAINTENANT AVEC SCORING)
 # ============================================================
 def detect_document_type_from_text(text: str) -> Dict[str, Any]:
-    """Détecte précisément le type de document basé sur les indices fournis"""
-    text_upper = text.upper()
+    """Détecte précisément le type de document basé sur le système de scoring"""
+    scoring_result = calculate_document_scores(text)
     
-    dlp_indicators = [
-        "DISTRIBUTION LEADER PRICE",
-        "D.L.P.M.S.A.R.L",
-        "NIF : 2000003904",
-        "2000003904"
-    ]
+    # Transformation au format attendu par le code existant
+    indicators_found = []
     
-    s2m_indicators = [
-        "SUPERMAKI",
-        "RAYON"
-    ]
+    if scoring_result["raw_type"] == "DLP":
+        indicators_found.extend(["DISTRIBUTION LEADER PRICE", "D.L.P.M.S.A.R.L"])
+    elif scoring_result["raw_type"] == "S2M":
+        indicators_found.extend(["SUPERMAKI", "RAYON"])
+    elif scoring_result["raw_type"] == "ULYS":
+        indicators_found.extend(["BON DE COMMANDE FOURNISSEUR", "NOM DU MAGASIN"])
+    elif scoring_result["raw_type"] == "FACTURE":
+        indicators_found.extend(["FACTURE EN COMPTE", "NET A PAYER"])
     
-    ulys_indicators = [
-        "BON DE COMMANDE FOURNISSEUR",
-        "NOM DU MAGASIN"
-    ]
-    
-    facture_indicators = [
-        "FACTURE EN COMPTE",
-        "FACTURE À PAYER AVANT LE",
-        "FACTURE A PAYER AVANT LE"
-    ]
-    
-    dlp_score = sum(1 for indicator in dlp_indicators if indicator in text_upper)
-    s2m_score = sum(1 for indicator in s2m_indicators if indicator in text_upper)
-    ulys_score = sum(1 for indicator in ulys_indicators if indicator in text_upper)
-    facture_score = sum(1 for indicator in facture_indicators if indicator in text_upper)
-    
-    detection_result = {
-        "type": "UNKNOWN",
-        "scores": {
-            "DLP": dlp_score,
-            "S2M": s2m_score,
-            "ULYS": ulys_score,
-            "FACTURE": facture_score
-        },
-        "indicators_found": []
+    return {
+        "type": scoring_result["raw_type"],
+        "scores": scoring_result["scores"],
+        "indicators_found": indicators_found,
+        "scoring_result": scoring_result  # Ajout du résultat complet pour usage ultérieur
     }
-    
-    max_score = max(dlp_score, s2m_score, ulys_score, facture_score)
-    
-    if max_score == 0:
-        detection_result["type"] = "UNKNOWN"
-    elif dlp_score == max_score:
-        detection_result["type"] = "DLP"
-        detection_result["indicators_found"] = [ind for ind in dlp_indicators if ind in text_upper]
-    elif s2m_score == max_score:
-        detection_result["type"] = "S2M"
-        detection_result["indicators_found"] = [ind for ind in s2m_indicators if ind in text_upper]
-        
-        if "SUPERMAKI" in text_upper:
-            lines = text.split('\n')
-            for i, line in enumerate(lines):
-                if "SUPERMAKI" in line.upper():
-                    if i + 1 < len(lines):
-                        next_line = lines[i + 1].strip()
-                        if next_line and len(next_line) > 0:
-                            st.session_state.quartier_s2m = next_line
-                            break
-    elif ulys_score == max_score:
-        detection_result["type"] = "ULYS"
-        detection_result["indicators_found"] = [ind for ind in ulys_indicators if ind in text_upper]
-        
-        if "NOM DU MAGASIN" in text_upper:
-            lines = text.split('\n')
-            for i, line in enumerate(lines):
-                if "NOM DU MAGASIN" in line.upper():
-                    if i + 1 < len(lines):
-                        next_line = lines[i + 1].strip()
-                        if next_line and len(next_line) > 0:
-                            st.session_state.nom_magasin_ulys = next_line
-                            break
-    elif facture_score == max_score:
-        detection_result["type"] = "FACTURE"
-        detection_result["indicators_found"] = [ind for ind in facture_indicators if ind in text_upper]
-    
-    return detection_result
 
 # ============================================================
-# FONCTIONS OCR AMÉLIORÉES POUR MEILLEURE DÉTECTION - V1.2
+# FONCTIONS OCR AMÉLIORÉES POUR MEILLEURE DÉTECTION - VERSION SCORING V1.3
 # ============================================================
 def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
     """Extrait les caractéristiques du texte pour aider à la détection du type de document"""
-    text_upper = text.upper()
+    # Cette fonction est maintenant remplacée par calculate_document_scores
+    # Conservée pour compatibilité
+    scoring_result = calculate_document_scores(text)
     
-    features = {
-        'has_facture': False,
-        'has_bdc': False,
-        'facture_keywords': [],
+    return {
+        'has_facture': scoring_result["scores"]["FACTURE"] > 0,
+        'has_bdc': any(scoring_result["scores"][bdc_type] > 0 for bdc_type in ["DLP", "S2M", "ULYS"]),
+        'facture_keywords': ["FACTURE"] if scoring_result["scores"]["FACTURE"] > 0 else [],
         'bdc_keywords': [],
-        'facture_score': 0,
-        'bdc_score': 0
+        'facture_score': scoring_result["scores"]["FACTURE"],
+        'bdc_score': max(scoring_result["scores"]["DLP"], scoring_result["scores"]["S2M"], scoring_result["scores"]["ULYS"])
     }
-    
-    facture_keywords = [
-        "FACTURE", "FACTURE EN COMPTE", "N° FACTURE", "NUMERO FACTURE",
-        "DOIT", "AU NOM DE", "CLIENT", "ADRESSE DE LIVRAISON",
-        "SUIVANT VOTRE BON DE COMMANDE", "BON DE COMMANDE",
-        "QUANTITE", "BOUTEILLES", "MONTANT", "TOTAL", "TVA"
-    ]
-    
-    bdc_keywords = [
-        "BDC", "BON DE COMMANDE", "COMMANDE", "DATE EMISSION",
-        "DATE ÉMISSION", "ADRESSE FACTURATION", "ADRESSE LIVRAISON",
-        "DESIGNATION", "QTÉ", "QUANTITE", "ARTICLE", "REFERENCE",
-        "CODE ARTICLE", "PRIX UNITAIRE", "SOUS TOTAL"
-    ]
-    
-    for keyword in facture_keywords:
-        if keyword in text_upper:
-            features['facture_keywords'].append(keyword)
-            features['facture_score'] += 1
-            features['has_facture'] = True
-    
-    for keyword in bdc_keywords:
-        if keyword in text_upper:
-            features['bdc_keywords'].append(keyword)
-            features['bdc_score'] += 1
-            features['has_bdc'] = True
-    
-    if "FACTURE" in text_upper and "COMPTE" in text_upper:
-        features['facture_score'] += 3
-    
-    if "BDC" in text_upper or "BON DE COMMANDE" in text_upper:
-        features['bdc_score'] += 2
-    
-    if "DOIT" in text_upper:
-        features['facture_score'] += 2
-    
-    if "DATE EMISSION" in text_upper or "DATE ÉMISSION" in text_upper:
-        features['bdc_score'] += 2
-    
-    return features
 
 def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
-    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré pour la détection V1.2"""
+    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré pour la détection V1.3"""
     try:
         client = get_openai_client()
         if not client:
@@ -1888,86 +2098,59 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         
         base64_image = encode_image_to_base64(image_bytes)
         
-        # PROMPT AMÉLIORÉ AVEC CORRECTION DLP POUR ADRESSE ET AMÉLIORATIONS DEMANDÉES
+        # PROMPT AMÉLIORÉ AVEC SYSTÈME DE SCORING MULTI-INDICES
         prompt = """
         ANALYSE CE DOCUMENT ET EXTRACT LES INFORMATIONS SUIVANTES:
 
-        IMPORTANT RÈGLE SPÉCIALE POUR LES BONS DE COMMANDE (BDC):
-        - Pour TOUS les BDC (DLP, S2M, ULYS), cherche TOUJOURS le numéro manuscrit écrit à la main
-        - Ce numéro est généralement écrit après "F" ou "Fact" (exemple: Fact 251193 → 251193)
-        - Il se trouve souvent en haut à droite de l'entête, parfois sur le côté droit
-        - Si tu vois deux valeurs manuscrites différentes (ex: f 4567 et Fact 7890), 
-          prends TOUJOURS la valeur de Fact 7890 (donc 7890)
-        - Si aucun "F" ou "Fact" manuscrit n'est trouvé, laisse ce champ vide
+        IMPORTANT - UTILISER LE SYSTÈME DE SCORING MULTI-INDICES:
+
+        1. FACTURE EN COMPTE (score le plus élevé si):
+           - "FACTURE EN COMPTE" présent (+4)
+           - "NET A PAYER", "TVA 20%", "STAT :", "NIF :" présents (+2 chacun)
+           - Colonnes "P.U HT", "MONTANT HT", "TVA", "TTC" détectées (+2 chacune)
+           - "Facture à payer avant le" présent (+2)
         
-        Pour TOUS les documents, extrais:
+        2. BDC DLP (LEADER PRICE) (score le plus élevé si):
+           - "DISTRIBUTION LEADER PRICE" présent (+5)
+           - "D.L.P.M.S.A.R.L" présent (+3)
+           - "Qté Cédée", "Qté livrée", "Cond/ment" présents (+3 chacun)
+           - Formats "30C/12", "10C/12", "40C/12" détectés (+2)
+           - RÈGLE MÉTIER: TOUT DOCUMENT DLP EST UN BDC
+        
+        3. BDC S2M / SUPERMAKI (score le plus élevé si):
+           - "SUPERMAKI" présent (+5)
+           - "RAYON" et "SECTEUR" présents (+2)
+           - Colonnes "PCB", "Nb Colis", "PA Unitaire", "PA Fact" détectées (+2 chacune)
+           - Quartier détecté sous "SUPERMAKI"
+        
+        4. BDC ULYS (score le plus élevé si):
+           - "BON DE COMMANDE FOURNISSEUR" présent (+5)
+           - "ULYS" présent (+3)
+           - "Nom du Magasin", "N° Magasin" présents (+3)
+           - "PAQ", "1 PAQ = 12 / PC" présents (+2)
+
+        Pour TOUS les BDC, chercher le numéro manuscrit écrit après "F" ou "Fact"
+
+        Extraire:
         {
             "type_document": "BDC" ou "FACTURE",
             "document_subtype": "DLP", "S2M", "ULYS", ou "FACTURE",
             "client": "...",
             "adresse_livraison": "...",
-            "quartier_s2m": "...",  (uniquement si S2M: le quartier sous "SUPERMAKI")
-            "nom_magasin_ulys": "...",  (uniquement si ULYS: le nom du magasin)
+            "quartier_s2m": "...",  (si S2M: le quartier sous "SUPERMAKI")
+            "nom_magasin_ulys": "...",  (si ULYS: le nom du magasin)
             "fact_manuscrit_trouve": "oui" ou "non",
-            "fact_manuscrit": "...",  (le numéro exact après F ou Fact, SANS le F/Fact)
+            "fact_manuscrit": "...",  (le numéro exact après F ou Fact)
         }
-        
-        Puis selon le type:
-        
-        1. SI C'EST UNE FACTURE (FACTURE EN COMPTE):
-            "numero_facture": "...",
-            "date": "...",  (IMPORTANT: extraire la date de la facture, pas la date du scan)
-            "bon_commande": "...",
-            "articles": [
-                {
-                    "article_brut": "TEXT EXACT de l'article (colonne 'Désignation')",
-                    "quantite": nombre  (colonne 'Nb bills', PAS 'Btlls/colis')
-                }
-            ]
-        
-        2. SI C'EST UN BDC (DLP, S2M, ULYS):
-            "numero": "...",  (IMPORTANT: utiliser TOUJOURS le fact_manuscrit si disponible, sinon vide)
-            "date": "...",  (IMPORTANT: extraire la date du BDC, pas la date du scan)
-            "articles": [
-                {
-                    "article_brut": "TEXT EXACT de la colonne Désignation",
-                    "quantite": nombre
-                }
-            ]
-        
-        RÈGLES SPÉCIFIQUES POUR CHAQUE TYPE:
-        • DLP: client = "DLP", adresse = "Leader Price Akadimbahoaka"  (TOUJOURS CETTE ADRESSE POUR DLP)
-        • S2M: client = "S2M", adresse = "Supermaki " + quartier_s2m (nettoyer format)
-        • ULYS: client = "ULYS", adresse = nom_magasin_ulys
-        • FACTURE: 
-          - Pour les colonnes: utiliser "Désignation" pour article_brut et "Nb bills" pour quantité
-          - Si le client est "Autre client" (pas DLP, ULYS ou S2M), forcer client = adresse
-        
-        IMPORTANT POUR LES FACTURES:
-        - Utiliser la colonne "Désignation" pour les articles
-        - Utiliser la colonne "Nb bills" pour la quantité (PAS "Btlls/colis")
-        
-        INDICES DÉCISIFS:
-        • "DISTRIBUTION LEADER PRICE" = TOUJOURS DLP
-        • "SUPERMAKI" = TOUJOURS S2M
-        • "BON DE COMMANDE FOURNISSEUR" = TOUJOURS ULYS
-        • "FACTURE EN COMPTE" = TOUJOURS FACTURE
-        
-        EXEMPLE CORRECT POUR UN BDC:
-        Si tu vois "f251193" manuscrit en haut à droite → 
-        "fact_manuscrit_trouve": "oui",
-        "fact_manuscrit": "251193",
-        "numero": "251193"
-        
-        Si pas de "F" ou "Fact" manuscrit → 
-        "fact_manuscrit_trouve": "non",
-        "fact_manuscrit": "",
-        "numero": ""
-        
-        IMPORTANT POUR LA DATE: 
-        - Extraire la date qui est écrite sur le document (facture ou BDC)
-        - Ne pas utiliser la date actuelle ou une date estimée
-        - Formater la date en format clair (ex: 15/01/2024)
+
+        RÈGLES MÉTIER OBLIGATOIRES:
+        • DLP → client = "DLP", adresse = "Leader Price Akadimbahoaka" (TOUJOURS)
+        • S2M → client = "S2M", adresse = "Supermaki " + quartier_s2m (forcer adresse)
+        • ULYS → client = "ULYS", adresse = nom_magasin_ulys
+        • FACTURE → utiliser colonnes "Désignation" et "Nb bills"
+
+        Priorité en cas de doute: FACTURE > DLP > S2M > ULYS
+        Seuil minimum: Score total ≥ 3 pour validation
         """
         
         response = client.chat.completions.create(
@@ -2064,11 +2247,11 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
 
 def guess_document_type_from_text(text: str) -> Dict:
     """Devine le type de document à partir du texte OCR"""
-    detection = detect_document_type_from_text(text)
+    scoring_result = calculate_document_scores(text)
     
     fact_manuscrit = extract_fact_number_from_handwritten(text)
     
-    if detection["type"] == "DLP":
+    if scoring_result["raw_type"] == "DLP":
         return {
             "type_document": "BDC",
             "document_subtype": "DLP",
@@ -2078,8 +2261,8 @@ def guess_document_type_from_text(text: str) -> Dict:
             "numero": fact_manuscrit,
             "articles": []
         }
-    elif detection["type"] == "S2M":
-        quartier = st.session_state.quartier_s2m or ""
+    elif scoring_result["raw_type"] == "S2M":
+        quartier = scoring_result["extracted_info"]["quartier_s2m"] or ""
         return {
             "type_document": "BDC",
             "document_subtype": "S2M",
@@ -2089,8 +2272,8 @@ def guess_document_type_from_text(text: str) -> Dict:
             "numero": fact_manuscrit,
             "articles": []
         }
-    elif detection["type"] == "ULYS":
-        nom_magasin = st.session_state.nom_magasin_ulys or ""
+    elif scoring_result["raw_type"] == "ULYS":
+        nom_magasin = scoring_result["extracted_info"]["nom_magasin_ulys"] or ""
         return {
             "type_document": "BDC",
             "document_subtype": "ULYS",
@@ -2100,71 +2283,114 @@ def guess_document_type_from_text(text: str) -> Dict:
             "numero": fact_manuscrit,
             "articles": []
         }
-    elif detection["type"] == "FACTURE":
+    elif scoring_result["raw_type"] == "FACTURE":
         return {
             "type_document": "FACTURE",
             "document_subtype": "FACTURE",
             "articles": []
         }
     else:
-        features = extract_text_features_for_detection(text)
-        
-        if features['facture_score'] > features['bdc_score']:
+        # Fallback à l'ancienne logique
+        if scoring_result["scores"]["FACTURE"] > scoring_result["scores"]["DLP"]:
             return {"type_document": "FACTURE", "document_subtype": "FACTURE", "articles": []}
         else:
             return {"type_document": "BDC", "document_subtype": "UNKNOWN", "fact_manuscrit": fact_manuscrit, "numero": fact_manuscrit, "articles": []}
 
 def analyze_document_with_backup(image_bytes: bytes) -> Dict:
-    """Analyse le document avec vérification de cohérence"""
+    """Analyse le document avec vérification de cohérence et scoring amélioré"""
+    # Analyse initiale par OpenAI
     result = openai_vision_ocr_improved(image_bytes)
     
     if not result:
         return {"type_document": "DOCUMENT INCONNU", "articles": []}
     
+    # Extraction du texte brut pour scoring
     if st.session_state.ocr_raw_text:
-        if result.get("type_document") == "BDC":
-            fact_manuscrit = extract_fact_number_from_handwritten(st.session_state.ocr_raw_text)
-            
-            if fact_manuscrit and not result.get("fact_manuscrit"):
-                result["fact_manuscrit"] = fact_manuscrit
-                result["numero"] = fact_manuscrit
-                
-                st.session_state.document_analysis_details = {
-                    "action": "Fact manuscrit extrait du texte brut",
-                    "fact": fact_manuscrit
-                }
-    
-    if st.session_state.ocr_raw_text:
-        text_detection = detect_document_type_from_text(st.session_state.ocr_raw_text)
+        # Appliquer le scoring multi-indices
+        scoring_result = calculate_document_scores(st.session_state.ocr_raw_text)
         
+        # Stocker les informations extraites
+        st.session_state.quartier_s2m = scoring_result["extracted_info"]["quartier_s2m"]
+        st.session_state.nom_magasin_ulys = scoring_result["extracted_info"]["nom_magasin_ulys"]
+        st.session_state.fact_manuscrit = scoring_result["extracted_info"]["fact_manuscrit"]
+        
+        # Vérifier la cohérence avec l'analyse OpenAI
         ai_subtype = result.get("document_subtype", "").upper()
-        text_type = text_detection["type"]
+        scoring_type = scoring_result["raw_type"]
         
-        if ai_subtype != text_type and text_type != "UNKNOWN":
+        # Mapping entre les types
+        type_mapping = {
+            "FACTURE": "FACTURE",
+            "DLP": "DLP",
+            "S2M": "S2M",
+            "ULYS": "ULYS",
+            "AUTRE": "UNKNOWN"
+        }
+        
+        scoring_mapped = type_mapping.get(scoring_type, "UNKNOWN")
+        
+        # Si contradiction et score élevé, corriger
+        if (ai_subtype != scoring_mapped and 
+            scoring_result["max_score"] >= 5 and 
+            scoring_mapped != "UNKNOWN"):
+            
             st.session_state.document_analysis_details = {
                 "original_type": ai_subtype,
-                "adjusted_type": text_type,
-                "reason": "Contradiction détectée: détection par texte plus fiable",
-                "indicators": text_detection["indicators_found"]
+                "adjusted_type": scoring_mapped,
+                "reason": "Scoring multi-indices plus fiable",
+                "scores": scoring_result["scores"],
+                "max_score": scoring_result["max_score"]
             }
             
-            if text_type == "DLP":
+            # Appliquer les corrections selon le type
+            if scoring_mapped == "DLP":
                 result["document_subtype"] = "DLP"
                 result["client"] = "DLP"
                 result["adresse_livraison"] = "Leader Price Akadimbahoaka"
-            elif text_type == "S2M":
+                result["type_document"] = "BDC"
+                
+                # Utiliser le FACT manuscrit si trouvé
+                if st.session_state.fact_manuscrit:
+                    result["fact_manuscrit"] = st.session_state.fact_manuscrit
+                    result["numero"] = st.session_state.fact_manuscrit
+            
+            elif scoring_mapped == "S2M":
                 result["document_subtype"] = "S2M"
                 result["client"] = "S2M"
                 quartier = st.session_state.quartier_s2m or ""
                 result["adresse_livraison"] = clean_adresse(f"Supermaki {quartier}" if quartier else "Supermaki")
-            elif text_type == "ULYS":
+                result["type_document"] = "BDC"
+                
+                if st.session_state.fact_manuscrit:
+                    result["fact_manuscrit"] = st.session_state.fact_manuscrit
+                    result["numero"] = st.session_state.fact_manuscrit
+            
+            elif scoring_mapped == "ULYS":
                 result["document_subtype"] = "ULYS"
                 result["client"] = "ULYS"
                 nom_magasin = st.session_state.nom_magasin_ulys or ""
                 result["adresse_livraison"] = nom_magasin if nom_magasin else "ULYS Magasin"
-            elif text_type == "FACTURE":
+                result["type_document"] = "BDC"
+                
+                if st.session_state.fact_manuscrit:
+                    result["fact_manuscrit"] = st.session_state.fact_manuscrit
+                    result["numero"] = st.session_state.fact_manuscrit
+            
+            elif scoring_mapped == "FACTURE":
                 result["document_subtype"] = "FACTURE"
                 result["type_document"] = "FACTURE"
+        
+        # Toujours forcer l'adresse DLP si DLP détecté
+        if scoring_mapped == "DLP" or ai_subtype == "DLP":
+            result["client"] = "DLP"
+            result["adresse_livraison"] = "Leader Price Akadimbahoaka"
+        
+        # Toujours forcer le quartier pour S2M si détecté
+        if scoring_mapped == "S2M" or ai_subtype == "S2M":
+            result["client"] = "S2M"
+            quartier = st.session_state.quartier_s2m or ""
+            if quartier:
+                result["adresse_livraison"] = clean_adresse(f"Supermaki {quartier}")
     
     return result
 
@@ -2631,6 +2857,7 @@ st.markdown(f'''
     <span class="tech-badge">AI Processing</span>
     <span class="tech-badge">Cloud Sync</span>
     <span class="tech-badge">Smart Matching</span>
+    <span class="tech-badge" style="background: linear-gradient(135deg, #10B98115 0%, #34D39915 100%); color: #10B981 !important;">Multi-Scoring V1.3</span>
 </div>
 ''', unsafe_allow_html=True)
 
@@ -2704,7 +2931,7 @@ st.markdown(f"""
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.2
+# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.3
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.uploaded_file = uploaded
@@ -2731,8 +2958,8 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     with progress_container.container():
         st.markdown('<div class="progress-container">', unsafe_allow_html=True)
         st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
-        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.2</h3>', unsafe_allow_html=True)
-        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision amélioré...</p>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.3</h3>', unsafe_allow_html=True)
+        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec Scoring Multi-Indices...</p>', unsafe_allow_html=True)
         
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -2740,12 +2967,12 @@ if uploaded and uploaded != st.session_state.uploaded_file:
         steps = [
             "Chargement de l'image...",
             "Prétraitement des données...",
-            "Analyse par IA...",
-            "Détection avancée du type...",
+            "Analyse par IA GPT-4 Vision...",
+            "Application du scoring multi-indices...",
+            "Détection des colonnes de tableau...",
             "Extraction du FACT manuscrit...",
             "Vérification de cohérence...",
-            "Extraction des données...",
-            "Finalisation..."
+            "Finalisation avec règles métier..."
         ]
         
         for i in range(101):
@@ -2862,7 +3089,7 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
             <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
             • Résolution : Haute définition<br>
             • Format : Image numérique<br>
-            • Statut : Analysé par IA V1.2<br>
+            • Statut : Analysé par IA V1.3<br>
             • Confiance : Élevée<br><br>
             <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
         </div>
@@ -2871,17 +3098,57 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# AFFICHAGE DES RÉSULTATS - AVEC SECTION DEBUG V1.2
+# AFFICHAGE DES RÉSULTATS - AVEC SECTION SCORING MULTI-INDICES V1.3
 # ============================================================
 if st.session_state.show_results and st.session_state.ocr_result and not st.session_state.processing:
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
     
-    with st.expander("🔍 Analyse de détection V1.2 (debug)"):
+    # NOUVELLE SECTION : Analyse de scoring multi-indices
+    with st.expander("🎯 Analyse de scoring multi-indices V1.3"):
+        if st.session_state.ocr_raw_text:
+            scoring_result = calculate_document_scores(st.session_state.ocr_raw_text)
+            
+            st.write("**Résultats du scoring:**")
+            
+            # Afficher les scores
+            scores_df = pd.DataFrame(
+                list(scoring_result["scores"].items()),
+                columns=["Type", "Score"]
+            ).sort_values("Score", ascending=False)
+            
+            st.dataframe(scores_df, use_container_width=True)
+            
+            # Afficher le type détecté
+            st.write(f"**Type final détecté:** {scoring_result['document_type']}")
+            st.write(f"**Score maximal:** {scoring_result['max_score']}")
+            
+            # Afficher les colonnes détectées
+            if scoring_result["extracted_info"]["columns_detected"]:
+                st.write("**Colonnes détectées:**", ", ".join(scoring_result["extracted_info"]["columns_detected"]))
+            
+            # Afficher les informations extraites
+            if scoring_result["extracted_info"]["quartier_s2m"]:
+                st.write(f"**Quartier S2M:** {scoring_result['extracted_info']['quartier_s2m']}")
+            
+            if scoring_result["extracted_info"]["nom_magasin_ulys"]:
+                st.write(f"**Nom magasin ULYS:** {scoring_result['extracted_info']['nom_magasin_ulys']}")
+            
+            if scoring_result["extracted_info"]["fact_manuscrit"]:
+                st.write(f"**FACT manuscrit:** {scoring_result['extracted_info']['fact_manuscrit']}")
+            
+            # Indicateurs de confiance
+            if scoring_result["max_score"] >= 8:
+                st.success("✅ Détection très fiable (score ≥ 8)")
+            elif scoring_result["max_score"] >= 5:
+                st.info("ℹ️ Détection fiable (score ≥ 5)")
+            else:
+                st.warning("⚠️ Détection peu fiable (score < 5)")
+    
+    with st.expander("🔍 Analyse de détection détaillée"):
         st.write("**Type brut détecté par l'IA:**", result.get("type_document", "Non détecté"))
         st.write("**Sous-type détecté:**", result.get("document_subtype", "Non détecté"))
         st.write("**Type normalisé:**", doc_type)
-        st.write("**Champs disponibles:**", list(result.keys()))
         
         if st.session_state.document_analysis_details:
             st.write("**Corrections appliquées:**", st.session_state.document_analysis_details)
@@ -2907,8 +3174,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     <div style="display: flex; align-items: start; gap: 15px;">
         <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
         <div>
-            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.2 terminée avec succès</strong><br>
-            <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong></span><br>
+            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.3 terminée avec succès</strong><br>
+            <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Scoring : <strong>Multi-Indices Activé</strong></span><br>
             <small style="color: #4B5563 !important;">Veuillez vérifier les données extraites avant validation</small>
         </div>
     </div>
@@ -3308,14 +3575,20 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <strong style="color: #1A1A1A !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
         <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
         <strong style="color: #1A1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES :</strong><br>
-        • <strong>Correction 1:</strong> Date extraite formatée JJ/MM/AAAA (pas la date du scan)<br>
+        <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES V1.3 :</strong><br>
+        • <strong>Détection multi-indices:</strong> Scoring avancé pour FACTURE/DLP/S2M/ULYS<br>
+        • <strong>Colonnes détectées:</strong> Analyse structurelle des tableaux<br>
+        • <strong>Règles métier:</strong> DLP=TOUJOURS BDC, adresse forcée<br>
+        • <strong>Priorité:</strong> FACTURE > DLP > S2M > ULYS en cas d'égalité<br>
+        • <strong>Seuil minimal:</strong> Score ≥ 3 pour validation<br>
+        • <strong>Extraction améliorée:</strong> Quartier S2M, nom magasin ULYS, FACT manuscrit<br>
+        • <strong>Correction 1:</strong> Date formatée JJ/MM/AAAA (extraite du document)<br>
         • <strong>Correction 2:</strong> Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
         • <strong>Correction 3:</strong> Pour factures "Autre client", client = adresse<br>
-        • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
-        • <strong>Amélioration 2:</strong> Bibliothèque de produits étendue et améliorée<br>
+        • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" appliquée<br>
+        • <strong>Amélioration 2:</strong> Bibliothèque de produits étendue<br>
         • <strong>Amélioration 3:</strong> Meilleure détection des fautes d'orthographe<br>
-        • <strong>Amélioration 4:</strong> Extraction correcte colonnes facture: Désignation et Nb bills
+        • <strong>Amélioration 4:</strong> Extraction correcte colonnes facture
     </div>
     """, unsafe_allow_html=True)
     
@@ -3335,7 +3608,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
             <div style="font-size: 1.5rem; color: #3B82F6 !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Améliorations activées</div>
+            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Scoring Multi-Indices V1.3</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -3473,6 +3746,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
                     <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
                     <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
+                        ✓ Détection multi-indices activée (Score: {scoring_result['max_score']})<br>
                         ✓ Correction 1: Date formatée JJ/MM/AAAA (extraite du document)<br>
                         ✓ Correction 2: Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
                         ✓ Correction 3: Pour factures "Autre client", client = adresse<br>
@@ -3614,7 +3888,7 @@ with st.container():
     
     st.markdown(f"""
     <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
-        <strong>✨ AMÉLIORATIONS APPLIQUÉES :</strong> Date JJ/MM/AAAA • Adresse DLP corrigée • Standardisation améliorée • Facture: colonnes corrigées
+        <strong>✨ VERSION 1.3 :</strong> Détection multi-indices • Scoring avancé • Structure tableau • Règles métier renforcées
     </center>
     """, unsafe_allow_html=True)
     
