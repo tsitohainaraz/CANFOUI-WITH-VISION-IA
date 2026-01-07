@@ -1335,7 +1335,7 @@ if not check_authentication():
         <div style="font-size: 3rem; margin-bottom: 20px; color: #1A1A1A !important;">
             🍷
         </div>
-        """, unsafe_allow_html=True)
+        ""', unsafe_allow_html=True)
     
     st.markdown('<h1 class="login-title">CHAN FOUI ET FILS</h1>', unsafe_allow_html=True)
     st.markdown('<p class="login-subtitle">Système de Scanner Pro - Accès Restreint</p>', unsafe_allow_html=True)
@@ -1888,12 +1888,20 @@ st.markdown(f"""
         color: {PALETTE['text_dark']} !important;
     }}
     
-    /* Style pour les dataframes */
+    /* AMÉLIORATION : Style pour les dataframes */
     .dataframe {{
+        background: {PALETTE['card_bg']} !important;
         border-radius: 12px !important;
         overflow: hidden !important;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
         border: 1px solid {PALETTE['border']} !important;
+    }}
+    
+    /* Style pour les cellules du tableau */
+    .dataframe th, .dataframe td {{
+        background: {PALETTE['card_bg']} !important;
+        color: {PALETTE['text_dark']} !important;
+        border-color: {PALETTE['border']} !important;
     }}
     
     /* Amélioration des contrastes pour l'accessibilité */
@@ -3084,14 +3092,14 @@ if st.session_state.uploaded_image and st.session_state.image_preview_visible:
         st.image(st.session_state.uploaded_image, use_column_width=True)
     
     with col_info:
+        # AMÉLIORATION 1: Texte court et utile
         st.markdown(f"""
         <div class="info-box" style="height: 100%;">
-            <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
-            • Résolution : Haute définition<br>
-            • Format : Image numérique<br>
-            • Statut : Analysé par IA V1.3<br>
+            <strong style="color: {PALETTE['text_dark']} !important;">📊 Qualité du document</strong><br><br>
+            • Statut : Prêt pour traitement<br>
+            • Analyse : IA V1.3<br>
             • Confiance : Élevée<br><br>
-            <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
+            <small style="color: {PALETTE['text_light']} !important;">Document scanné et validé</small>
         </div>
         """, unsafe_allow_html=True)
     
@@ -3381,7 +3389,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ========================================================
-    # TABLEAU STANDARDISÉ ÉDITABLE
+    # TABLEAU STANDARDISÉ ÉDITABLE - AMÉLIORATION 2: Restauré comme dans l'ancien code
     # ========================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
         st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
@@ -3391,9 +3399,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
             <small style="color: #1A1A1A !important;">
             💡 <strong>Mode édition activé avec améliorations :</strong> 
-            • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
-            • <strong>Amélioration 2:</strong> Liste de produits étendue avec meilleure détection des fautes d'orthographe<br>
-            • <strong>Amélioration 3:</strong> Détection améliorée pour Aperao Peche, Côteau d'Ambalavao Special, etc.<br>
             • Colonne "Produit Brute" : texte original extrait par l'IA de Chanfoui AI<br>
             • Colonne "Produit Standard" : standardisé automatiquement par Chafoui AI (éditable)<br>
             • <strong>Note :</strong> Veuillez prendre la photo le plus près possible du document et avec une netteté maximale.
@@ -3409,6 +3414,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         if len(df_with_zero_qty) > 0:
             st.warning(f"⚠️ **Attention :** {len(df_with_zero_qty)} ligne(s) avec quantité 0 seront automatiquement supprimées lors de l'export")
         
+        # AMÉLIORATION 2: Restaurer le tableau comme dans l'ancien code avec le bon style
         edited_df = st.data_editor(
             st.session_state.edited_standardized_df,
             num_rows="dynamic",
@@ -3569,26 +3575,15 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
+    # AMÉLIORATION 1: Texte court et utile
     st.markdown(f"""
     <div class="info-box">
-        <strong style="color: #1A1A1A !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
-        <strong style="color: #1A1A1A !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
-        <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: #1A1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES V1.3 :</strong><br>
-        • <strong>Détection multi-indices:</strong> Scoring avancé pour FACTURE/DLP/S2M/ULYS<br>
-        • <strong>Colonnes détectées:</strong> Analyse structurelle des tableaux<br>
-        • <strong>Règles métier:</strong> DLP=TOUJOURS BDC, adresse forcée<br>
-        • <strong>Priorité:</strong> FACTURE > DLP > S2M > ULYS en cas d'égalité<br>
-        • <strong>Seuil minimal:</strong> Score ≥ 3 pour validation<br>
-        • <strong>Extraction améliorée:</strong> Quartier S2M, nom magasin ULYS, FACT manuscrit<br>
-        • <strong>Correction 1:</strong> Date formatée JJ/MM/AAAA (extraite du document)<br>
-        • <strong>Correction 2:</strong> Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
-        • <strong>Correction 3:</strong> Pour factures "Autre client", client = adresse<br>
-        • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" appliquée<br>
-        • <strong>Amélioration 2:</strong> Bibliothèque de produits étendue<br>
-        • <strong>Amélioration 3:</strong> Meilleure détection des fautes d'orthographe<br>
-        • <strong>Amélioration 4:</strong> Extraction correcte colonnes facture
+        <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES :</strong><br>
+        • <strong>Détection :</strong> Scoring multi-indices V1.3<br>
+        • <strong>Extraction :</strong> Quartier S2M, nom magasin ULYS, FACT manuscrit<br>
+        • <strong>Corrections :</strong> Date JJ/MM/AAAA, adresse DLP, client=adresse<br>
+        • <strong>Standardisation :</strong> Coteau d'Ambalavao → Cuvee Speciale 75cls<br>
+        • <strong>Qualité :</strong> Détection fautes orthographe améliorée
     </div>
     """, unsafe_allow_html=True)
     
@@ -3608,7 +3603,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown(f"""
         <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
             <div style="font-size: 1.5rem; color: #3B82F6 !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Scoring Multi-Indices V1.3</div>
+            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Scoring V1.3</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -3746,14 +3741,10 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
                     <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
                     <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
-                        ✓ Détection multi-indices activée (Score: {scoring_result['max_score']})<br>
-                        ✓ Correction 1: Date formatée JJ/MM/AAAA (extraite du document)<br>
-                        ✓ Correction 2: Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
-                        ✓ Correction 3: Pour factures "Autre client", client = adresse<br>
-                        ✓ Amélioration 1: Standardisation "Coteau d'Ambalavao Rouge" appliquée<br>
-                        ✓ Amélioration 2: Bibliothèque de produits étendue<br>
-                        ✓ Amélioration 3: Meilleure détection des fautes d'orthographe<br>
-                        ✓ Amélioration 4: Extraction correcte colonnes facture
+                        ✓ Détection multi-indices activée<br>
+                        ✓ Date formatée JJ/MM/AAAA<br>
+                        ✓ Standardisation améliorée<br>
+                        ✓ Correction automatique des erreurs
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -3888,7 +3879,7 @@ with st.container():
     
     st.markdown(f"""
     <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
-        <strong>✨ VERSION 1.3 :</strong> Détection multi-indices • Scoring avancé • Structure tableau • Règles métier renforcées
+        <strong>✨ VERSION 1.3 :</strong> Scoring multi-indices • Structure tableau • Standardisation améliorée
     </center>
     """, unsafe_allow_html=True)
     
