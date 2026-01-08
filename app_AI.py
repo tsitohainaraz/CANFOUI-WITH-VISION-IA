@@ -1091,7 +1091,31 @@ if not check_authentication():
         key="login_username"
     )
     password = st.text_input("🔒 Mot de passe", type="password", placeholder="Entrez votre code CFFx", key="login_password")
-    
+ #--------------------------
+    st.markdown(
+    """
+    <div style="margin-top:20px; text-align:center;">
+        <a href="https://chanfoui2025.streamlit.app/" target="_blank" style="text-decoration:none;">
+            <button style="
+                background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
+                color: white;
+                border: none;
+                padding: 14px 24px;
+                border-radius: 12px;
+                font-size: 15px;
+                font-weight: 600;
+                cursor: pointer;
+                width: 100%;
+                box-shadow: 0 6px 18px rgba(59,130,246,0.35);
+            ">
+                📂 IMPORTER FICHIER 2025
+            </button>
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True
+    )
+    #-------------------------------
     if st.button("🔓 Accéder au système", use_container_width=True, key="login_button"):
         if username and password:
             success, message = login(username, password)
@@ -3723,4 +3747,5 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
