@@ -16,13 +16,14 @@ from typing import List, Tuple, Dict, Any, Optional
 import hashlib
 import json
 import unicodedata
-import jellyfish  # Pour la distance de Jaro-Winkler
+import jellyfish
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import threading
 
 # ============================================================
-# STANDARDISATION INTELLIGENTE DES PRODUITS - MIS À JOUR
+# STANDARDISATION INTELLIGENTE DES PRODUITS
 # ============================================================
 
-# Liste officielle des produits mise à jour
 STANDARD_PRODUCTS = [
     "Côte de Fianar Rouge 75 cl",
     "Côte de Fianar Rouge 37 cl",
@@ -59,33 +60,51 @@ STANDARD_PRODUCTS = [
     "Jus de raisin Blanc 20 cl",
     "Rhum Sambatra 20 cl",
     "Consignation Btl 75 cl",
-    # Ajout des nouveaux produits demandés
     "Côte de Fianar Gris 3L",
-    "Côteau d'Ambalavao Special 75 cl",  # Alternative orthographe
-    "Aperao Peche 37 cl",  # Alternative orthographe
-    "Côteau d'Ambalavao Special 75 cl",  # Pour "Côteau d'Ambalavao Rouge" conversion
-    "Cuvee Speciale 75cls"  # Conversion demandée
+    "Côteau d'Ambalavao Special 75 cl",
+    "Aperao Peche 37 cl",
+    "Cuvee Speciale 75cls"
 ]
 
 # ============================================================
-# FONCTION POUR EXTRACTION DU NUMERO FACT MANUSCRIT
+# LOCK POUR PRÉVENIR LES EXPORTS DOUBLES
+# ============================================================
+class ExportLock:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._locked = False
+    
+    def acquire(self):
+        if self._locked:
+            return False
+        self._locked = True
+        return True
+    
+    def release(self):
+        self._locked = False
+    
+    @property
+    def locked(self):
+        return self._locked
+
+export_lock = ExportLock()
+
+# ============================================================
+# FONCTIONS UTILITAIRES
 # ============================================================
 def extract_fact_number_from_handwritten(text: str) -> str:
-    """Extrait le numéro après 'F' ou 'Fact' manuscrit - pour TOUS les BDC"""
     if not text:
         return ""
     
-    # Normaliser le texte
     text = text.replace('\n', ' ').replace('\r', ' ')
     
-    # Chercher les motifs avec "Fact" ou "F" manuscrit suivi de chiffres
     patterns = [
-        r'\bFact\s*[:.]?\s*(\d{4,})\b',      # Fact 12345 ou Fact: 12345
-        r'\bF\s*[:.]?\s*(\d{4,})\b',         # F 12345 ou F: 12345
-        r'\bfact\s*[:.]?\s*(\d{4,})\b',      # fact 12345 (minuscule)
-        r'\bf\s*[:.]?\s*(\d{4,})\b',         # f 12345 (minuscule)
-        r'Fact\.?\s*(\d{4,})',               # Fact.12345
-        r'F\.?\s*(\d{4,})',                  # F.12345
+        r'\bFact\s*[:.]?\s*(\d{4,})\b',
+        r'\bF\s*[:.]?\s*(\d{4,})\b',
+        r'\bfact\s*[:.]?\s*(\d{4,})\b',
+        r'\bf\s*[:.]?\s*(\d{4,})\b',
+        r'Fact\.?\s*(\d{4,})',
+        r'F\.?\s*(\d{4,})',
     ]
     
     all_matches = []
@@ -103,112 +122,75 @@ def extract_fact_number_from_handwritten(text: str) -> str:
     if not all_matches:
         return ""
     
-    # 1. Priorité aux matches qui contiennent "Fact" (pas juste "F")
     fact_matches = [m for m in all_matches if m['is_fact']]
     if fact_matches:
         fact_matches.sort(key=lambda x: x['position'], reverse=True)
         return fact_matches[0]['number']
     
-    # 2. Sinon, prendre le dernier "F" trouvé
     all_matches.sort(key=lambda x: x['position'], reverse=True)
     return all_matches[0]['number']
 
-# ============================================================
-# FONCTION POUR EXTRACTION DU NOM MAGASIN DEPUIS "DOIT M :"
-# ============================================================
 def extract_motel_name_from_doit(text: str) -> str:
-    """
-    Extrait le nom du magasin après "DOIT M :" pour les factures CLIENT EN COMPTE
-    lorsque le client n'est pas ULYS, DLP, S2M
-    """
     if not text:
         return ""
     
     text_upper = text.upper()
     
-    # Chercher le motif "DOIT M :" (avec variations)
     patterns = [
         r'DOIT\s+M\s*:\s*(.+)',
         r'DOIT\s+M\s*:\s*(.+?)(?:\n|$)',
         r'DOIT\s*M\s*:\s*(.+)',
-        r'DOIT\s*:\s*(.+?)(?:\n|$)',  # Fallback pour "DOIT :"
+        r'DOIT\s*:\s*(.+?)(?:\n|$)',
     ]
     
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
         if match:
             motel_name = match.group(1).strip()
-            
-            # Nettoyer les caractères spéciaux
             motel_name = re.sub(r'[\n\r\t]', ' ', motel_name)
             motel_name = ' '.join(motel_name.split())
-            
-            # Retirer les espaces en trop et normaliser
             motel_name = motel_name.strip()
-            
             if motel_name:
                 return motel_name
     
     return ""
 
-# ============================================================
-# FONCTION POUR NETTOYER LE QUARTIER S2M
-# ============================================================
 def clean_quartier(quartier: str) -> str:
-    """Nettoie le nom du quartier pour S2M"""
     if not quartier:
         return ""
     
-    # Supprimer les guillemets, deux-points, etc.
     quartier = re.sub(r'["\'\[\]:]', '', quartier)
-    
-    # Supprimer "quartier_s2m" et variations
     quartier = re.sub(r'quartier[_\-]?s2m', '', quartier, flags=re.IGNORECASE)
-    
-    # Nettoyer les espaces
     quartier = ' '.join(quartier.split())
-    
     return quartier.strip()
 
-# ============================================================
-# FONCTION POUR NETTOYER L'ADRESSE S2M
-# ============================================================
 def clean_adresse(adresse: str) -> str:
-    """Nettoie l'adresse extraite pour S2M"""
     if not adresse:
         return ""
     
-    # Si l'adresse contient le format JSON-like
     if '"quartier_s2m"' in adresse or "quartier_s2m" in adresse:
-        # Extraire juste le quartier
         match = re.search(r'"quartier_s2m":\s*"([^"]+)"', adresse)
         if match:
             quartier = match.group(1)
             return f"Supermaki {quartier}"
         
-        # Autre format
         match = re.search(r'quartier_s2m[":\s]+([^",}\]]+)', adresse)
         if match:
             quartier = match.group(1).strip()
             quartier = clean_quartier(quartier)
             return f"Supermaki {quartier}"
     
-    # Si c'est déjà "Supermaki" suivi de quelque chose
     if "Supermaki" in adresse:
-        # Nettoyer les caractères spéciaux
         adresse = re.sub(r'["\'\[\]:]', ' ', adresse)
         adresse = re.sub(r'\s+', ' ', adresse)
         return adresse.strip()
     
     return adresse.strip()
 
-# Dictionnaire de synonymes et normalisations MIS À JOUR
 SYNONYMS = {
-    # Marques principales
     "cote de fianar": "côte de fianar",
     "cote de fianara": "côte de fianar",
     "fianara": "fianar",
-    "fianar": "fianar",
     "flanar": "fianar",
     "côte de flanar": "côte de fianar",
     "cote de flanar": "côte de fianar",
@@ -222,8 +204,6 @@ SYNONYMS = {
     "aperitif": "aperitif",
     "sambatra": "sambatra",
     "champetre": "champêtre",
-    
-    # Types de vins
     "vin rouge": "rouge",
     "vin blanc": "blanc",
     "vin rose": "rosé",
@@ -232,8 +212,6 @@ SYNONYMS = {
     "rouge doux": "rouge doux",
     "blanc doux": "blanc doux",
     "doux": "doux",
-    
-    # Abréviations communes
     "btl": "",
     "bouteille": "",
     "nu": "",
@@ -250,8 +228,6 @@ SYNONYMS = {
     "cons.chan foui": "consignation btl",
     "cons.chan foui 75cl": "consignation btl 75cl",
     "cons chan foui 75cl": "consignation btl 75cl",
-    
-    # Unités
     "750ml": "75 cl",
     "750 ml": "75 cl",
     "700ml": "70 cl",
@@ -268,16 +244,12 @@ SYNONYMS = {
     "500 ml": "50 cl",
     "200ml": "20 cl",
     "200 ml": "20 cl",
-    
-    # NOUVEAUX SYNONYMES POUR AMÉLIORATION
-    "coteau d'ambalavao rouge": "cuvee speciale 75cls",  # Conversion demandée
+    "coteau d'ambalavao rouge": "cuvee speciale 75cls",
     "coteau d ambalavao rouge": "cuvee speciale 75cls",
     "ambalavao rouge": "cuvee speciale 75cls",
     "coteau ambalavao rouge": "cuvee speciale 75cls",
     "côteau d'ambalavao rouge": "cuvee speciale 75cls",
     "côteau ambalavao rouge": "cuvee speciale 75cls",
-    
-    # Standardisation améliorée
     "cote fianar": "côte de fianar",
     "cote de fianar 3l": "côte de fianar 3l",
     "cote fianar 3l": "côte de fianar 3l",
@@ -291,7 +263,6 @@ SYNONYMS = {
     "consignation": "consignation btl",
 }
 
-# Mapping des équivalences de volume
 VOLUME_EQUIVALENTS = {
     "750": "75",
     "750ml": "75",
@@ -330,43 +301,29 @@ VOLUME_EQUIVALENTS = {
 }
 
 def preprocess_text(text: str) -> str:
-    """Prétraitement avancé du texte"""
     if not text:
         return ""
     
-    # Convertir en minuscules
     text = text.lower()
-    
-    # Supprimer les accents
     text = unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii')
-    
-    # Remplacer les apostrophes et tirets
     text = text.replace("'", " ").replace("-", " ").replace("_", " ").replace("/", " ")
-    
-    # Supprimer les caractères spéciaux (garder lettres, chiffres, espaces)
     text = re.sub(r'[^a-z0-9\s]', ' ', text)
     
-    # Remplacer les synonymes
     words = text.split()
     cleaned_words = []
     for word in words:
         if word in SYNONYMS:
             replacement = SYNONYMS[word]
-            if replacement:  # Ne pas ajouter si le synonyme est vide
+            if replacement:
                 cleaned_words.append(replacement)
         else:
             cleaned_words.append(word)
     
     text = ' '.join(cleaned_words)
-    
-    # Supprimer les espaces multiples
     text = re.sub(r'\s+', ' ', text).strip()
-    
     return text
 
 def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
-    """Extrait et normalise l'information de volume"""
-    # Chercher des motifs de volume
     volume_patterns = [
         r'(\d+)\s*cl',
         r'(\d+)\s*ml',
@@ -382,9 +339,7 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
         matches = re.findall(pattern, text)
         if matches:
             volume = matches[0]
-            # Normaliser le volume
             if 'ml' in pattern:
-                # Convertir ml en cl
                 try:
                     ml = int(volume)
                     if ml >= 1000:
@@ -394,7 +349,6 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
                 except:
                     pass
             elif 'l' in pattern and 'cl' not in pattern and 'ml' not in pattern:
-                # Convertir litres en cl
                 try:
                     liters = float(volume)
                     if liters >= 1:
@@ -402,16 +356,13 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
                 except:
                     pass
             
-            # Supprimer le volume du texte pour faciliter la correspondance
             text_without_volume = re.sub(pattern, '', text_without_volume)
             break
     
-    # Chercher aussi des volumes sans unité spécifique
     if not volume:
         match = re.search(r'\b(\d+)\b', text)
         if match:
             vol_num = match.group(1)
-            # Deviner l'unité basée sur la valeur
             if vol_num in VOLUME_EQUIVALENTS:
                 volume = f"{VOLUME_EQUIVALENTS[vol_num]} cl"
                 text_without_volume = re.sub(r'\b' + vol_num + r'\b', '', text_without_volume)
@@ -419,7 +370,6 @@ def extract_volume_info(text: str) -> Tuple[str, Optional[str]]:
     return text_without_volume.strip(), volume
 
 def extract_product_features(text: str) -> Dict[str, str]:
-    """Extrait les caractéristiques clés du produit"""
     features = {
         'type': '',
         'marque': '',
@@ -428,15 +378,11 @@ def extract_product_features(text: str) -> Dict[str, str]:
         'original': text
     }
     
-    # Normaliser le texte
     normalized = preprocess_text(text)
-    
-    # Extraire le volume
     text_without_volume, volume = extract_volume_info(normalized)
     if volume:
         features['volume'] = volume
     
-    # Détecter la couleur
     colors = ['rouge', 'blanc', 'rose', 'gris', 'orange', 'peche', 'ananas', 'epices', 'ratafia']
     for color in colors:
         if color in text_without_volume:
@@ -444,7 +390,6 @@ def extract_product_features(text: str) -> Dict[str, str]:
             text_without_volume = text_without_volume.replace(color, '')
             break
     
-    # Détecter le type
     types = ['vin', 'jus', 'aperitif', 'eau de vie', 'cuvee', 'cuvee special', 'special', 'consigne']
     for type_ in types:
         if type_ in text_without_volume:
@@ -452,7 +397,6 @@ def extract_product_features(text: str) -> Dict[str, str]:
             text_without_volume = text_without_volume.replace(type_, '')
             break
     
-    # Détecter la marque
     marques = [
         ('cote de fianar', 'côte de fianar'),
         ('maroparasy', 'maroparasy'),
@@ -470,7 +414,6 @@ def extract_product_features(text: str) -> Dict[str, str]:
             text_without_volume = text_without_volume.replace(marque_pattern, '')
             break
     
-    # Nettoyer le texte restant
     text_without_volume = re.sub(r'\s+', ' ', text_without_volume).strip()
     if text_without_volume:
         features['autres'] = text_without_volume
@@ -478,11 +421,9 @@ def extract_product_features(text: str) -> Dict[str, str]:
     return features
 
 def calculate_similarity_score(features1: Dict, features2: Dict) -> float:
-    """Calcule un score de similarité entre deux ensembles de caractéristiques"""
     score = 0.0
     max_score = 0.0
     
-    # Poids pour chaque caractéristique
     weights = {
         'marque': 0.4,
         'couleur': 0.3,
@@ -494,14 +435,11 @@ def calculate_similarity_score(features1: Dict, features2: Dict) -> float:
         if features1.get(key) and features2.get(key):
             if features1[key] == features2[key]:
                 score += weight
-            # Similarité partielle pour les couleurs (rose/rosé)
             elif key == 'couleur':
-                if ('rose' in features1[key] and 'rosé' in features2[key]) or \
-                   ('rosé' in features1[key] and 'rose' in features2[key]):
+                if ('rose' in features1[key] and 'rosé' in features2[key]) or ('rosé' in features1[key] and 'rose' in features2[key]):
                     score += weight * 0.8
         max_score += weight
     
-    # Bonus pour correspondance exacte du volume
     if features1.get('volume') and features2.get('volume'):
         if features1['volume'] == features2['volume']:
             score += 0.1
@@ -510,69 +448,45 @@ def calculate_similarity_score(features1: Dict, features2: Dict) -> float:
     return score / max_score if max_score > 0 else 0.0
 
 def find_best_match(ocr_designation: str, standard_products: List[str]) -> Tuple[Optional[str], float]:
-    """
-    Trouve le meilleur match pour une désignation OCR
-    
-    Returns:
-        Tuple (produit_standard, score_confidence)
-    """
-    # Prétraiter la désignation OCR
     ocr_features = extract_product_features(ocr_designation)
-    
-    best_match = None
-    best_score = 0.0
-    
-    # Pré-calculer les caractéristiques des produits standards
     standard_features = []
     for product in standard_products:
         std_features = extract_product_features(product)
         standard_features.append((product, std_features))
     
-    # Chercher le meilleur match
+    best_match = None
+    best_score = 0.0
+    
     for product, std_features in standard_features:
         score = calculate_similarity_score(ocr_features, std_features)
         
-        # Bonus pour correspondance exacte (après normalisation)
         ocr_normalized = preprocess_text(ocr_designation)
         std_normalized = preprocess_text(product)
         
-        # Utiliser Jaro-Winkler pour la similarité textuelle
         jaro_score = jellyfish.jaro_winkler_similarity(ocr_normalized, std_normalized)
-        
-        # Combiner les scores
         combined_score = (score * 0.7) + (jaro_score * 0.3)
         
         if combined_score > best_score:
             best_score = combined_score
             best_match = product
     
-    # Seuil de confiance minimum
     if best_score < 0.6:
         return None, best_score
     
     return best_match, best_score
 
 def intelligent_product_matcher(ocr_designation: str) -> Tuple[Optional[str], float, Dict]:
-    """
-    Standardise intelligemment une désignation produit OCR
-    
-    Returns:
-        Tuple (produit_standard, score_confidence, details)
-    """
     details = {
         'original': ocr_designation,
         'features': {},
         'matches': []
     }
     
-    # 1. Extraction des caractéristiques
     features = extract_product_features(ocr_designation)
     details['features'] = features
     
-    # 2. Recherche du meilleur match
     best_match, confidence = find_best_match(ocr_designation, STANDARD_PRODUCTS)
     
-    # 3. Calcul des alternatives (top 3)
     alternatives = []
     for product in STANDARD_PRODUCTS:
         product_features = extract_product_features(product)
@@ -583,65 +497,34 @@ def intelligent_product_matcher(ocr_designation: str) -> Tuple[Optional[str], fl
         )
         combined_score = (score * 0.7) + (jaro_score * 0.3)
         
-        if combined_score >= 0.4:  # Seuil bas pour voir les alternatives
+        if combined_score >= 0.4:
             alternatives.append((product, combined_score))
     
-    # Trier par score décroissant
     alternatives.sort(key=lambda x: x[1], reverse=True)
-    details['matches'] = alternatives[:3]  # Top 3 seulement
+    details['matches'] = alternatives[:3]
     
     return best_match, confidence, details
 
-# ============================================================
-# FONCTION AMÉLIORÉE DE STANDARDISATION
-# ============================================================
 def standardize_product_name_improved(product_name: str) -> Tuple[str, float, str]:
-    """
-    Standardise le nom du produit avec score de confiance
-    
-    Args:
-        product_name: Nom du produit issu de l'OCR
-        
-    Returns:
-        Tuple (nom_standardisé, score_confiance, status)
-    """
     if not product_name or not product_name.strip():
         return "", 0.0, "empty"
     
-    # Essayer d'abord avec le matching intelligent
     best_match, confidence, details = intelligent_product_matcher(product_name)
     
     if best_match and confidence >= 0.7:
         return best_match, confidence, "matched"
     elif best_match and confidence >= 0.6:
-        # Match à confiance moyenne
         return best_match, confidence, "partial_match"
     else:
-        # Aucun bon match trouvé
         return product_name.title(), confidence, "no_match"
 
-# ============================================================
-# FONCTION DE STANDARDISATION SPÉCIFIQUE POUR BDC
-# ============================================================
 def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str]:
-    """
-    Standardise spécifiquement pour les produits BDC ULYS
-    
-    Returns:
-        Tuple (produit_brut, produit_standard, confidence, status)
-    """
-    # Garder le produit brut original
     produit_brut = product_name.strip()
-    
-    # Standardiser avec la méthode améliorée
     produit_standard, confidence, status = standardize_product_name_improved(product_name)
     
-    # Corrections spécifiques pour ULYS
     produit_upper = produit_brut.upper()
     
-    # Gestion spéciale pour "CONS. CHAN FOUI 75CL" - FILTRE 2
     if "CONS" in produit_upper and "CHAN" in produit_upper and "FOUI" in produit_upper:
-        # Remplacer par "Consignation btl 75cl"
         if "75" in produit_upper or "750" in produit_upper:
             produit_standard = "Consignation btl 75cl"
         else:
@@ -649,9 +532,7 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
         confidence = 0.95
         status = "matched"
     
-    # Gestion spéciale pour les vins avec "NU"
     if "NU" in produit_upper and "750" in produit_upper:
-        # Essayer de déterminer le type exact
         if "ROUGE" in produit_upper and "FIANAR" in produit_upper:
             produit_standard = "Côte de Fianar Rouge 75 cl"
             confidence = 0.9
@@ -673,7 +554,6 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
             confidence = 0.9
             status = "matched"
     
-    # Gestion spéciale pour les 3L
     if "3L" in produit_upper or "3 L" in produit_upper:
         if "ROUGE" in produit_upper and "FIANAR" in produit_upper:
             produit_standard = "Côte de Fianar Rouge 3L"
@@ -692,13 +572,11 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
             confidence = 0.9
             status = "matched"
     
-    # CONVERSION SPÉCIFIQUE DEMANDÉE : "Coteau d'Ambalavao Rouge" -> "Cuvee Speciale 75cls"
     if "COTEAU" in produit_upper and "AMBALAVAO" in produit_upper and "ROUGE" in produit_upper:
         produit_standard = "Cuvee Speciale 75cls"
         confidence = 0.95
         status = "matched"
     
-    # Standardisation améliorée pour les produits avec fautes d'orthographe
     if "COTEAU" in produit_upper and "DAMBALAVAO" in produit_upper:
         if "ROUGE" in produit_upper:
             produit_standard = "Cuvee Speciale 75cls"
@@ -713,7 +591,6 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
             confidence = 0.9
             status = "matched"
     
-    # Standardisation pour Aperao Peche
     if "APERAO" in produit_upper and "PECHE" in produit_upper:
         if "37" in produit_upper or "370" in produit_upper:
             produit_standard = "Aperao Peche 37 cl"
@@ -722,7 +599,6 @@ def standardize_product_for_bdc(product_name: str) -> Tuple[str, str, float, str
         confidence = 0.9
         status = "matched"
     
-    # Standardisation pour Côteau d'Ambalavao Special
     if "COTEAU" in produit_upper and "AMBALAVAO" in produit_upper and "SPECIAL" in produit_upper:
         produit_standard = "Côteau d'Ambalavao Special 75 cl"
         confidence = 0.9
@@ -741,9 +617,8 @@ st.set_page_config(
 )
 
 # ============================================================
-# INITIALISATION COMPLÈTE DES VARIABLES DE SESSION
+# INITIALISATION DES VARIABLES DE SESSION
 # ============================================================
-# Initialisation des états de session pour l'authentification
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "username" not in st.session_state:
@@ -752,8 +627,6 @@ if "login_attempts" not in st.session_state:
     st.session_state.login_attempts = 0
 if "locked_until" not in st.session_state:
     st.session_state.locked_until = None
-
-# Initialisation des états pour l'application principale
 if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
 if "uploaded_image" not in st.session_state:
@@ -798,25 +671,13 @@ if "nom_magasin_ulys" not in st.session_state:
     st.session_state.nom_magasin_ulys = ""
 if "fact_manuscrit" not in st.session_state:
     st.session_state.fact_manuscrit = ""
+if "worksheet_cache" not in st.session_state:
+    st.session_state.worksheet_cache = {}
+if "export_in_progress" not in st.session_state:
+    st.session_state.export_in_progress = False
 
 # ============================================================
-# FONCTION DE NORMALISATION DES PRODUITS (COMPATIBILITÉ)
-# ============================================================
-def standardize_product_name(product_name: str) -> str:
-    """Standardise les noms de produits avec la nouvelle méthode intelligente"""
-    standardized, confidence, status = standardize_product_name_improved(product_name)
-    
-    # Stocker le score de confiance dans la session pour affichage
-    st.session_state.product_matching_scores[product_name] = {
-        'standardized': standardized,
-        'confidence': confidence,
-        'status': status
-    }
-    
-    return standardized
-
-# ============================================================
-# SYSTÈME D'AUTHENTIFICATION
+# AUTHENTIFICATION
 # ============================================================
 AUTHORIZED_USERS = {
     "Pathou M.": "CFF3",
@@ -867,7 +728,7 @@ def logout():
     st.rerun()
 
 # ============================================================
-# PAGE DE CONNEXION - FILTRE 1: Texte noir sur fond blanc
+# PAGE DE CONNEXION
 # ============================================================
 if not check_authentication():
     st.markdown("""
@@ -907,68 +768,9 @@ if not check_authentication():
             font-family: 'Inter', sans-serif;
         }
         
-        .login-logo {
-            height: 80px;
-            margin-bottom: 20px;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
-        }
-        
-        /* FORCER LE TEXTE EN NOIR SUR BLANC - FILTRE 1 */
-        .stSelectbox > div > div {
-            border: 1.5px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 10px 15px;
-            font-size: 15px;
-            transition: all 0.2s ease;
-            background: white;
-            color: #1E293B !important;
-        }
-        
-        .stSelectbox > div > div:hover {
-            border-color: #27414A;
-            box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
-        }
-        
-        /* Texte dans le dropdown */
-        .stSelectbox input,
-        .stSelectbox div,
-        .stSelectbox span {
-            color: #1E293B !important;
-            fill: #1E293B !important;
-        }
-        
-        /* Options du dropdown */
-        [data-baseweb="popover"] div,
-        [data-baseweb="popover"] span {
-            color: #1E293B !important;
-        }
-        
+        .stSelectbox > div > div,
         .stTextInput > div > div > input {
-            border: 1.5px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 12px 16px;
-            font-size: 15px;
-            transition: all 0.2s ease;
-            background: white;
             color: #1E293B !important;
-        }
-        
-        .stTextInput > div > div > input:focus {
-            border-color: #27414A;
-            box-shadow: 0 0 0 3px rgba(39, 65, 74, 0.1);
-            outline: none;
-            color: #1E293B !important;
-        }
-        
-        /* Correction pour le placeholder */
-        .stTextInput > div > div > input::placeholder {
-            color: #64748b !important;
-        }
-        
-        /* Labels en noir */
-        label {
-            color: #1E293B !important;
-            font-weight: 500 !important;
         }
         
         .stButton > button {
@@ -982,84 +784,6 @@ if not check_authentication():
             font-size: 15px;
             margin-top: 12px;
             transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-            font-family: 'Inter', sans-serif;
-        }
-        
-        .stButton > button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(39, 65, 74, 0.25);
-        }
-        
-        .stButton > button:after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: 0.5s;
-        }
-        
-        .stButton > button:hover:after {
-            left: 100%;
-        }
-        
-        .security-warning {
-            background: linear-gradient(135deg, #FFF3CD 0%, #FFE8A1 100%);
-            border: 1px solid #FFC107;
-            border-radius: 14px;
-            padding: 18px;
-            margin-top: 28px;
-            font-size: 0.9rem;
-            color: #856404 !important;
-            text-align: left;
-            font-family: 'Inter', sans-serif;
-            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.1);
-        }
-        
-        .pulse-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            background: #10B981;
-            border-radius: 50%;
-            margin-right: 8px;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { transform: scale(0.95); opacity: 0.7; }
-            50% { transform: scale(1.1); opacity: 1; }
-            100% { transform: scale(0.95); opacity: 0.7; }
-        }
-        
-        /* Override pour tous les textes */
-        * {
-            color: #1E293B !important;
-        }
-        
-        /* Exception pour les éléments qui doivent être blancs */
-        .stButton > button,
-        .user-info {
-            color: white !important;
-        }
-        
-        /* Style spécifique pour le dropdown */
-        [data-baseweb="select"] * {
-            color: #1E293B !important;
-        }
-        
-        [data-baseweb="popover"] * {
-            color: #1E293B !important;
-        }
-        
-        /* Texte dans les options */
-        [role="listbox"] div,
-        [role="option"] {
-            color: #1E293B !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -1067,23 +791,13 @@ if not check_authentication():
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     
     if os.path.exists("CF_LOGOS.png"):
-        st.image("CF_LOGOS.png", width=90, output_format="PNG")
+        st.image("CF_LOGOS.png", width=90)
     else:
-        st.markdown("""
-        <div style="font-size: 3rem; margin-bottom: 20px; color: #1A1A1A !important;">
-            🍷
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div style="font-size: 3rem; margin-bottom: 20px;">🍷</div>""", unsafe_allow_html=True)
     
     st.markdown('<h1 class="login-title">CHAN FOUI ET FILS</h1>', unsafe_allow_html=True)
     st.markdown('<p class="login-subtitle">Système de Scanner Pro - Accès Restreint</p>', unsafe_allow_html=True)
     
-    # Indicateur de sécurité
-    col_status = st.columns(3)
-    with col_status[0]:
-        st.markdown('<div style="text-align: center; color: #1E293B !important;"><span class="pulse-dot"></span>Serveur actif</div>', unsafe_allow_html=True)
-    
-    # FILTRE 1: Le nom de l'identifiant apparaît clair et noir sur fond blanc
     username = st.selectbox(
         "👤 Identifiant",
         options=[""] + list(AUTHORIZED_USERS.keys()),
@@ -1091,31 +805,7 @@ if not check_authentication():
         key="login_username"
     )
     password = st.text_input("🔒 Mot de passe", type="password", placeholder="Entrez votre code CFFx", key="login_password")
- #--------------------------
-    st.markdown(
-    """
-    <div style="margin-top:20px; text-align:center;">
-        <a href="https://chanfoui2025.streamlit.app/" target="_blank" style="text-decoration:none;">
-            <button style="
-                background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
-                color: white;
-                border: none;
-                padding: 14px 24px;
-                border-radius: 12px;
-                font-size: 15px;
-                font-weight: 600;
-                cursor: pointer;
-                width: 100%;
-                box-shadow: 0 6px 18px rgba(59,130,246,0.35);
-            ">
-                📂 IMPORTER FICHIER 2025
-            </button>
-        </a>
-    </div>
-    """,
-    unsafe_allow_html=True
-    )
-    #-------------------------------
+    
     if st.button("🔓 Accéder au système", use_container_width=True, key="login_button"):
         if username and password:
             success, message = login(username, password)
@@ -1129,8 +819,8 @@ if not check_authentication():
             st.warning("⚠️ Veuillez remplir tous les champs")
     
     st.markdown("""
-    <div class="security-warning">
-        <strong style="display: block; margin-bottom: 8px; color: #856404 !important;">🔐 Protocole de sécurité :</strong>
+    <div style="background: linear-gradient(135deg, #FFF3CD 0%, #FFE8A1 100%); border: 1px solid #FFC107; border-radius: 14px; padding: 18px; margin-top: 28px; font-size: 0.9rem; color: #856404 !important;">
+        <strong style="display: block; margin-bottom: 8px;">🔐 Protocole de sécurité :</strong>
         • Votre compte est protégé<br>
         • Vos informations sont en sécurité<br>
         • Personne d'autre ne peut y accéder<br>
@@ -1142,235 +832,65 @@ if not check_authentication():
     st.stop()
 
 # ============================================================
-# APPLICATION PRINCIPALE
+# THÈME PRINCIPAL
 # ============================================================
-
-# ============================================================
-# THÈME CHAN FOUI & FILS - VERSION TECH AMÉLIORÉE
-# ============================================================
-LOGO_FILENAME = "CF_LOGOS.png"
-BRAND_TITLE = "CHAN FOUI ET FILS"
-BRAND_SUB = "AI Document Processing System"
-
 PALETTE = {
     "primary_dark": "#27414A",
-    "primary_light": "#1F2F35",
-    "background": "#F5F5F3",
-    "card_bg": "#FFFFFF",
-    "card_bg_alt": "#F4F6F3",
-    "text_dark": "#1A1A1A",
-    "text_medium": "#333333",
-    "text_light": "#4B5563",
     "accent": "#2C5F73",
     "success": "#10B981",
     "warning": "#F59E0B",
     "error": "#EF4444",
-    "border": "#E5E7EB",
-    "hover": "#F9FAFB",
-    "tech_blue": "#3B82F6",
-    "tech_purple": "#8B5CF6",
-    "tech_cyan": "#06B6D4",
+    "text_dark": "#1A1A1A",
 }
 
 st.markdown(f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400&display=swap');
-    
-    /* RÈGLE GLOBALE : AUCUN TEXTE EN BLANC */
     * {{
         color: {PALETTE['text_dark']} !important;
     }}
     
-    /* Exceptions spécifiques pour les éléments qui DOIVENT être blancs */
-    .stButton > button,
-    .user-info,
-    .document-title,
-    .progress-container h3,
-    .progress-container p:not(.progress-text-dark) {{
-        color: white !important;
-    }}
-    
     .main {{
-        background: linear-gradient(135deg, {PALETTE['background']} 0%, #f0f2f5 100%);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        color: {PALETTE['text_dark']} !important;
-    }}
-    
-    .stApp {{
-        background: linear-gradient(135deg, {PALETTE['background']} 0%, #f0f2f5 100%);
-        font-family: 'Inter', sans-serif;
-        line-height: 1.6;
-        color: {PALETTE['text_dark']} !important;
-    }}
-    
-    /* Amélioration de la lisibilité */
-    h1, h2, h3, h4, h5, h6 {{
-        color: {PALETTE['text_dark']} !important;
-        font-weight: 700 !important;
-    }}
-    
-    p, span, div:not(.exception) {{
-        color: {PALETTE['text_dark']} !important;
+        background: linear-gradient(135deg, #F5F5F3 0%, #f0f2f5 100%);
     }}
     
     .header-container {{
-        background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
+        background: linear-gradient(145deg, #FFFFFF 0%, #f8fafc 100%);
         padding: 2.5rem 2rem;
         border-radius: 24px;
         margin-bottom: 2.5rem;
-        box-shadow: 0 12px 40px rgba(39, 65, 74, 0.1),
-                    0 0 0 1px rgba(39, 65,74, 0.05);
+        box-shadow: 0 12px 40px rgba(39, 65, 74, 0.1);
         text-align: center;
-        border: 1px solid rgba(255, 255, 255, 0.8);
         position: relative;
-        overflow: hidden;
-        backdrop-filter: blur(10px);
-    }}
-    
-    .header-container:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']}, {PALETTE['tech_cyan']});
-        background-size: 200% 100%;
-        animation: gradient-shift 3s ease infinite;
-    }}
-    
-    @keyframes gradient-shift {{
-        0% {{ background-position: 0% 50%; }}
-        50% {{ background-position: 100% 50%; }}
-        100% {{ background-position: 0% 50%; }}
     }}
     
     .user-info {{
         position: absolute;
         top: 20px;
         right: 20px;
-        background: linear-gradient(135deg, {PALETTE['accent']} 0%, {PALETTE['tech_blue']} 100%);
+        background: linear-gradient(135deg, {PALETTE['accent']} 0%, #3B82F6 100%);
         color: white !important;
         padding: 10px 20px;
         border-radius: 16px;
         font-size: 0.9rem;
         font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        backdrop-filter: blur(5px);
-    }}
-    
-    .logo-title-wrapper {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1.5rem;
-        margin-bottom: 0.8rem;
-        position: relative;
-        z-index: 2;
     }}
     
     .brand-title {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['tech_blue']} 100%);
+        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, #3B82F6 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
         font-size: 2.8rem;
         font-weight: 800;
         margin: 0;
-        letter-spacing: -0.5px;
-        line-height: 1.1;
-        text-transform: uppercase;
-        font-family: 'Inter', sans-serif;
-    }}
-    
-    .brand-sub {{
-        color: {PALETTE['text_medium']} !important;
-        font-size: 1.1rem;
-        margin-top: 0.3rem;
-        font-weight: 400;
-        opacity: 0.9;
-        font-family: 'Inter', sans-serif;
-        letter-spacing: 0.5px;
-    }}
-    
-    .document-title {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        color: white !important;
-        padding: 1.5rem 2.5rem;
-        border-radius: 18px;
-        font-weight: 700;
-        font-size: 1.5rem;
-        text-align: center;
-        margin: 2rem 0 3rem 0;
-        box-shadow: 0 8px 25px rgba(39, 65, 74, 0.2);
-        border: none;
-        position: relative;
-        overflow: hidden;
-        font-family: 'Inter', sans-serif;
-    }}
-    
-    .document-title:after {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
-        animation: shine 3s infinite;
-    }}
-    
-    @keyframes shine {{
-        0% {{ transform: translateX(-100%); }}
-        100% {{ transform: translateX(100%); }}
     }}
     
     .card {{
-        background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
+        background: linear-gradient(145deg, #FFFFFF 0%, #f8fafc 100%);
         padding: 2.2rem;
         border-radius: 20px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08),
-                    0 0 0 1px rgba(39, 65, 74, 0.05);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
         margin-bottom: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.8);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        backdrop-filter: blur(10px);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .card:hover {{
-        transform: translateY(-5px);
-        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12),
-                    0 0 0 1px rgba(39, 65, 74, 0.08);
-    }}
-    
-    .card h4 {{
-        color: {PALETTE['text_dark']} !important;
-        font-size: 1.4rem;
-        font-weight: 700;
-        margin-bottom: 1.8rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid;
-        border-image: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']}) 1;
-        font-family: 'Inter', sans-serif;
-        position: relative;
-        display: inline-block;
-    }}
-    
-    .card h4:after {{
-        content: '';
-        position: absolute;
-        bottom: -2px;
-        left: 0;
-        width: 60px;
-        height: 3px;
-        background: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']});
-        border-radius: 3px;
     }}
     
     .stButton > button {{
@@ -1380,134 +900,16 @@ st.markdown(f"""
         border: none;
         padding: 1rem 2rem;
         border-radius: 14px;
-        transition: all 0.3s ease;
         width: 100%;
-        font-size: 1rem;
-        font-family: 'Inter', sans-serif;
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 4px 15px rgba(39, 65, 74, 0.2);
-    }}
-    
-    .stButton > button:hover {{
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(39, 65, 74, 0.3);
-    }}
-    
-    .stButton > button:active {{
-        transform: translateY(-1px);
-    }}
-    
-    .upload-box {{
-        border: 2px dashed {PALETTE['accent']};
-        border-radius: 20px;
-        padding: 3.5rem;
-        text-align: center;
-        background: linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.9) 100%);
-        margin: 2rem 0;
-        transition: all 0.3s ease;
-        backdrop-filter: blur(5px);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .upload-box:hover {{
-        border-color: {PALETTE['tech_blue']};
-        background: linear-gradient(145deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.95) 100%);
-        transform: translateY(-2px);
-        box-shadow: 0 10px 30px rgba(39, 65, 74, 0.1);
-    }}
-    
-    .upload-box:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, {PALETTE['tech_blue']}, {PALETTE['tech_purple']});
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }}
-    
-    .upload-box:hover:before {{
-        opacity: 1;
-    }}
-    
-    .progress-container {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        color: white !important;
-        padding: 3rem;
-        border-radius: 20px;
-        text-align: center;
-        margin: 2.5rem 0;
-        box-shadow: 0 10px 30px rgba(39, 65, 74, 0.2);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .progress-container:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
-        animation: shine 2s infinite;
-    }}
-    
-    /* Texte en noir dans la barre de progression */
-    .progress-text-dark {{
-        color: {PALETTE['text_dark']} !important;
-        font-weight: 600;
-        margin-top: 15px;
-    }}
-    
-    .image-preview-container {{
-        background: linear-gradient(145deg, {PALETTE['card_bg']} 0%, #f8fafc 100%);
-        border-radius: 20px;
-        padding: 2rem;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-        margin-bottom: 2.5rem;
-        border: 1px solid rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(10px);
     }}
     
     .info-box {{
         background: linear-gradient(135deg, #E8F4F8 0%, #D4EAF7 100%);
-        border-left: 4px solid {PALETTE['tech_blue']};
+        border-left: 4px solid #3B82F6;
         padding: 1.5rem;
         border-radius: 16px;
         margin: 1.2rem 0;
         color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
-        border: 1px solid rgba(59, 130, 246, 0.1);
-    }}
-    
-    .success-box {{
-        background: linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%);
-        border-left: 4px solid {PALETTE['success']};
-        padding: 1.5rem;
-        border-radius: 16px;
-        margin: 1.2rem 0;
-        color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);
-        border: 1px solid rgba(16, 185, 129, 0.1);
-    }}
-    
-    .warning-box {{
-        background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-        border-left: 4px solid {PALETTE['warning']};
-        padding: 1.5rem;
-        border-radius: 16px;
-        margin: 1.2rem 0;
-        color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.1);
-        border: 1px solid rgba(245, 158, 11, 0.1);
     }}
     
     .duplicate-box {{
@@ -1516,204 +918,14 @@ st.markdown(f"""
         padding: 2rem;
         border-radius: 18px;
         margin: 2rem 0;
-        color: {PALETTE['text_dark']} !important;
-        font-family: 'Inter', sans-serif;
-        box-shadow: 0 8px 25px rgba(245, 158, 11, 0.15);
-        position: relative;
-        overflow: hidden;
-    }}
-    
-    .duplicate-box:before {{
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, {PALETTE['warning']}, #F97316);
-    }}
-    
-    .data-table {{
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-        border: 1px solid {PALETTE['border']};
-    }}
-    
-    .tech-badge {{
-        display: inline-block;
-        padding: 6px 14px;
-        background: linear-gradient(135deg, {PALETTE['tech_blue']}15 0%, {PALETTE['tech_purple']}15 100%);
-        color: {PALETTE['tech_blue']} !important;
-        border-radius: 12px;
-        font-size: 0.85rem;
-        font-weight: 500;
-        margin: 2px;
-        border: 1px solid rgba(59, 130, 246, 0.2);
-        font-family: 'JetBrains Mono', monospace;
-    }}
-    
-    .pulse {{
-        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }}
-    
-    @keyframes pulse {{
-        0%, 100% {{ opacity: 1; }}
-        50% {{ opacity: 0.5; }}
-    }}
-    
-    .tech-grid {{
-        background: linear-gradient(45deg, transparent 49%, rgba(59, 130, 246, 0.03) 50%, transparent 51%);
-        background-size: 20px 20px;
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        pointer-events: none;
-    }}
-    
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {{
-        width: 8px;
-        height: 8px;
-    }}
-    
-    ::-webkit-scrollbar-track {{
-        background: rgba(39, 65, 74, 0.05);
-        border-radius: 4px;
-    }}
-    
-    ::-webkit-scrollbar-thumb {{
-        background: linear-gradient(135deg, {PALETTE['primary_dark']} 0%, {PALETTE['accent']} 100%);
-        border-radius: 4px;
-    }}
-    
-    ::-webkit-scrollbar-thumb:hover {{
-        background: linear-gradient(135deg, {PALETTE['primary_light']} 0%, {PALETTE['tech_blue']} 100%);
-    }}
-    
-    /* Animations pour les éléments d'interface */
-    @keyframes fadeIn {{
-        from {{ opacity: 0; transform: translateY(10px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    
-    .fade-in {{
-        animation: fadeIn 0.5s ease-out;
-    }}
-    
-    /* AMÉLIORATION : Style pour les champs de formulaire avec texte sombre */
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stSelectbox > div > div,
-    .stSelectbox > div > div > input,
-    .stSelectbox > div > div > div,
-    .stSelectbox > div > div > div > div {{
-        border: 1.5px solid {PALETTE['border']};
-        border-radius: 12px;
-        padding: 12px 16px;
-        font-size: 15px;
-        transition: all 0.2s ease;
-        background: white;
-        color: {PALETTE['text_dark']} !important;
-    }}
-    
-    .stTextInput > div > div > input:focus,
-    .stNumberInput > div > div > input:focus,
-    .stSelectbox > div > div:focus-within {{
-        border-color: {PALETTE['tech_blue']};
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        outline: none;
-        color: {PALETTE['text_dark']} !important;
-    }}
-    
-    /* Placeholder en gris */
-    ::placeholder {{
-        color: {PALETTE['text_light']} !important;
-        opacity: 0.7;
-    }}
-    
-    /* Labels en gras et sombres */
-    label {{
-        color: {PALETTE['text_dark']} !important;
-        font-weight: 600 !important;
-        margin-bottom: 5px;
-        display: block;
-    }}
-    
-    /* Forcer le texte dans les dropdowns */
-    [data-baseweb="select"] *,
-    [data-baseweb="popover"] *,
-    [role="listbox"] *,
-    [role="option"] {{
-        color: {PALETTE['text_dark']} !important;
-    }}
-    
-    /* Style pour les dataframes */
-    .dataframe {{
-        border-radius: 12px !important;
-        overflow: hidden !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
-        border: 1px solid {PALETTE['border']} !important;
-    }}
-    
-    /* Amélioration des contrastes pour l'accessibilité */
-    .stAlert {{
-        color: {PALETTE['text_dark']} !important;
-    }}
-    
-    .stSuccess {{
-        background-color: rgba(16, 185, 129, 0.1) !important;
-        color: {PALETTE['text_dark']} !important;
-        border-color: {PALETTE['success']} !important;
-    }}
-    
-    .stError {{
-        background-color: rgba(239, 68, 68, 0.1) !important;
-        color: {PALETTE['text_dark']} !important;
-        border-color: {PALETTE['error']} !important;
-    }}
-    
-    .stWarning {{
-        background-color: rgba(245, 158, 11, 0.1) !important;
-        color: {PALETTE['text_dark']} !important;
-        border-color: {PALETTE['warning']} !important;
-    }}
-    
-    /* Amélioration des badges */
-    .stat-badge {{
-        padding: 15px;
-        border-radius: 14px;
-        text-align: center;
-        font-weight: 700;
-        font-size: 1.8rem;
-        margin-bottom: 5px;
-    }}
-    
-    .stat-label {{
-        font-size: 0.85rem;
-        color: {PALETTE['text_light']} !important;
-        margin-top: 5px;
-    }}
-    
-    /* Animation pour les nouveaux éléments */
-    @keyframes slideIn {{
-        from {{ transform: translateX(-20px); opacity: 0; }}
-        to {{ transform: translateX(0); opacity: 1; }}
-    }}
-    
-    .slide-in {{
-        animation: slideIn 0.3s ease-out;
     }}
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# GOOGLE SHEETS CONFIGURATION - VERSION PRODUCTION
+# GOOGLE SHEETS CONFIGURATION
 # ============================================================
 SHEET_ID = "1h4xT-cw9Ys1HbkhMWVtRnDOxsZ0fBOaskjPgRyIj3K8"
-
 SHEET_GIDS = {
     "FACTURE EN COMPTE": 0,
     "BDC LEADERPRICE": 581432835,
@@ -1721,27 +933,14 @@ SHEET_GIDS = {
     "BDC ULYS": 581432835
 }
 
-# ============================================================
-# FONCTION DE NORMALISATION DU TYPE DE DOCUMENT - VERSION AMÉLIORÉE V1.1
-# ============================================================
 def normalize_document_type(doc_type: str) -> str:
-    """Normalise le type de document pour correspondre aux clés SHEET_GIDS - VERSION AMÉLIORÉE V1.1"""
     if not doc_type:
         return "DOCUMENT INCONNU"
     
     doc_type_upper = doc_type.upper()
     
-    facture_keywords = [
-        "FACTURE", "INVOICE", "BILL", "FACTURA",
-        "FACTURE EN COMPTE", "FACTURE N°", "FACTURE NO",
-        "DOIT", "AU NOM DE", "NOM DU CLIENT", "N° FACTURE"
-    ]
-    
-    bdc_keywords = [
-        "BDC", "BON DE COMMANDE", "ORDER", "COMMANDE",
-        "BON COMMANDE", "PURCHASE ORDER", "PO",
-        "DATE ÉMISSION", "DATE EMISSION", "BON DE COMMANDE N°"
-    ]
+    facture_keywords = ["FACTURE", "INVOICE", "BILL", "DOIT"]
+    bdc_keywords = ["BDC", "BON DE COMMANDE", "ORDER", "COMMANDE"]
     
     facture_score = sum(1 for keyword in facture_keywords if keyword in doc_type_upper)
     bdc_score = sum(1 for keyword in bdc_keywords if keyword in doc_type_upper)
@@ -1762,28 +961,267 @@ def normalize_document_type(doc_type: str) -> str:
     else:
         if "FACTURE" in doc_type_upper and "COMPTE" in doc_type_upper:
             return "FACTURE EN COMPTE"
-        elif "BDC" in doc_type_upper or "BON DE COMMANDE" in doc_type_upper:
-            if "LEADERPRICE" in doc_type_upper or "DLP" in doc_type_upper:
-                return "BDC LEADERPRICE"
-            elif "S2M" in doc_type_upper or "SUPERMAKI" in doc_type_upper:
-                return "BDC S2M"
-            elif "ULYS" in doc_type_upper:
-                return "BDC ULYS"
-            else:
-                return "BDC LEADERPRICE"
+        elif "BDC" in doc_type_upper:
+            return "BDC LEADERPRICE"
         else:
-            if any(word in doc_type_upper for word in ["FACTURE", "INVOICE", "BILL", "DOIT"]):
-                return "FACTURE EN COMPTE"
-            elif any(word in doc_type_upper for word in ["COMMANDE", "ORDER", "PO", "BDC"]):
-                return "BDC LEADERPRICE"
-            else:
-                return "DOCUMENT INCONNU"
+            return "DOCUMENT INCONNU"
 
 # ============================================================
-# OPENAI CONFIGURATION
+# RETRY MECHANISM FOR GOOGLE SHEETS API
+# ============================================================
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((gspread.exceptions.APIError, Exception))
+)
+def safe_google_sheets_operation(operation, *args, **kwargs):
+    """Execute Google Sheets operation with retry logic"""
+    time.sleep(1)
+    return operation(*args, **kwargs)
+
+# ============================================================
+# OPTIMIZED DUPLICATE DETECTION
+# ============================================================
+def check_for_duplicates_fast(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
+    """Fast duplicate detection using key-based lookup"""
+    try:
+        cache_key = f"{worksheet.title}_{document_type}"
+        
+        if cache_key not in st.session_state.worksheet_cache:
+            all_data = safe_google_sheets_operation(worksheet.get_all_values)
+            
+            if len(all_data) <= 1:
+                st.session_state.worksheet_cache[cache_key] = set()
+                return False, []
+            
+            header = all_data[0]
+            
+            client_idx = 2
+            doc_num_idx = 3
+            date_idx = 1
+            
+            for i, col in enumerate(header):
+                col_upper = col.upper()
+                if "CLIENT" in col_upper:
+                    client_idx = i
+                elif "FACT" in col_upper or "N*" in col_upper:
+                    doc_num_idx = i
+                elif "DATE" in col_upper:
+                    date_idx = i
+            
+            key_set = set()
+            
+            for i, row in enumerate(all_data[1:], start=2):
+                if len(row) > max(client_idx, doc_num_idx, date_idx):
+                    client = row[client_idx].strip() if len(row) > client_idx else ""
+                    doc_num = row[doc_num_idx].strip() if len(row) > doc_num_idx else ""
+                    date_val = row[date_idx].strip() if len(row) > date_idx else ""
+                    
+                    if client and doc_num:
+                        key = f"{client}_{doc_num}"
+                        if "ULYS" in client.upper() and "BDC" in document_type.upper():
+                            key = f"{key}_{date_val}"
+                        key_set.add(key)
+            
+            st.session_state.worksheet_cache[cache_key] = key_set
+        
+        key_set = st.session_state.worksheet_cache[cache_key]
+        
+        client = extracted_data.get('client', '').strip()
+        
+        if "FACTURE" in document_type.upper():
+            doc_num = extracted_data.get('numero_facture', '').strip()
+        else:
+            doc_num = extracted_data.get('numero', '').strip()
+        
+        if not client or not doc_num:
+            return False, []
+        
+        search_key = f"{client}_{doc_num}"
+        
+        if "ULYS" in client.upper() and "BDC" in document_type.upper():
+            date_val = extracted_data.get('date', '').strip()
+            search_key = f"{search_key}_{date_val}"
+        
+        if search_key in key_set:
+            return True, [{'row_number': 0, 'data': [], 'match_type': 'Document déjà présent'}]
+        
+        return False, []
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la vérification des doublons: {str(e)}")
+        return False, []
+
+# ============================================================
+# GOOGLE SHEETS FUNCTIONS WITH RETRY
+# ============================================================
+def get_worksheet(document_type: str):
+    """Get worksheet with retry mechanism"""
+    try:
+        if "gcp_sheet" not in st.secrets:
+            st.error("❌ Les credentials Google Sheets ne sont pas configurés")
+            return None
+        
+        normalized_type = normalize_document_type(document_type)
+        
+        if normalized_type not in SHEET_GIDS:
+            normalized_type = "FACTURE EN COMPTE"
+        
+        sa_info = dict(st.secrets["gcp_sheet"])
+        gc = gspread.service_account_from_dict(sa_info)
+        sh = safe_google_sheets_operation(gc.open_by_key, SHEET_ID)
+        
+        target_gid = SHEET_GIDS.get(normalized_type)
+        
+        if target_gid is None:
+            return safe_google_sheets_operation(sh.get_worksheet, 0)
+        
+        for worksheet in sh.worksheets():
+            if int(worksheet.id) == target_gid:
+                return worksheet
+        
+        return safe_google_sheets_operation(sh.get_worksheet, 0)
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la connexion à Google Sheets: {str(e)}")
+        return None
+
+def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
+    """Prepare rows for Google Sheets insertion"""
+    rows = []
+    
+    try:
+        if "FACTURE" in document_type.upper():
+            date_str = data.get("date", "")
+            try:
+                date_obj = parser.parse(date_str, dayfirst=True)
+                date_formatted = date_obj.strftime("%d/%m/%Y")
+            except:
+                date_formatted = datetime.now().strftime("%d/%m/%Y")
+            
+            mois = data.get("mois", date_obj.strftime("%B") if 'date_obj' in locals() else "")
+            client = data.get("client", "")
+            numero = data.get("numero_facture", "")
+            magasin = data.get("adresse_livraison", "")
+            editeur = st.session_state.username
+            
+            columns = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
+        else:
+            date_str = data.get("date", "")
+            try:
+                date_obj = parser.parse(date_str, dayfirst=True)
+                date_formatted = date_obj.strftime("%d/%m/%Y")
+            except:
+                date_formatted = datetime.now().strftime("%d/%m/%Y")
+            
+            mois = date_obj.strftime("%B") if 'date_obj' in locals() else ""
+            client = data.get("client", "")
+            numero = data.get("numero", "")
+            magasin = data.get("adresse_livraison", "")
+            editeur = st.session_state.username
+            
+            columns = ["Mois", "Date", "Client", "FACT", "Magasin", "Désignation", "Quantité", "Editeur"]
+        
+        for _, row in articles_df.iterrows():
+            quantite = row.get("Quantité", 0)
+            if pd.isna(quantite) or quantite == 0:
+                continue
+            
+            try:
+                quantite_int = int(float(quantite))
+                if quantite_int <= 0:
+                    continue
+            except:
+                continue
+            
+            designation = str(row.get("Produit Standard", "")).strip()
+            if not designation:
+                designation = str(row.get("Produit Brute", "")).strip()
+            
+            if "FACTURE" in document_type.upper():
+                rows.append([mois, date_formatted, client, numero, magasin, designation, str(quantite_int), editeur])
+            else:
+                rows.append([mois, date_formatted, client, numero, magasin, designation, str(quantite_int), editeur])
+        
+        return rows
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la préparation des données: {str(e)}")
+        return []
+
+def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
+                         duplicate_action: str = None, duplicate_rows: List[int] = None):
+    """Save data to Google Sheets with retry mechanism and execution lock"""
+    
+    if st.session_state.export_in_progress:
+        return False, "Un export est déjà en cours..."
+    
+    if not export_lock.acquire():
+        return False, "Un export est déjà en cours..."
+    
+    try:
+        st.session_state.export_in_progress = True
+        
+        ws = get_worksheet(document_type)
+        if not ws:
+            return False, "Impossible de se connecter à Google Sheets"
+        
+        new_rows = prepare_rows_for_sheet(document_type, data, articles_df)
+        if not new_rows:
+            return False, "Aucune donnée à enregistrer"
+        
+        if duplicate_action == "overwrite" and duplicate_rows:
+            try:
+                all_data = safe_google_sheets_operation(ws.get_all_values)
+                existing_keys = set()
+                
+                for row_num in duplicate_rows:
+                    if row_num <= len(all_data):
+                        existing_keys.add(row_num)
+                
+                rows_to_delete = sorted(existing_keys, reverse=True)
+                for row_num in rows_to_delete:
+                    safe_google_sheets_operation(ws.delete_rows, row_num)
+                    time.sleep(0.5)
+                
+                st.info(f"🗑️ {len(rows_to_delete)} ligne(s) dupliquée(s) supprimée(s)")
+                
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la suppression des doublons: {str(e)}")
+                return False, str(e)
+        
+        if duplicate_action == "skip":
+            return True, "Document ignoré (doublon)"
+        
+        try:
+            safe_google_sheets_operation(ws.append_rows, new_rows, value_input_option="USER_ENTERED")
+            
+            action_msg = "enregistrée(s)"
+            if duplicate_action == "overwrite":
+                action_msg = "mise(s) à jour"
+            elif duplicate_action == "add_new":
+                action_msg = "ajoutée(s) comme nouvelle(s)"
+            
+            st.success(f"✅ {len(new_rows)} ligne(s) {action_msg} avec succès!")
+            
+            cache_key = f"{ws.title}_{document_type}"
+            if cache_key in st.session_state.worksheet_cache:
+                del st.session_state.worksheet_cache[cache_key]
+            
+            return True, f"{len(new_rows)} lignes {action_msg}"
+            
+        except Exception as e:
+            st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
+            return False, str(e)
+            
+    finally:
+        st.session_state.export_in_progress = False
+        export_lock.release()
+
+# ============================================================
+# OPENAI FUNCTIONS
 # ============================================================
 def get_openai_client():
-    """Initialise et retourne le client OpenAI"""
     try:
         if "openai" in st.secrets:
             api_key = st.secrets["openai"]["api_key"]
@@ -1794,155 +1232,23 @@ def get_openai_client():
             st.error("❌ Clé API OpenAI non configurée")
             return None
         
-        client = OpenAI(api_key=api_key)
-        return client
+        return OpenAI(api_key=api_key)
     except Exception as e:
         st.error(f"❌ Erreur d'initialisation OpenAI: {str(e)}")
         return None
 
-# ============================================================
-# FONCTION DE DÉTECTION PRÉCISE DU TYPE DE DOCUMENT
-# ============================================================
-def detect_document_type_from_text(text: str) -> Dict[str, Any]:
-    """Détecte précisément le type de document basé sur les indices fournis"""
-    text_upper = text.upper()
-    
-    dlp_indicators = [
-        "DISTRIBUTION LEADER PRICE",
-        "D.L.P.M.S.A.R.L",
-        "NIF : 2000003904",
-        "2000003904"
-    ]
-    
-    s2m_indicators = [
-        "SUPERMAKI",
-        "RAYON"
-    ]
-    
-    ulys_indicators = [
-        "BON DE COMMANDE FOURNISSEUR",
-        "NOM DU MAGASIN"
-    ]
-    
-    facture_indicators = [
-        "FACTURE EN COMPTE",
-        "FACTURE À PAYER AVANT LE",
-        "FACTURE A PAYER AVANT LE"
-    ]
-    
-    dlp_score = sum(1 for indicator in dlp_indicators if indicator in text_upper)
-    s2m_score = sum(1 for indicator in s2m_indicators if indicator in text_upper)
-    ulys_score = sum(1 for indicator in ulys_indicators if indicator in text_upper)
-    facture_score = sum(1 for indicator in facture_indicators if indicator in text_upper)
-    
-    detection_result = {
-        "type": "UNKNOWN",
-        "scores": {
-            "DLP": dlp_score,
-            "S2M": s2m_score,
-            "ULYS": ulys_score,
-            "FACTURE": facture_score
-        },
-        "indicators_found": []
-    }
-    
-    max_score = max(dlp_score, s2m_score, ulys_score, facture_score)
-    
-    if max_score == 0:
-        detection_result["type"] = "UNKNOWN"
-    elif dlp_score == max_score:
-        detection_result["type"] = "DLP"
-        detection_result["indicators_found"] = [ind for ind in dlp_indicators if ind in text_upper]
-    elif s2m_score == max_score:
-        detection_result["type"] = "S2M"
-        detection_result["indicators_found"] = [ind for ind in s2m_indicators if ind in text_upper]
-        
-        if "SUPERMAKI" in text_upper:
-            lines = text.split('\n')
-            for i, line in enumerate(lines):
-                if "SUPERMAKI" in line.upper():
-                    if i + 1 < len(lines):
-                        next_line = lines[i + 1].strip()
-                        if next_line and len(next_line) > 0:
-                            st.session_state.quartier_s2m = next_line
-                            break
-    elif ulys_score == max_score:
-        detection_result["type"] = "ULYS"
-        detection_result["indicators_found"] = [ind for ind in ulys_indicators if ind in text_upper]
-        
-        if "NOM DU MAGASIN" in text_upper:
-            lines = text.split('\n')
-            for i, line in enumerate(lines):
-                if "NOM DU MAGASIN" in line.upper():
-                    if i + 1 < len(lines):
-                        next_line = lines[i + 1].strip()
-                        if next_line and len(next_line) > 0:
-                            st.session_state.nom_magasin_ulys = next_line
-                            break
-    elif facture_score == max_score:
-        detection_result["type"] = "FACTURE"
-        detection_result["indicators_found"] = [ind for ind in facture_indicators if ind in text_upper]
-    
-    return detection_result
+def encode_image_to_base64(image_bytes: bytes) -> str:
+    return base64.b64encode(image_bytes).decode('utf-8')
 
-# ============================================================
-# FONCTIONS OCR AMÉLIORÉES POUR MEILLEURE DÉTECTION - V1.3
-# ============================================================
-def extract_text_features_for_detection(text: str) -> Dict[str, Any]:
-    """Extrait les caractéristiques du texte pour aider à la détection du type de document"""
-    text_upper = text.upper()
-    
-    features = {
-        'has_facture': False,
-        'has_bdc': False,
-        'facture_keywords': [],
-        'bdc_keywords': [],
-        'facture_score': 0,
-        'bdc_score': 0
-    }
-    
-    facture_keywords = [
-        "FACTURE", "FACTURE EN COMPTE", "N° FACTURE", "NUMERO FACTURE",
-        "DOIT", "AU NOM DE", "CLIENT", "ADRESSE DE LIVRAISON",
-        "SUIVANT VOTRE BON DE COMMANDE", "BON DE COMMANDE",
-        "QUANTITE", "BOUTEILLES", "MONTANT", "TOTAL", "TVA"
-    ]
-    
-    bdc_keywords = [
-        "BDC", "BON DE COMMANDE", "COMMANDE", "DATE EMISSION",
-        "DATE ÉMISSION", "ADRESSE FACTURATION", "ADRESSE LIVRAISON",
-        "DESIGNATION", "QTÉ", "QUANTITE", "ARTICLE", "REFERENCE",
-        "CODE ARTICLE", "PRIX UNITAIRE", "SOUS TOTAL"
-    ]
-    
-    for keyword in facture_keywords:
-        if keyword in text_upper:
-            features['facture_keywords'].append(keyword)
-            features['facture_score'] += 1
-            features['has_facture'] = True
-    
-    for keyword in bdc_keywords:
-        if keyword in text_upper:
-            features['bdc_keywords'].append(keyword)
-            features['bdc_score'] += 1
-            features['has_bdc'] = True
-    
-    if "FACTURE" in text_upper and "COMPTE" in text_upper:
-        features['facture_score'] += 3
-    
-    if "BDC" in text_upper or "BON DE COMMANDE" in text_upper:
-        features['bdc_score'] += 2
-    
-    if "DOIT" in text_upper:
-        features['facture_score'] += 2
-    
-    if "DATE EMISSION" in text_upper or "DATE ÉMISSION" in text_upper:
-        features['bdc_score'] += 2
-    
-    return features
+def preprocess_image(b: bytes) -> bytes:
+    img = Image.open(BytesIO(b)).convert("RGB")
+    img = ImageOps.autocontrast(img)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
+    out = BytesIO()
+    img.save(out, format="PNG", optimize=True, quality=95)
+    return out.getvalue()
 
 def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
-    """Utilise OpenAI Vision pour analyser le document avec un prompt amélioré pour la détection V1.3"""
     try:
         client = get_openai_client()
         if not client:
@@ -1950,91 +1256,30 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         
         base64_image = encode_image_to_base64(image_bytes)
         
-        # PROMPT AMÉLIORÉ AVEC EXTRACTION "DOIT M :"
         prompt = """
         ANALYSE CE DOCUMENT ET EXTRACT LES INFORMATIONS SUIVANTES:
-
-        IMPORTANT RÈGLE SPÉCIALE POUR LES BONS DE COMMANDE (BDC):
-        - Pour TOUS les BDC (DLP, S2M, ULYS), cherche TOUJOURS le numéro manuscrit écrit à la main
-        - Ce numéro est généralement écrit après "F" ou "Fact" (exemple: Fact 251193 → 251193)
-        - Il se trouve souvent en haut à droite de l'entête, parfois sur le côté droit
-        - Si tu vois deux valeurs manuscrites différentes (ex: f 4567 et Fact 7890), 
-          prends TOUJOURS la valeur de Fact 7890 (donc 7890)
-        - Si aucun "F" ou "Fact" manuscrit n'est trouvé, laisse ce champ vide
-        
-        IMPORTANT RÈGLE SPÉCIALE POUR LES FACTURES:
-        - Pour les FACTURES EN COMPTE, cherche le texte après "DOIT M :" ou "DOIT M:"
-        - Ce texte contient le nom du magasin/client
-        - Exemple: "DOIT M : Motel d'Antananarivo -anosy- Antananarivo" → 
-          doit_m = "Motel d'Antananarivo -anosy- Antananarivo"
-        
-        Pour TOUS les documents, extrais:
-        {
-            "type_document": "BDC" ou "FACTURE",
-            "document_subtype": "DLP", "S2M", "ULYS", ou "FACTURE",
-            "client": "...",
-            "adresse_livraison": "...",
-            "quartier_s2m": "...",  (uniquement si S2M: le quartier sous "SUPERMAKI")
-            "nom_magasin_ulys": "...",  (uniquement si ULYS: le nom du magasin)
-            "doit_m": "...",  (uniquement si FACTURE: texte après "DOIT M :")
-            "fact_manuscrit_trouve": "oui" ou "non",
-            "fact_manuscrit": "...",  (le numéro exact après F ou Fact, SANS le F/Fact)
-        }
         
         Puis selon le type:
-        
         1. SI C'EST UNE FACTURE (FACTURE EN COMPTE):
             "numero_facture": "...",
-            "date": "...",  (IMPORTANT: extraire la date de la facture, pas la date du scan)
+            "date": "...",
             "bon_commande": "...",
             "articles": [
                 {
-                    "article_brut": "TEXT EXACT de l'article (colonne 'Désignation')",
-                    "quantite": nombre  (colonne 'Nb bills', PAS 'Btlls/colis')
+                    "article_brut": "TEXT EXACT de l'article",
+                    "quantite": nombre
                 }
             ]
         
         2. SI C'EST UN BDC (DLP, S2M, ULYS):
-            "numero": "...",  (IMPORTANT: utiliser TOUJOURS le fact_manuscrit si disponible, sinon vide)
-            "date": "...",  (IMPORTANT: extraire la date du BDC, pas la date du scan)
+            "numero": "...",
+            "date": "...",
             "articles": [
                 {
                     "article_brut": "TEXT EXACT de la colonne Désignation",
                     "quantite": nombre
                 }
             ]
-        
-        RÈGLES SPÉCIFIQUES POUR CHAQUE TYPE:
-        • DLP: client = "DLP", adresse = "Leader Price Akadimbahoaka"  (TOUJOURS CETTE ADRESSE POUR DLP)
-        • S2M: client = "S2M", adresse = "Supermaki " + quartier_s2m (nettoyer format)
-        • ULYS: client = "ULYS", adresse = nom_magasin_ulys
-        • FACTURE: 
-          - Pour les colonnes: utiliser "Désignation" pour article_brut et "Nb bills" pour quantité
-          - Si le client est "Autre client" (pas DLP, ULYS ou S2M), forcer client = adresse
-          - NOUVEAU: Si "doit_m" est présent, utiliser doit_m pour client et adresse
-        
-        IMPORTANT POUR LES FACTURES:
-        - Utiliser la colonne "Désignation" pour les articles
-        - Utiliser la colonne "Nb bills" pour la quantité (PAS "Btlls/colis")
-        
-        INDICES DÉCISIFS:
-        • "DISTRIBUTION LEADER PRICE" = TOUJOURS DLP
-        • "SUPERMAKI" = TOUJOURS S2M
-        • "BON DE COMMANDE FOURNISSEUR" = TOUJOURS ULYS
-        • "FACTURE EN COMPTE" = TOUJOURS FACTURE
-        • "DOIT M :" = TOUJOURS EXTRAIRE LE TEXTE APRÈS
-        
-        EXEMPLE CORRECT POUR UNE FACTURE:
-        Si tu vois "DOIT M : Motel d'Antananarivo -anosy- Antananarivo" → 
-        "doit_m": "Motel d'Antananarivo -anosy- Antananarivo"
-        Si client n'est pas DLP, ULYS, S2M → 
-        "client": "Motel d'Antananarivo -anosy- Antananarivo"
-        "adresse_livraison": "Motel d'Antananarivo -anosy- Antananarivo"
-        
-        IMPORTANT POUR LA DATE: 
-        - Extraire la date qui est écrite sur le document (facture ou BDC)
-        - Ne pas utiliser la date actuelle ou une date estimée
-        - Formater la date en format clair (ex: 15/01/2024)
         """
         
         response = client.chat.completions.create(
@@ -2058,723 +1303,67 @@ def openai_vision_ocr_improved(image_bytes: bytes) -> Dict:
         )
         
         content = response.choices[0].message.content
-        
         st.session_state.ocr_raw_text = content
         
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             json_str = json_match.group()
             try:
-                data = json.loads(json_str)
-                
-                document_subtype = data.get("document_subtype", "").upper()
-                
-                if document_subtype in ["DLP", "S2M", "ULYS"]:
-                    fact_manuscrit = data.get("fact_manuscrit", "")
-                    
-                    st.session_state.fact_manuscrit = fact_manuscrit
-                    
-                    data["numero"] = fact_manuscrit
-                
-                # CORRECTION DLP: FORCER L'ADRESSE À "Leader Price Akadimbahoaka"
-                if document_subtype == "DLP":
-                    data["client"] = "DLP"
-                    data["adresse_livraison"] = "Leader Price Akadimbahoaka"
-                
-                # Correction S2M
-                elif document_subtype == "S2M":
-                    data["client"] = "S2M"
-                    quartier = data.get("quartier_s2m", "")
-                    if quartier:
-                        quartier_nettoye = clean_quartier(quartier)
-                        adresse_nettoyee = clean_adresse(f"Supermaki {quartier_nettoye}")
-                        data["adresse_livraison"] = adresse_nettoyee
-                        st.session_state.quartier_s2m = quartier_nettoye
-                    else:
-                        adresse = data.get("adresse_livraison", "")
-                        data["adresse_livraison"] = clean_adresse(adresse) if adresse else "Supermaki"
-                
-                # Correction ULYS
-                elif document_subtype == "ULYS":
-                    data["client"] = "ULYS"
-                    nom_magasin = data.get("nom_magasin_ulys", "")
-                    if nom_magasin:
-                        data["adresse_livraison"] = nom_magasin
-                        st.session_state.nom_magasin_ulys = nom_magasin
-                    else:
-                        data["adresse_livraison"] = "ULYS Magasin"
-                
-                # NOUVELLE CORRECTION: Pour les factures avec "doit_m", forcer client = adresse = doit_m
-                elif document_subtype == "FACTURE":
-                    client_value = data.get("client", "").upper()
-                    adresse_value = data.get("adresse_livraison", "")
-                    doit_m = data.get("doit_m", "")
-                    
-                    # Si le client n'est pas DLP, ULYS, S2M et on a un doit_m
-                    if client_value not in ["DLP", "ULYS", "S2M"] and doit_m:
-                        data["client"] = doit_m
-                        data["adresse_livraison"] = doit_m
-                    # Si le client n'est pas DLP, ULYS, S2M (même sans doit_m)
-                    elif client_value not in ["DLP", "ULYS", "S2M"]:
-                        data["client"] = adresse_value
-                
-                return data
-                
-            except json.JSONDecodeError:
-                json_str = re.sub(r'[\x00-\x1f\x7f]', '', json_str)
-                try:
-                    data = json.loads(json_str)
-                    return data
-                except:
-                    return guess_document_type_from_text(content)
-        else:
-            return guess_document_type_from_text(content)
-            
+                return json.loads(json_str)
+            except:
+                pass
+        
+        return {"type_document": "UNKNOWN", "articles": []}
+        
     except Exception as e:
         st.error(f"❌ Erreur OpenAI Vision: {str(e)}")
         return None
 
-def guess_document_type_from_text(text: str) -> Dict:
-    """Devine le type de document à partir du texte OCR"""
-    detection = detect_document_type_from_text(text)
-    
-    fact_manuscrit = extract_fact_number_from_handwritten(text)
-    
-    if detection["type"] == "DLP":
-        return {
-            "type_document": "BDC",
-            "document_subtype": "DLP",
-            "client": "DLP",
-            "adresse_livraison": "Leader Price Akadimbahoaka",
-            "fact_manuscrit": fact_manuscrit,
-            "numero": fact_manuscrit,
-            "articles": []
-        }
-    elif detection["type"] == "S2M":
-        quartier = st.session_state.quartier_s2m or ""
-        return {
-            "type_document": "BDC",
-            "document_subtype": "S2M",
-            "client": "S2M",
-            "adresse_livraison": clean_adresse(f"Supermaki {quartier}" if quartier else "Supermaki"),
-            "fact_manuscrit": fact_manuscrit,
-            "numero": fact_manuscrit,
-            "articles": []
-        }
-    elif detection["type"] == "ULYS":
-        nom_magasin = st.session_state.nom_magasin_ulys or ""
-        return {
-            "type_document": "BDC",
-            "document_subtype": "ULYS",
-            "client": "ULYS",
-            "adresse_livraison": nom_magasin if nom_magasin else "ULYS Magasin",
-            "fact_manuscrit": fact_manuscrit,
-            "numero": fact_manuscrit,
-            "articles": []
-        }
-    elif detection["type"] == "FACTURE":
-        return {
-            "type_document": "FACTURE",
-            "document_subtype": "FACTURE",
-            "articles": []
-        }
-    else:
-        features = extract_text_features_for_detection(text)
-        
-        if features['facture_score'] > features['bdc_score']:
-            return {"type_document": "FACTURE", "document_subtype": "FACTURE", "articles": []}
-        else:
-            return {"type_document": "BDC", "document_subtype": "UNKNOWN", "fact_manuscrit": fact_manuscrit, "numero": fact_manuscrit, "articles": []}
-#=============================================================
 def analyze_document_with_backup(image_bytes: bytes) -> Dict:
-    """Analyse le document avec vérification de cohérence - VERSION MISE À JOUR"""
-    
     result = openai_vision_ocr_improved(image_bytes)
     
     if not result:
         return {"type_document": "DOCUMENT INCONNU", "articles": []}
-
+    
     ocr_text = st.session_state.ocr_raw_text or ""
-
-    # ============================================================
-    # 1. CAS BDC : extraction numéro manuscrit
-    # ============================================================
+    
     if ocr_text and result.get("type_document") == "BDC":
         fact_manuscrit = extract_fact_number_from_handwritten(ocr_text)
-        
-        if fact_manuscrit and not result.get("fact_manuscrit"):
+        if fact_manuscrit:
             result["fact_manuscrit"] = fact_manuscrit
             result["numero"] = fact_manuscrit
-            
-            st.session_state.document_analysis_details = {
-                "action": "Fact manuscrit extrait du texte brut",
-                "fact": fact_manuscrit
-            }
-
-    # ============================================================
-    # 2. CAS FACTURE : règle métier DOIT M (VERSION SÉCURISÉE)
-    # ============================================================
-    if ocr_text and result.get("type_document") == "FACTURE":
-        client_upper = result.get("client", "").upper()
-        adresse_upper = result.get("adresse_livraison", "").upper()
-
-        clients_bloques = ["DLP", "ULYS", "S2M"]
-
-        # Appliquer UNIQUEMENT pour autres clients
-        if client_upper not in clients_bloques:
-            doit_m_from_text = extract_motel_name_from_doit(ocr_text)
-
-            # 🔥 On corrige seulement si :
-            # - DOIT M existe
-            # - adresse absente OU adresse générique (MGTE)
-            if doit_m_from_text and (
-                not result.get("adresse_livraison")
-                or "MGTE" in adresse_upper
-            ):
-                result["doit_m"] = doit_m_from_text
-                result["client"] = doit_m_from_text
-                result["adresse_livraison"] = doit_m_from_text
-
-    # ============================================================
-    # 3. CONTRÔLE CROISÉ : détection par TEXTE vs IA
-    # ============================================================
-    if ocr_text:
-        text_detection = detect_document_type_from_text(ocr_text)
-        
-        ai_subtype = result.get("document_subtype", "").upper()
-        text_type = text_detection["type"]
-
-        if text_type != "UNKNOWN" and ai_subtype != text_type:
-            st.session_state.document_analysis_details = {
-                "original_type": ai_subtype,
-                "adjusted_type": text_type,
-                "reason": "Contradiction détectée: détection par texte plus fiable",
-                "indicators": text_detection["indicators_found"]
-            }
-
-            if text_type == "DLP":
-                result["type_document"] = "BDC"
-                result["document_subtype"] = "DLP"
-                result["client"] = "DLP"
-                result["adresse_livraison"] = "Leader Price Akadimbahoaka"
-
-            elif text_type == "S2M":
-                result["type_document"] = "BDC"
-                result["document_subtype"] = "S2M"
-                result["client"] = "S2M"
-                quartier = st.session_state.quartier_s2m or ""
-                result["adresse_livraison"] = clean_adresse(
-                    f"Supermaki {quartier}" if quartier else "Supermaki"
-                )
-
-            elif text_type == "ULYS":
-                result["type_document"] = "BDC"
-                result["document_subtype"] = "ULYS"
-                result["client"] = "ULYS"
-                nom_magasin = st.session_state.nom_magasin_ulys or ""
-                result["adresse_livraison"] = nom_magasin if nom_magasin else "ULYS Magasin"
-
-            elif text_type == "FACTURE":
-                result["type_document"] = "FACTURE"
-                result["document_subtype"] = "FACTURE"
-
-                # Réappliquer proprement la règle DOIT M
-                client_upper = result.get("client", "").upper()
-                if client_upper not in ["DLP", "ULYS", "S2M"]:
-                    doit_m_from_text = extract_motel_name_from_doit(ocr_text)
-                    if doit_m_from_text:
-                        result["client"] = doit_m_from_text
-                        result["adresse_livraison"] = doit_m_from_text
-
+    
     return result
 
-#===============================================================
-# FONCTIONS UTILITAIRES
 # ============================================================
-def preprocess_image(b: bytes) -> bytes:
-    """Prétraitement de l'image pour améliorer la qualité"""
-    img = Image.open(BytesIO(b)).convert("RGB")
-    img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=180))
-    out = BytesIO()
-    img.save(out, format="PNG", optimize=True, quality=95)
-    return out.getvalue()
-
-def encode_image_to_base64(image_bytes: bytes) -> str:
-    """Encode l'image en base64 pour OpenAI Vision"""
-    return base64.b64encode(image_bytes).decode('utf-8')
-
-def clean_text(text: str) -> str:
-    """Nettoie le texte"""
-    text = text.replace("\r", "\n")
-    text = re.sub(r"[^\S\r\n]+", " ", text)
-    return text.strip()
-
-def format_date_french(date_str: str) -> str:
-    """Formate la date au format français JJ/MM/AAAA"""
-    try:
-        # Essayer de parser la date avec différents formats
-        formats = [
-            "%d/%m/%Y", "%d-%m-%Y", "%d %m %Y",
-            "%d/%m/%y", "%d-%m-%y", "%d %m %y",
-            "%d %B %Y", "%d %b %Y", "%Y-%m-%d"
-        ]
-        
-        for fmt in formats:
-            try:
-                date_obj = datetime.strptime(date_str, fmt)
-                return date_obj.strftime("%d/%m/%Y")  # FORMAT CORRIGÉ: JJ/MM/AAAA
-            except:
-                continue
-        
-        # Essayer avec dateutil.parser
-        try:
-            date_obj = parser.parse(date_str, dayfirst=True)
-            return date_obj.strftime("%d/%m/%Y")  # FORMAT CORRIGÉ: JJ/MM/AAAA
-        except:
-            # Si aucune date n'est trouvée, retourner la date d'aujourd'hui
-            return datetime.now().strftime("%d/%m/%Y")
-    except:
-        return datetime.now().strftime("%d/%m/%Y")
-
-def get_month_from_date(date_str: str) -> str:
-    """Extrait le mois français d'une date"""
-    months_fr = {
-        1: "janvier", 2: "février", 3: "mars", 4: "avril",
-        5: "mai", 6: "juin", 7: "juillet", 8: "août",
-        9: "septembre", 10: "octobre", 11: "novembre", 12: "décembre"
-    }
-    
-    try:
-        # Essayer de parser la date
-        date_obj = parser.parse(date_str, dayfirst=True)
-        return months_fr[date_obj.month]
-    except:
-        # Si la date n'est pas valide, utiliser le mois actuel
-        return months_fr[datetime.now().month]
-
-def format_quantity(qty: Any) -> str:
-    """Formate la quantité - GARANTIT QUE C'EST UN NOMBRE ENTIER SANS VIRGULE"""
-    if qty is None:
-        return "0"
-    
-    try:
-        if isinstance(qty, str):
-            qty = qty.replace(',', '.')
-        
-        qty_num = float(qty)
-        
-        qty_int = int(round(qty_num))
-        
-        if qty_int < 0:
-            qty_int = 0
-            
-        return str(qty_int)
-        
-    except (ValueError, TypeError):
-        return "0"
-
-def map_client(client: str) -> str:
-    """Mappe le nom du client vers la forme standard"""
-    client_upper = client.upper()
-    
-    if "ULYS" in client_upper:
-        return "ULYS"
-    elif "SUPERMAKI" in client_upper or "S2M" in client_upper:
-        return "S2M"
-    elif "LEADER" in client_upper or "LEADERPRICE" in client_upper or "DLP" in client_upper:
-        return "DLP"
-    else:
-        return client
-
+# HEADER
 # ============================================================
-# FONCTIONS POUR PRÉPARER LES DONNÉES POUR GOOGLE SHEETS (PRODUCTION)
-# ============================================================
-def prepare_facture_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les factures (PRODUCTION - 8 colonnes) - CORRECTION DATE APPLIQUÉE"""
-    rows = []
-    
-    try:
-        mois = data.get("mois", get_month_from_date(data.get("date", "")))
-        
-        # CORRECTION 1: Utiliser la date extraite et la formater en JJ/MM/AAAA
-        date_facture = data.get("date", "")
-        date_formatted = format_date_french(date_facture)  # FORMAT CORRIGÉ
-        
-        client = data.get("client", "")
-        numero_facture = data.get("numero_facture", "")
-        magasin = data.get("adresse_livraison", "")
-        editeur = st.session_state.username
-        
-        for _, row in articles_df.iterrows():
-            quantite = row.get("Quantité", 0)
-            if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
-                continue
-            
-            quantite_str = format_quantity(quantite)
-            
-            try:
-                quantite_int = int(float(quantite_str))
-                quantite_str = str(quantite_int)
-            except:
-                quantite_str = "0"
-                continue
-            
-            designation = str(row.get("Produit Standard", "")).strip()
-            if not designation:
-                designation = str(row.get("Produit Brute", "")).strip()
-            
-            rows.append([
-                mois,           # Mois
-                date_formatted, # Date au format JJ/MM/AAAA (CORRIGÉ)
-                client,         # Client
-                numero_facture, # N* facture
-                magasin,        # Magasin
-                designation,    # Désignation
-                quantite_str,   # Quantité
-                editeur         # Editeur
-            ])
-        
-        return rows
-        
-    except Exception as e:
-        st.error(f"❌ Erreur lors de la préparation des données facture: {str(e)}")
-        return []
-
-def prepare_bdc_rows(data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour les BDC (PRODUCTION - 8 colonnes) - CORRECTION DATE APPLIQUÉE"""
-    rows = []
-    
-    try:
-        date_emission = data.get("date", "")
-        mois = get_month_from_date(date_emission)
-        
-        # CORRECTION 1: Utiliser la date extraite et la formater en JJ/MM/AAAA
-        date_formatted = format_date_french(date_emission)  # FORMAT CORRIGÉ
-        
-        client = data.get("client", "")
-        numero_bdc = data.get("numero", "")
-        magasin = data.get("adresse_livraison", "")
-        editeur = st.session_state.username
-        
-        for _, row in articles_df.iterrows():
-            quantite = row.get("Quantité", 0)
-            if pd.isna(quantite) or quantite == 0 or str(quantite).strip() == "0":
-                continue
-            
-            quantite_str = format_quantity(quantite)
-            
-            try:
-                quantite_int = int(float(quantite_str))
-                quantite_str = str(quantite_int)
-            except:
-                quantite_str = "0"
-                continue
-            
-            designation = str(row.get("Produit Standard", "")).strip()
-            if not designation:
-                designation = str(row.get("Produit Brute", "")).strip()
-            
-            rows.append([
-                mois,           # Colonne 1 (mois)
-                date_formatted, # Date au format JJ/MM/AAAA (CORRIGÉ)
-                client,         # Client
-                numero_bdc,     # FACT
-                magasin,        # Magasin
-                designation,    # Désignation
-                quantite_str,   # Quantité
-                editeur         # Editeur
-            ])
-        
-        return rows
-        
-    except Exception as e:
-        st.error(f"❌ Erreur lors de la préparation des données BDC: {str(e)}")
-        return []
-
-def prepare_rows_for_sheet(document_type: str, data: dict, articles_df: pd.DataFrame) -> List[List[str]]:
-    """Prépare les lignes pour l'insertion dans Google Sheets selon le type de document"""
-    if "FACTURE" in document_type.upper():
-        return prepare_facture_rows(data, articles_df)
-    else:
-        return prepare_bdc_rows(data, articles_df)
-
-# ============================================================
-# FONCTIONS DE DÉTECTION DE DOUBLONS - FILTRE 3: Même logique pour BDC et factures
-# ============================================================
-def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) -> Tuple[bool, List[Dict]]:
-    """Vérifie si un document existe déjà dans Google Sheets"""
-    try:
-        all_data = worksheet.get_all_values()
-        
-        if len(all_data) <= 1:
-            return False, []
-        
-        client_col = 2
-        current_client = extracted_data.get('client', '')
-        
-        if "FACTURE" in document_type.upper():
-            doc_num_col = 3
-            current_doc_num = extracted_data.get('numero_facture', '')
-        else:
-            doc_num_col = 3
-            current_doc_num = extracted_data.get('numero', '')
-        
-        duplicates = []
-        for i, row in enumerate(all_data[1:], start=2):
-            if len(row) > max(doc_num_col, client_col):
-                row_client = row[client_col] if len(row) > client_col else ''
-                row_doc_num = row[doc_num_col] if len(row) > doc_num_col else ''
-                
-                if (row_client == current_client and 
-                    row_doc_num == current_doc_num and 
-                    current_client != '' and current_doc_num != ''):
-                    
-                    match_type = 'Client et Numéro identiques'
-                    
-                    if "ULYS" in current_client.upper() and "BDC" in document_type.upper():
-                        date_col = 1
-                        current_date = ""
-                        date_facture = extracted_data.get('date', '')
-                        if date_facture:
-                            try:
-                                date_obj = parser.parse(date_facture, dayfirst=True)
-                                current_date = date_obj.strftime("%d/%m/%Y")
-                            except:
-                                current_date = ""
-                        
-                        row_date = row[date_col] if len(row) > date_col else ''
-                        
-                        if row_date == current_date and current_date != '':
-                            match_type = 'Client, Numéro et Date identiques'
-                    
-                    duplicates.append({
-                        'row_number': i,
-                        'data': row,
-                        'match_type': match_type
-                    })
-        
-        return len(duplicates) > 0, duplicates
-            
-    except Exception as e:
-        st.error(f"❌ Erreur lors de la vérification des doublons: {str(e)}")
-        return False, []
-
-# ============================================================
-# GOOGLE SHEETS FUNCTIONS
-# ============================================================
-def get_worksheet(document_type: str):
-    """Récupère la feuille Google Sheets correspondant au type de document"""
-    try:
-        if "gcp_sheet" not in st.secrets:
-            st.error("❌ Les credentials Google Sheets ne sont pas configurés")
-            return None
-        
-        normalized_type = normalize_document_type(document_type)
-        
-        if normalized_type not in SHEET_GIDS:
-            st.warning(f"⚠️ Type de document '{document_type}' non reconnu. Utilisation de la feuille par défaut.")
-            normalized_type = "FACTURE EN COMPTE"
-        
-        sa_info = dict(st.secrets["gcp_sheet"])
-        gc = gspread.service_account_from_dict(sa_info)
-        sh = gc.open_by_key(SHEET_ID)
-        
-        target_gid = SHEET_GIDS.get(normalized_type)
-        
-        if target_gid is None:
-            st.error(f"❌ GID non trouvé pour le type: {normalized_type}")
-            return sh.get_worksheet(0)
-        
-        for worksheet in sh.worksheets():
-            if int(worksheet.id) == target_gid:
-                return worksheet
-        
-        st.warning(f"⚠️ Feuille avec GID {target_gid} non trouvée. Utilisation de la première feuille.")
-        return sh.get_worksheet(0)
-        
-    except Exception as e:
-        st.error(f"❌ Erreur lors de la connexion à Google Sheets: {str(e)}")
-        return None
-
-def find_table_range(worksheet, num_columns=8):
-    """Trouve la plage de table dans la feuille avec un nombre de colonnes spécifique"""
-    try:
-        all_data = worksheet.get_all_values()
-        
-        if not all_data:
-            return "A1:H1"
-        
-        headers = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
-        
-        first_row = all_data[0] if all_data else []
-        header_found = any(header in str(first_row) for header in headers)
-        
-        if header_found:
-            last_row = len(all_data) + 1
-            if len(all_data) <= 1:
-                return "A2:H2"
-            else:
-                return f"A{last_row}:H{last_row}"
-        else:
-            for i, row in enumerate(all_data, start=1):
-                if not any(cell.strip() for cell in row):
-                    return f"A{i}:H{i}"
-            
-            return f"A{len(all_data)+1}:H{len(all_data)+1}"
-            
-    except Exception as e:
-        return "A2:H2"
-
-def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
-                         duplicate_action: str = None, duplicate_rows: List[int] = None):
-    """Sauvegarde les données dans Google Sheets (version production)"""
-    try:
-        ws = get_worksheet(document_type)
-        
-        if not ws:
-            st.error("❌ Impossible de se connecter à Google Sheets")
-            return False, "Erreur de connexion"
-        
-        new_rows = prepare_rows_for_sheet(document_type, data, articles_df)
-        
-        if not new_rows:
-            st.warning("⚠️ Aucune donnée à enregistrer (toutes les lignes ont une quantité de 0)")
-            return False, "Aucune donnée"
-        
-        if duplicate_action == "overwrite" and duplicate_rows:
-            try:
-                duplicate_rows.sort(reverse=True)
-                for row_num in duplicate_rows:
-                    ws.delete_rows(row_num)
-                
-                st.info(f"🗑️ {len(duplicate_rows)} ligne(s) dupliquée(s) supprimée(s)")
-                
-            except Exception as e:
-                st.error(f"❌ Erreur lors de la suppression des doublons: {str(e)}")
-                return False, str(e)
-        
-        if duplicate_action == "skip":
-            st.warning("⏸️ Import annulé - Document ignoré")
-            return True, "Document ignoré (doublon)"
-        
-        st.info(f"📋 **Aperçu des données à enregistrer (lignes avec quantité > 0):**")
-        
-        if "FACTURE" in document_type.upper():
-            columns = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
-        else:
-            columns = ["Mois", "Date", "Client", "FACT", "Magasin", "Désignation", "Quantité", "Editeur"]
-        
-        preview_df = pd.DataFrame(new_rows, columns=columns)
-        st.dataframe(preview_df, use_container_width=True)
-        
-        table_range = find_table_range(ws, num_columns=8)
-        
-        try:
-            if ":" in table_range and table_range.count(":") == 1:
-                ws.append_rows(new_rows, table_range=table_range)
-            else:
-                ws.append_rows(new_rows)
-            
-            action_msg = "enregistrée(s)"
-            if duplicate_action == "overwrite":
-                action_msg = "mise(s) à jour"
-            elif duplicate_action == "add_new":
-                action_msg = "ajoutée(s) comme nouvelle(s)"
-            
-            st.success(f"✅ {len(new_rows)} ligne(s) {action_msg} avec succès dans Google Sheets!")
-            
-            normalized_type = normalize_document_type(document_type)
-            sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={SHEET_GIDS.get(normalized_type, '')}"
-            st.markdown(f'<div class="info-box">🔗 <a href="{sheet_url}" target="_blank">Ouvrir Google Sheets</a></div>', unsafe_allow_html=True)
-            
-            st.balloons()
-            return True, f"{len(new_rows)} lignes {action_msg}"
-            
-        except Exception as e:
-            st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
-            
-            try:
-                st.info("🔄 Tentative alternative d'enregistrement...")
-                
-                all_data = ws.get_all_values()
-                
-                for row in new_rows:
-                    all_data.append(row)
-                
-                ws.update('A1', all_data)
-                
-                st.success(f"✅ {len(new_rows)} ligne(s) enregistrée(s) avec méthode alternative!")
-                return True, f"{len(new_rows)} lignes enregistrées (méthode alternative)"
-                
-            except Exception as e2:
-                st.error(f"❌ Échec de la méthode alternative: {str(e2)}")
-                return False, str(e)
-                
-    except Exception as e:
-        st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
-        return False, str(e)
-
-# ============================================================
-# HEADER AVEC LOGO - VERSION TECH AMÉLIORÉE
-# ============================================================
-st.markdown('<div class="header-container slide-in">', unsafe_allow_html=True)
+st.markdown('<div class="header-container">', unsafe_allow_html=True)
 
 st.markdown(f'''
 <div class="user-info">
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 6px;">
-        <path d="M8 8C10.2091 8 12 6.20914 12 4C12 1.79086 10.2091 0 8 0C5.79086 0 4 1.79086 4 4C4 6.20914 5.79086 8 8 8Z" fill="white"/>
-        <path d="M8 9C4.13401 9 1 12.134 1 16H15C15 12.134 11.866 9 8 9Z" fill="white"/>
-    </svg>
-    {st.session_state.username}
+    👤 {st.session_state.username}
 </div>
 ''', unsafe_allow_html=True)
-
-st.markdown('<div class="tech-grid"></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="logo-title-wrapper">', unsafe_allow_html=True)
 
+LOGO_FILENAME = "CF_LOGOS.png"
 if os.path.exists(LOGO_FILENAME):
     st.image(LOGO_FILENAME, width=100)
 else:
-    st.markdown("""
-    <div style="font-size: 3.5rem; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); color: #1A1A1A !important;">
-        🍷
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("""<div style="font-size: 3.5rem; margin-bottom: 10px;">🍷</div>""", unsafe_allow_html=True)
 
-st.markdown(f'<h1 class="brand-title">{BRAND_TITLE}</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="brand-title">CHAN FOUI ET FILS</h1>', unsafe_allow_html=True)
+st.markdown('<p class="brand-sub">Système intelligent de traitement de documents</p>', unsafe_allow_html=True)
 
-st.markdown(f'''
-<div style="margin-top: 10px;">
-    <span class="tech-badge">GPT-4 Vision</span>
-    <span class="tech-badge">AI Processing</span>
-    <span class="tech-badge">Cloud Sync</span>
-    <span class="tech-badge">Smart Matching</span>
-</div>
-''', unsafe_allow_html=True)
-
-st.markdown(f'''
-<p class="brand-sub">
-    Système intelligent de traitement de documents • Connecté en tant que <strong style="color: #1A1A1A !important;">{st.session_state.username}</strong>
-</p>
-''', unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown(f'<div style="text-align: center; color: #1A1A1A !important;"><span class="pulse-dot"></span><small>AI Active</small></div>', unsafe_allow_html=True)
-with col2:
-    st.markdown(f'<div style="text-align: center; color: #1A1A1A !important;"><span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;margin-right:8px;"></span><small>Cloud Online</small></div>', unsafe_allow_html=True)
-with col3:
-    st.markdown(f'<div style="text-align: center; color: #1A1A1A !important;"><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:50%;margin-right:8px;"></span><small>Secured</small></div>', unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('</div>')
+st.markdown('</div>')
 
 # ============================================================
-# ZONE DE TÉLÉCHARGEMENT UNIQUE - VERSION TECH AMÉLIORÉE
+# UPLOAD ZONE
 # ============================================================
-st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
+st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<h4>📤 Zone de dépôt de documents</h4>', unsafe_allow_html=True)
 
 st.markdown("""
@@ -2790,41 +1379,18 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="upload-box">', unsafe_allow_html=True)
 uploaded = st.file_uploader(
     "**Déposez votre document ici ou cliquez pour parcourir**",
     type=["jpg", "jpeg", "png"],
     label_visibility="collapsed",
-    help="Formats supportés : JPG, JPEG, PNG | Taille max : 10MB",
+    help="Formats supportés : JPG, JPEG, PNG",
     key="file_uploader_main"
 )
-st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown(f"""
-<div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 0.85rem; color: #333333 !important;">
-    <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: #1A1A1A !important;">📄</div>
-        <div>Factures</div>
-    </div>
-    <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: #1A1A1A !important;">📋</div>
-        <div>Bons de commande</div>
-    </div>
-    <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: #1A1A1A !important;">🏷️</div>
-        <div>Étiquettes</div>
-    </div>
-    <div style="text-align: center;">
-        <div style="font-size: 1.2rem; color: #1A1A1A !important;">🤖</div>
-        <div>Smart Matching</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# TRAITEMENT AUTOMATIQUE DE L'IMAGE - VERSION AMÉLIORÉE V1.3
+# DOCUMENT PROCESSING
 # ============================================================
 if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.uploaded_file = uploaded
@@ -2846,280 +1412,115 @@ if uploaded and uploaded != st.session_state.uploaded_file:
     st.session_state.quartier_s2m = ""
     st.session_state.nom_magasin_ulys = ""
     st.session_state.fact_manuscrit = ""
+    st.session_state.worksheet_cache = {}
     
-    progress_container = st.empty()
-    with progress_container.container():
-        st.markdown('<div class="progress-container">', unsafe_allow_html=True)
-        st.markdown('<div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>', unsafe_allow_html=True)
-        st.markdown('<h3 style="color: white !important;">Initialisation du système IA V1.3</h3>', unsafe_allow_html=True)
-        st.markdown(f'<p class="progress-text-dark">Analyse en cours avec GPT-4 Vision amélioré...</p>', unsafe_allow_html=True)
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        steps = [
-            "Chargement de l'image...",
-            "Prétraitement des données...",
-            "Analyse par IA...",
-            "Détection avancée du type...",
-            "Extraction du FACT manuscrit...",
-            "Extraction DOIT M...",
-            "Vérification de cohérence...",
-            "Extraction des données...",
-            "Finalisation..."
-        ]
-        
-        for i in range(101):
-            time.sleep(0.03)
-            progress_bar.progress(i)
-            if i < 12:
-                status_text.text(steps[0])
-            elif i < 25:
-                status_text.text(steps[1])
-            elif i < 40:
-                status_text.text(steps[2])
-            elif i < 55:
-                status_text.text(steps[3])
-            elif i < 70:
-                status_text.text(steps[4])
-            elif i < 82:
-                status_text.text(steps[5])
-            elif i < 90:
-                status_text.text(steps[6])
-            elif i < 98:
-                status_text.text(steps[7])
-            else:
-                status_text.text(steps[8])
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    try:
-        buf = BytesIO()
-        st.session_state.uploaded_image.save(buf, format="JPEG")
-        image_bytes = buf.getvalue()
-        
-        img_processed = preprocess_image(image_bytes)
-        
-        result = analyze_document_with_backup(img_processed)
-        
-        if result:
-            raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
-            document_subtype = result.get("document_subtype", "").upper()
+    with st.spinner("🤖 Analyse en cours avec GPT-4 Vision..."):
+        try:
+            buf = BytesIO()
+            st.session_state.uploaded_image.save(buf, format="JPEG")
+            image_bytes = buf.getvalue()
             
-            if document_subtype == "DLP":
-                final_doc_type = "BDC LEADERPRICE"
-            elif document_subtype == "S2M":
-                final_doc_type = "BDC S2M"
-            elif document_subtype == "ULYS":
-                final_doc_type = "BDC ULYS"
-            elif document_subtype == "FACTURE":
-                final_doc_type = "FACTURE EN COMPTE"
-            else:
-                final_doc_type = normalize_document_type(raw_doc_type)
+            img_processed = preprocess_image(image_bytes)
+            result = analyze_document_with_backup(img_processed)
             
-            st.session_state.detected_document_type = final_doc_type
-            
-            if st.session_state.document_analysis_details:
-                correction = st.session_state.document_analysis_details
-                st.info(f"⚠️ Correction appliquée: {correction.get('original_type')} → {correction.get('adjusted_type')}")
-            
-            fact_manuscrit = result.get("fact_manuscrit", "")
-            if fact_manuscrit and document_subtype in ["DLP", "S2M", "ULYS"]:
-                st.success(f"✅ FACT manuscrit détecté: {fact_manuscrit}")
-            
-            st.session_state.ocr_result = result
-            st.session_state.show_results = True
-            st.session_state.processing = False
-            
-            if "articles" in result:
-                std_data = []
-                for article in result["articles"]:
-                    raw_name = article.get("article_brut", article.get("article", ""))
-                    
-                    if any(cat in raw_name.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE"]):
-                        std_data.append({
-                            "Produit Brute": raw_name,
-                            "Produit Standard": raw_name,
-                            "Quantité": 0,
-                            "Confiance": "0%",
-                            "Auto": False
-                        })
-                    else:
-                        produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
-                        
-                        std_data.append({
-                            "Produit Brute": produit_brut,
-                            "Produit Standard": produit_standard,
-                            "Quantité": article.get("quantite", 0),
-                            "Confiance": f"{confidence*100:.1f}%",
-                            "Auto": confidence >= 0.7
-                        })
+            if result:
+                raw_doc_type = result.get("type_document", "DOCUMENT INCONNU")
+                document_subtype = result.get("document_subtype", "").upper()
                 
-                st.session_state.edited_standardized_df = pd.DataFrame(std_data)
+                if document_subtype == "DLP":
+                    final_doc_type = "BDC LEADERPRICE"
+                elif document_subtype == "S2M":
+                    final_doc_type = "BDC S2M"
+                elif document_subtype == "ULYS":
+                    final_doc_type = "BDC ULYS"
+                elif document_subtype == "FACTURE":
+                    final_doc_type = "FACTURE EN COMPTE"
+                else:
+                    final_doc_type = normalize_document_type(raw_doc_type)
+                
+                st.session_state.detected_document_type = final_doc_type
+                st.session_state.ocr_result = result
+                st.session_state.show_results = True
+                st.session_state.processing = False
+                
+                if "articles" in result:
+                    std_data = []
+                    for article in result["articles"]:
+                        raw_name = article.get("article_brut", article.get("article", ""))
+                        
+                        if any(cat in raw_name.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE"]):
+                            std_data.append({
+                                "Produit Brute": raw_name,
+                                "Produit Standard": raw_name,
+                                "Quantité": article.get("quantite", 0),
+                                "Confiance": "0%",
+                                "Auto": False
+                            })
+                        else:
+                            produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(raw_name)
+                            
+                            std_data.append({
+                                "Produit Brute": produit_brut,
+                                "Produit Standard": produit_standard,
+                                "Quantité": article.get("quantite", 0),
+                                "Confiance": f"{confidence*100:.1f}%",
+                                "Auto": confidence >= 0.7
+                            })
+                    
+                    st.session_state.edited_standardized_df = pd.DataFrame(std_data)
+                
+                st.rerun()
+            else:
+                st.error("❌ Échec de l'analyse IA - Veuillez réessayer")
+                st.session_state.processing = False
             
-            progress_container.empty()
-            st.rerun()
-        else:
-            st.error("❌ Échec de l'analyse IA - Veuillez réessayer avec une image plus claire")
+        except Exception as e:
+            st.error(f"❌ Erreur système: {str(e)}")
             st.session_state.processing = False
-        
-    except Exception as e:
-        st.error(f"❌ Erreur système: {str(e)}")
-        st.session_state.processing = False
 
 # ============================================================
-# APERÇU DU DOCUMENT (TOUJOURS VISIBLE SI SCANNÉ)
-# ============================================================
-if st.session_state.uploaded_image and st.session_state.image_preview_visible:
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown('<h4>👁️ Aperçu du document analysé</h4>', unsafe_allow_html=True)
-    
-    col_img, col_info = st.columns([2, 1])
-    
-    with col_img:
-        st.image(st.session_state.uploaded_image, use_column_width=True)
-    
-    with col_info:
-        st.markdown(f"""
-        <div class="info-box" style="height: 100%;">
-            <strong style="color: {PALETTE['text_dark']} !important;">📊 Métadonnées :</strong><br><br>
-            • Résolution : Haute définition<br>
-            • Format : Image numérique<br>
-            • Statut : Analysé par IA V1.3<br>
-            • Confiance : Élevée<br><br>
-            <small style="color: {PALETTE['text_light']} !important;">Document prêt pour traitement</small>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ============================================================
-# AFFICHAGE DES RÉSULTATS - AVEC SECTION DEBUG V1.3
+# DISPLAY RESULTS
 # ============================================================
 if st.session_state.show_results and st.session_state.ocr_result and not st.session_state.processing:
     result = st.session_state.ocr_result
     doc_type = st.session_state.detected_document_type
     
-    with st.expander("🔍 Analyse de détection V1.3 (debug)"):
-        st.write("**Type brut détecté par l'IA:**", result.get("type_document", "Non détecté"))
-        st.write("**Sous-type détecté:**", result.get("document_subtype", "Non détecté"))
-        st.write("**Type normalisé:**", doc_type)
-        st.write("**Champs disponibles:**", list(result.keys()))
-        
-        if st.session_state.document_analysis_details:
-            st.write("**Corrections appliquées:**", st.session_state.document_analysis_details)
-        
-        if st.session_state.ocr_raw_text:
-            detection = detect_document_type_from_text(st.session_state.ocr_raw_text)
-            st.write("**Détection par texte:**")
-            st.write(f"- Type détecté: {detection['type']}")
-            st.write(f"- Scores: {detection['scores']}")
-            st.write(f"- Indicateurs trouvés: {detection['indicators_found']}")
-            
-            if st.session_state.quartier_s2m:
-                st.write(f"- Quartier S2M extrait: {st.session_state.quartier_s2m}")
-            if st.session_state.nom_magasin_ulys:
-                st.write(f"- Nom magasin ULYS extrait: {st.session_state.nom_magasin_ulys}")
-            
-            fact_extrait = extract_fact_number_from_handwritten(st.session_state.ocr_raw_text)
-            if fact_extrait:
-                st.write(f"- FACT manuscrit extrait du texte: {fact_extrait}")
-            
-            doit_m_extrait = extract_motel_name_from_doit(st.session_state.ocr_raw_text)
-            if doit_m_extrait:
-                st.write(f"- DOIT M extrait du texte: {doit_m_extrait}")
+    st.success("✅ Analyse IA terminée avec succès")
     
-    st.markdown('<div class="success-box fade-in">', unsafe_allow_html=True)
-    st.markdown(f'''
-    <div style="display: flex; align-items: start; gap: 15px;">
-        <div style="font-size: 2.5rem; color: {PALETTE['success']} !important;">✅</div>
-        <div>
-            <strong style="font-size: 1.1rem; color: #1A1A1A !important;">Analyse IA V1.3 terminée avec succès</strong><br>
-            <span style="color: #333333 !important;">Type détecté : <strong>{doc_type}</strong> | Standardisation : <strong>Active</strong> | DOIT M : <strong>{"Activé" if result.get("doit_m") else "Non applicable"}</strong></span><br>
-            <small style="color: #4B5563 !important;">Veuillez vérifier les données extraites avant validation</small>
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="document-title">📄 Document détecté : {doc_type}</div>', unsafe_allow_html=True)
     
-    icon_map = {
-        "FACTURE": "📄",
-        "BDC": "📋",
-        "DEFAULT": "📑"
-    }
-    
-    icon = icon_map.get("FACTURE" if "FACTURE" in doc_type.upper() else "BDC" if "BDC" in doc_type.upper() else "DEFAULT", "📑")
-    
-    st.markdown(
-        f"""
-        <div class="document-title fade-in">
-            {icon} Document détecté : {doc_type}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    # ========================================================
-    # INFORMATIONS EXTRAITES - AVEC CHANGEMENTS APPLIQUÉS
-    # ========================================================
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<h4>📋 Informations extraites</h4>', unsafe_allow_html=True)
     
     if "FACTURE" in doc_type.upper():
         col1, col2 = st.columns(2)
         with col1:
-            # NOUVELLE AMÉLIORATION: Afficher l'adresse d'abord
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
-            adresse = st.text_input("", value=result.get("adresse_livraison", ""), key="facture_adresse", label_visibility="collapsed")
-            
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">N° Facture</div>', unsafe_allow_html=True)
-            numero_facture = st.text_input("", value=result.get("numero_facture", ""), key="facture_num", label_visibility="collapsed")
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Bon de commande</div>', unsafe_allow_html=True)
-            bon_commande = st.text_input("", value=result.get("bon_commande", ""), key="facture_bdc", label_visibility="collapsed")
+            adresse = st.text_input("Adresse", value=result.get("adresse_livraison", ""), key="facture_adresse")
+            numero_facture = st.text_input("N° Facture", value=result.get("numero_facture", ""), key="facture_num")
+            bon_commande = st.text_input("Bon de commande", value=result.get("bon_commande", ""), key="facture_bdc")
         
         with col2:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
-            
             client_options = ["ULYS", "S2M", "DLP", "Autre"]
-            
             extracted_client = result.get("client", "")
+            default_index = 3
             
-            document_subtype = result.get("document_subtype", "").upper()
-            if document_subtype == "DLP":
-                extracted_client = "DLP"
-            elif document_subtype == "S2M":
-                extracted_client = "S2M"
-            elif document_subtype == "ULYS":
-                extracted_client = "ULYS"
+            if "DLP" in extracted_client.upper():
+                default_index = 2
+            elif "S2M" in extracted_client.upper():
+                default_index = 1
+            elif "ULYS" in extracted_client.upper():
+                default_index = 0
             
-            mapped_client = map_client(extracted_client)
-            default_index = 3  # Par défaut "Autre"
-            if mapped_client in client_options:
-                default_index = client_options.index(mapped_client)
-            elif extracted_client in client_options:
-                default_index = client_options.index(extracted_client)
+            client_choice = st.selectbox("Client", options=client_options, index=default_index, key="facture_client_select")
             
-            client_choice = st.selectbox(
-                "Sélectionnez le client",
-                options=client_options,
-                index=default_index,
-                key="facture_client_select",
-                label_visibility="collapsed"
-            )
-            
-            # NOUVELLE AMÉLIORATION: Forcer client = adresse si "Autre"
             if client_choice == "Autre":
                 client = adresse
             else:
                 client = client_choice
             
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
             date_extracted = result.get("date", "")
-            date_formatted = format_date_french(date_extracted)
-            date = st.text_input("", value=date_formatted, key="facture_date", label_visibility="collapsed")
-            
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Mois</div>', unsafe_allow_html=True)
-            mois = st.text_input("", value=result.get("mois", get_month_from_date(result.get("date", ""))), key="facture_mois", label_visibility="collapsed")
+            date = st.text_input("Date", value=date_extracted, key="facture_date")
+            mois = st.text_input("Mois", value=result.get("mois", ""), key="facture_mois")
         
         data_for_sheets = {
             "client": client,
@@ -3129,87 +1530,36 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             "date": date,
             "mois": mois
         }
-    
     else:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Client</div>', unsafe_allow_html=True)
-            
             client_options = ["ULYS", "S2M", "DLP", "Autre"]
-            
             extracted_client = result.get("client", "")
-            
-            document_subtype = result.get("document_subtype", "").upper()
-            if document_subtype == "DLP":
-                extracted_client = "DLP"
-            elif document_subtype == "S2M":
-                extracted_client = "S2M"
-            elif document_subtype == "ULYS":
-                extracted_client = "ULYS"
-            
-            mapped_client = map_client(extracted_client)
             default_index = 0
-            if mapped_client in client_options:
-                default_index = client_options.index(mapped_client)
-            elif extracted_client in client_options:
-                default_index = client_options.index(extracted_client)
             
-            client_choice = st.selectbox(
-                "Sélectionnez le client",
-                options=client_options,
-                index=default_index,
-                key="bdc_client_select",
-                label_visibility="collapsed"
-            )
+            if "DLP" in extracted_client.upper():
+                default_index = 2
+            elif "S2M" in extracted_client.upper():
+                default_index = 1
+            elif extracted_client and extracted_client not in ["ULYS", "S2M", "DLP"]:
+                default_index = 3
+            
+            client_choice = st.selectbox("Client", options=client_options, index=default_index, key="bdc_client_select")
             
             if client_choice == "Autre":
                 client = st.text_input("Autre client", value=extracted_client, key="bdc_client_other")
             else:
                 client = client_choice
             
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">FACT</div>', unsafe_allow_html=True)
-            
             fact_manuscrit = result.get("fact_manuscrit", "")
-            numero_standard = result.get("numero", "")
-            
-            if fact_manuscrit:
-                numero_a_afficher = fact_manuscrit
-                st.info(f"🔍 FACT manuscrit détecté: {fact_manuscrit}")
-            else:
-                numero_a_afficher = numero_standard
-            
-            numero = st.text_input("", 
-                                  value=numero_a_afficher, 
-                                  key="bdc_numero", 
-                                  label_visibility="collapsed",
-                                  help="Numéro manuscrit extrait après 'F' ou 'Fact' (peut être vide si non trouvé)")
+            numero = st.text_input("FACT", value=fact_manuscrit, key="bdc_numero")
         
         with col2:
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Date</div>', unsafe_allow_html=True)
             date_extracted = result.get("date", "")
-            date_formatted = format_date_french(date_extracted)
-            date = st.text_input("", value=date_formatted, key="bdc_date", label_visibility="collapsed")
-            
-            st.markdown(f'<div style="margin-bottom: 5px; font-weight: 500; color: #1A1A1A !important;">Adresse</div>', unsafe_allow_html=True)
+            date = st.text_input("Date", value=date_extracted, key="bdc_date")
             
             adresse_value = result.get("adresse_livraison", "")
-            
-            if document_subtype == "DLP":
-                adresse_value = "Leader Price Akadimbahoaka"
-            elif document_subtype == "S2M":
-                quartier = st.session_state.quartier_s2m or ""
-                if quartier:
-                    adresse_value = clean_adresse(f"Supermaki {quartier}")
-                else:
-                    adresse_value = clean_adresse(adresse_value) if adresse_value else "Supermaki"
-            elif document_subtype == "ULYS":
-                nom_magasin = st.session_state.nom_magasin_ulys or ""
-                if nom_magasin:
-                    adresse_value = nom_magasin
-                else:
-                    adresse_value = "ULYS Magasin"
-            
-            adresse = st.text_input("", value=adresse_value, key="bdc_adresse", label_visibility="collapsed")
+            adresse = st.text_input("Adresse", value=adresse_value, key="bdc_adresse")
         
         data_for_sheets = {
             "client": client,
@@ -3219,87 +1569,24 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         }
     
     st.session_state.data_for_sheets = data_for_sheets
-    
-    fields_filled = sum([1 for v in data_for_sheets.values() if str(v).strip()])
-    total_fields = len(data_for_sheets)
-    
-    st.markdown(f'''
-    <div style="margin-top: 20px; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <strong style="color: #1A1A1A !important;">Validation des données</strong><br>
-                <small style="color: #4B5563 !important;">{fields_filled}/{total_fields} champs remplis</small>
-            </div>
-            <div style="font-size: 1.5rem; color: #10B981 !important;">{"✅" if fields_filled == total_fields else "⚠️"}</div>
-        </div>
-        <div style="margin-top: 10px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
-            <div style="width: {fields_filled/total_fields*100}%; height: 100%; background: linear-gradient(90deg, #10B981, #34D399); border-radius: 3px;"></div>
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
-    
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # ========================================================
-    # TABLEAU STANDARDISÉ ÉDITABLE
-    # ========================================================
+    # ============================================================
+    # PRODUCT STANDARDIZATION TABLE
+    # ============================================================
     if st.session_state.edited_standardized_df is not None and not st.session_state.edited_standardized_df.empty:
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<h4>📘 Standardisation des Produits</h4>', unsafe_allow_html=True)
-        
-        st.markdown(f"""
-        <div style="margin-bottom: 20px; padding: 12px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1);">
-            <small style="color: #1A1A1A !important;">
-            💡 <strong>Mode édition activé avec améliorations :</strong> 
-            • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
-            • <strong>Amélioration 2:</strong> Liste de produits étendue avec meilleure détection des fautes d'orthographe<br>
-            • <strong>Amélioration 3:</strong> Détection améliorée pour Aperao Peche, Côteau d'Ambalavao Special, etc.<br>
-            • <strong>Amélioration 4:</strong> Extraction automatique DOIT M pour factures Autre client<br>
-            • Colonne "Produit Brute" : texte original extrait par l'IA de Chanfoui AI<br>
-            • Colonne "Produit Standard" : standardisé automatiquement par Chafoui AI (éditable)<br>
-            • <strong>Note :</strong> Veuillez prendre la photo le plus près possible du document et avec une netteté maximale.
-            </small>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        df_with_zero_qty = st.session_state.edited_standardized_df[
-            (st.session_state.edited_standardized_df["Quantité"] == 0) | 
-            (st.session_state.edited_standardized_df["Quantité"].isna())
-        ]
-        
-        if len(df_with_zero_qty) > 0:
-            st.warning(f"⚠️ **Attention :** {len(df_with_zero_qty)} ligne(s) avec quantité 0 seront automatiquement supprimées lors de l'export")
         
         edited_df = st.data_editor(
             st.session_state.edited_standardized_df,
             num_rows="dynamic",
             column_config={
-                "Produit Brute": st.column_config.TextColumn(
-                    "Produit Brute",
-                    width="large",
-                    help="Texte original extrait par l'OCR"
-                ),
-                "Produit Standard": st.column_config.TextColumn(
-                    "Produit Standard",
-                    width="large",
-                    help="Nom standardisé du produit (éditable)"
-                ),
-                "Quantité": st.column_config.NumberColumn(
-                    "Quantité",
-                    min_value=0,
-                    help="Quantité commandée (lignes avec 0 seront supprimées à l'export) - FORCÉ EN ENTIER",
-                    format="%d",
-                    step=1
-                ),
-                "Confiance": st.column_config.TextColumn(
-                    "Confiance",
-                    width="small",
-                    help="Score de confiance de la standardisation"
-                ),
-                "Auto": st.column_config.CheckboxColumn(
-                    "Auto",
-                    help="Standardisé automatiquement par l'IA"
-                )
+                "Produit Brute": st.column_config.TextColumn("Produit Brute", width="large"),
+                "Produit Standard": st.column_config.TextColumn("Produit Standard", width="large"),
+                "Quantité": st.column_config.NumberColumn("Quantité", min_value=0, format="%d", step=1),
+                "Confiance": st.column_config.TextColumn("Confiance", width="small"),
+                "Auto": st.column_config.CheckboxColumn("Auto")
             },
             use_container_width=True,
             key="standardized_data_editor"
@@ -3311,175 +1598,39 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             )
         
         st.session_state.edited_standardized_df = edited_df
-        
-        total_items = len(edited_df)
-        auto_standardized = edited_df["Auto"].sum() if "Auto" in edited_df.columns else 0
-        items_with_qty = len(edited_df[edited_df["Quantité"] > 0])
-        
-        col_stat1, col_stat2, col_stat3 = st.columns(3)
-        with col_stat1:
-            st.markdown(
-                f'''
-                <div class="stat-badge" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(59, 130, 246, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: #3B82F6 !important;">{total_items}</div>
-                    <div class="stat-label">Articles totaux</div>
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-        with col_stat2:
-            st.markdown(
-                f'''
-                <div class="stat-badge" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.1) 100%); border: 1px solid rgba(16, 185, 129, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: #10B981 !important;">{items_with_qty}</div>
-                    <div class="stat-label">Avec quantité > 0</div>
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-        with col_stat3:
-            st.markdown(
-                f'''
-                <div class="stat-badge" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.1) 100%); border: 1px solid rgba(245, 158, 11, 0.2);">
-                    <div style="font-size: 1.8rem; font-weight: 700; color: #F59E0B !important;">{int(auto_standardized)}</div>
-                    <div class="stat-label">Auto-standardisés</div>
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-        
-        if st.button("🔄 Re-standardiser tous les produits", 
-                    key="restandardize_button",
-                    help="Appliquer la standardisation intelligente à tous les produits"):
-            new_data = []
-            for _, row in edited_df.iterrows():
-                produit_brut = row["Produit Brute"]
-                
-                if any(cat in produit_brut.upper() for cat in ["VINS ROUGES", "VINS BLANCS", "VINS ROSES", "LIQUEUR", "CONSIGNE", "122111", "122112", "122113"]):
-                    new_data.append({
-                        "Produit Brute": produit_brut,
-                        "Produit Standard": produit_brut,
-                        "Quantité": row["Quantité"],
-                        "Confiance": "0%",
-                        "Auto": False
-                    })
-                else:
-                    produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(produit_brut)
-                    
-                    new_data.append({
-                        "Produit Brute": produit_brut,
-                        "Produit Standard": produit_standard,
-                        "Quantité": row["Quantité"],
-                        "Confiance": f"{confidence*100:.1f}%",
-                        "Auto": confidence >= 0.7
-                    })
-            
-            st.session_state.edited_standardized_df = pd.DataFrame(new_data)
-            st.rerun()
-        
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ============================================================
-    # TEST DE STANDARDISATION AMÉLIORÉE
+    # EXPORT BUTTON
     # ============================================================
-    with st.expander("🧪 Tester la standardisation améliorée"):
-        test_examples = [
-            "Coteau d'Ambalavao Rouge",
-            "Coteau d'Ambalavao Rouge 75cl",
-            "Côteau d'Ambalavao Rouge",
-            "Coteau d Ambalavao Rouge",
-            "Coteau d'ambalavao rouge",
-            "Côte de Fianar Gris 3L",
-            "Cote de Fianar Gris 3L",
-            "Aperao Peche 37 cl",
-            "Aperao Peche 37cl",
-            "Côteau d'Ambalavao Special 75cl",
-            "Coteau d'Ambalavao Special 75cl",
-            "Consignation Btl 75cl",
-            "Jus de raisin Rouge 70 cl",
-            "Jus de raisin Blanc 20 cl",
-            "Rhum Sambatra 20 cl"
-        ]
-        
-        if st.button("Tester les améliorations de standardisation"):
-            results = []
-            for example in test_examples:
-                produit_brut, produit_standard, confidence, status = standardize_product_for_bdc(example)
-                results.append({
-                    "Produit Brute": example,
-                    "Produit Standard": produit_standard,
-                    "Confiance": f"{confidence*100:.1f}%",
-                    "Statut": status
-                })
-            
-            test_df = pd.DataFrame(results)
-            st.dataframe(test_df, use_container_width=True)
-            
-            perfect_matches = sum(1 for _, row in test_df.iterrows() 
-                                if float(row["Confiance"].replace('%', '')) >= 85.0 and row["Statut"] == "matched")
-            accuracy = (perfect_matches / len(test_df)) * 100
-            st.success(f"📈 Précision améliorée : {accuracy:.1f}%")
-            
-            conversion_test = test_df[test_df["Produit Brute"].str.contains("Coteau.*Rouge", case=False, na=False)]
-            if not conversion_test.empty:
-                st.info(f"**Conversion testée:** 'Coteau d'Ambalavao Rouge' → '{conversion_test.iloc[0]['Produit Standard']}'")
-    
-    # ============================================================
-    # BOUTON D'EXPORT PAR DÉFAUT
-    # ============================================================
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<h4>🚀 Export vers Cloud</h4>', unsafe_allow_html=True)
     
-    st.markdown(f"""
+    st.markdown("""
     <div class="info-box">
-        <strong style="color: #1A1A1A !important;">🌐 Destination :</strong> Google Sheets (Cloud)<br>
-        <strong style="color: #1A1A1A !important;">🔒 Sécurité :</strong> Chiffrement AES-256<br>
-        <strong style="color: #1A1A1A !important;">⚡ Vitesse :</strong> Synchronisation en temps réel<br>
-        <strong style="color: #1A1A !important;">🔄 Vérification :</strong> Détection automatique des doublons<br>
-        <strong style="color: #1A1A1A !important;">✨ AMÉLIORATIONS APPLIQUÉES :</strong><br>
-        • <strong>Correction 1:</strong> Date extraite formatée JJ/MM/AAAA (pas la date du scan)<br>
-        • <strong>Correction 2:</strong> Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
-        • <strong>Correction 3:</strong> Pour factures "Autre client", extraction automatique DOIT M<br>
-        • <strong>Amélioration 1:</strong> Standardisation "Coteau d'Ambalavao Rouge" → "Cuvee Speciale 75cls"<br>
-        • <strong>Amélioration 2:</strong> Bibliothèque de produits étendue et améliorée<br>
-        • <strong>Amélioration 3:</strong> Meilleure détection des fautes d'orthographe<br>
-        • <strong>Amélioration 4:</strong> Extraction correcte colonnes facture: Désignation et Nb bills
+        <strong>🌐 Destination :</strong> Google Sheets (Cloud)<br>
+        <strong>🔒 Sécurité :</strong> Chiffrement AES-256<br>
+        <strong>⚡ Vitesse :</strong> Synchronisation en temps réel<br>
+        <strong>🔄 Vérification :</strong> Détection automatique des doublons
     </div>
     """, unsafe_allow_html=True)
     
-    col_btn, col_info = st.columns([2, 1])
-    
-    with col_btn:
-        if st.button("🚀 Synchroniser avec Google Sheets", 
-                    use_container_width=True, 
-                    type="primary",
-                    key="export_button",
-                    help="Cliquez pour exporter les données vers le cloud"):
-            
-            st.session_state.export_triggered = True
-            st.rerun()
-    
-    with col_info:
-        st.markdown(f"""
-        <div style="text-align: center; padding: 15px; background: rgba(59, 130, 246, 0.05); border-radius: 12px; height: 100%;">
-            <div style="font-size: 1.5rem; color: #3B82F6 !important;">⚡</div>
-            <div style="font-size: 0.8rem; color: #4B5563 !important;">Export instantané<br>Améliorations activées</div>
-        </div>
-        """, unsafe_allow_html=True)
+    if st.button("🚀 Synchroniser avec Google Sheets", use_container_width=True, type="primary", key="export_button"):
+        st.session_state.export_triggered = True
+        st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     # ============================================================
-    # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
+    # DUPLICATE CHECK AND EXPORT
     # ============================================================
     if st.session_state.export_triggered and st.session_state.export_status is None:
-        with st.spinner("🔍 Analyse des doublons en cours ..."):
+        with st.spinner("🔍 Vérification des doublons..."):
             normalized_doc_type = normalize_document_type(doc_type)
-            
             ws = get_worksheet(normalized_doc_type)
             
             if ws:
-                duplicate_found, duplicates = check_for_duplicates(
+                duplicate_found, duplicates = check_for_duplicates_fast(
                     normalized_doc_type,
                     st.session_state.data_for_sheets,
                     ws
@@ -3495,76 +1646,32 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                     st.session_state.export_status = "duplicates_found"
                     st.rerun()
             else:
-                st.error("❌ Connexion cloud échouée - Vérifiez votre connexion")
+                st.error("❌ Connexion cloud échouée")
                 st.session_state.export_status = "error"
     
     # ============================================================
-    # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
+    # DUPLICATE HANDLING
     # ============================================================
     if st.session_state.export_status == "duplicates_found":
-        st.markdown('<div class="duplicate-box fade-in">', unsafe_allow_html=True)
-        
-        st.markdown(f'''
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-            <div style="font-size: 2rem; color: #F59E0B !important;">⚠️</div>
-            <div>
-                <h3 style="margin: 0; color: #1A1A1A !important;">ALERTE : DOUBLON DÉTECTÉ </h3>
-                <p style="margin: 5px 0 0 0; color: #4B5563 !important; font-size: 0.9rem;">Document similaire existant dans la base cloud - Même logique pour BDC et factures</p>
-            </div>
-        </div>
-        ''', unsafe_allow_html=True)
-        
-        if "FACTURE" in doc_type.upper():
-            st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: #1A1A1A !important;">
-                    <div><strong>Type :</strong> {doc_type}</div>
-                    <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
-                    <div><strong>N° Facture :</strong> {st.session_state.data_for_sheets.get('numero_facture', 'Non détecté')}</div>
-                    <div><strong>Doublons :</strong> {len(st.session_state.duplicate_rows)} trouvé(s)</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem; color: #1A1A1A !important;">
-                    <div><strong>Type :</strong> {doc_type}</div>
-                    <div><strong>Client :</strong> {st.session_state.data_for_sheets.get('client', 'Non détecté')}</div>
-                    <div><strong>FACT :</strong> {st.session_state.data_for_sheets.get('numero', 'Non détecté')}</div>
-                    <div><strong>Doublons :</strong> {len(st.session_state.duplicate_rows)} trouvé(s)</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown(f'<div style="color: #1A1A1A !important; margin-bottom: 10px; font-weight: 600;">Sélectionnez une action :</div>', unsafe_allow_html=True)
+        st.markdown('<div class="duplicate-box">', unsafe_allow_html=True)
+        st.warning("⚠️ ALERTE : DOUBLON DÉTECTÉ")
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("🔄 Remplacer", 
-                        key="overwrite_duplicate", 
-                        use_container_width=True, 
-                        type="primary",
-                        help="Remplace les documents existants par les nouvelles données"):
+            if st.button("🔄 Remplacer", key="overwrite_duplicate", use_container_width=True):
                 st.session_state.duplicate_action = "overwrite"
                 st.session_state.export_status = "ready_to_export"
                 st.rerun()
         
         with col2:
-            if st.button("➕ Nouvelle entrée", 
-                        key="add_new_duplicate", 
-                        use_container_width=True,
-                        help="Ajoute comme nouvelle entrée sans supprimer l'existant"):
+            if st.button("➕ Nouvelle entrée", key="add_new_duplicate", use_container_width=True):
                 st.session_state.duplicate_action = "add_new"
                 st.session_state.export_status = "ready_to_export"
                 st.rerun()
         
         with col3:
-            if st.button("❌ Annuler", 
-                        key="skip_duplicate", 
-                        use_container_width=True,
-                        help="Annule l'export et conserve les données existantes"):
+            if st.button("❌ Annuler", key="skip_duplicate", use_container_width=True):
                 st.session_state.duplicate_action = "skip"
                 st.session_state.export_status = "ready_to_export"
                 st.rerun()
@@ -3572,70 +1679,45 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         st.markdown('</div>', unsafe_allow_html=True)
     
     # ============================================================
-    # EXPORT EFFECTIF DES DONNÉES
+    # PERFORM EXPORT
     # ============================================================
     if st.session_state.export_status in ["no_duplicates", "ready_to_export"]:
         if st.session_state.export_status == "no_duplicates":
             st.session_state.duplicate_action = "add_new"
         
         export_df = st.session_state.edited_standardized_df.copy()
+        export_df = export_df[export_df["Quantité"] > 0]
         
-        zero_qty_rows = export_df[export_df["Quantité"] == 0]
-        if len(zero_qty_rows) > 0:
-            st.info(f"⚠️ {len(zero_qty_rows)} ligne(s) avec quantité 0 seront automatiquement exclues de l'export")
-        
-        try:
-            success, message = save_to_google_sheets(
-                doc_type,
-                st.session_state.data_for_sheets,
-                export_df,
-                duplicate_action=st.session_state.duplicate_action,
-                duplicate_rows=st.session_state.duplicate_rows if st.session_state.duplicate_action == "overwrite" else None
-            )
-            
-            if success:
-                st.session_state.export_status = "completed"
-                st.markdown("""
-                <div style="padding: 25px; background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white !important; border-radius: 18px; text-align: center; margin: 20px 0;">
-                    <div style="font-size: 2.5rem; margin-bottom: 10px;">✅</div>
-                    <h3 style="margin: 0 0 10px 0; color: white !important;">Synchronisation réussie !</h3>
-                    <p style="margin: 0; opacity: 0.9;">Les données ont été exportées avec succès vers le cloud.</p>
-                    <p style="margin: 10px 0 0 0; font-size: 0.9rem; opacity: 0.8;">
-                        ✓ Correction 1: Date formatée JJ/MM/AAAA (extraite du document)<br>
-                        ✓ Correction 2: Adresse DLP forcée à "Leader Price Akadimbahoaka"<br>
-                        ✓ Correction 3: Pour factures "Autre client", extraction DOIT M activée<br>
-                        ✓ Amélioration 1: Standardisation "Coteau d'Ambalavao Rouge" appliquée<br>
-                        ✓ Amélioration 2: Bibliothèque de produits étendue<br>
-                        ✓ Amélioration 3: Meilleure détection des fautes d'orthographe<br>
-                        ✓ Amélioration 4: Extraction correcte colonnes facture
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.session_state.export_status = "error"
-                st.error("❌ Échec de l'export - Veuillez réessayer")
-                
-        except Exception as e:
-            st.error(f"❌ Erreur système : {str(e)}")
+        if export_df.empty:
+            st.warning("⚠️ Aucune ligne avec quantité > 0 à exporter")
             st.session_state.export_status = "error"
+        else:
+            with st.spinner("📤 Export en cours..."):
+                success, message = save_to_google_sheets(
+                    doc_type,
+                    st.session_state.data_for_sheets,
+                    export_df,
+                    duplicate_action=st.session_state.duplicate_action,
+                    duplicate_rows=st.session_state.duplicate_rows if st.session_state.duplicate_action == "overwrite" else None
+                )
+                
+                if success:
+                    st.session_state.export_status = "completed"
+                    st.success("✅ Synchronisation réussie !")
+                else:
+                    st.session_state.export_status = "error"
+                    st.error(f"❌ {message}")
     
     # ============================================================
-    # BOUTONS DE NAVIGATION - AMÉLIORATION DU BOUTON "NOUVEAU DOCUMENT"
+    # NAVIGATION BUTTONS
     # ============================================================
     if st.session_state.document_scanned:
         st.markdown("---")
         
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<h4>🧭 Navigation</h4>', unsafe_allow_html=True)
-        
         col_nav1, col_nav2 = st.columns(2)
         
         with col_nav1:
-            if st.button("📄 Nouveau document", 
-                        use_container_width=True, 
-                        type="secondary",
-                        key="new_doc_main_nav",
-                        help="Effacer toutes les informations et revenir au début"):
+            if st.button("📄 Nouveau document", use_container_width=True, type="secondary"):
                 st.session_state.ocr_result = None
                 st.session_state.data_for_sheets = None
                 st.session_state.edited_standardized_df = None
@@ -3656,24 +1738,11 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.quartier_s2m = ""
                 st.session_state.nom_magasin_ulys = ""
                 st.session_state.fact_manuscrit = ""
-                
-                st.markdown(
-                    """
-                    <script>
-                        window.scrollTo(0, 0);
-                    </script>
-                    """,
-                    unsafe_allow_html=True
-                )
-                
+                st.session_state.worksheet_cache = {}
                 st.rerun()
         
         with col_nav2:
-            if st.button("🔄 Réanalyser", 
-                        use_container_width=True, 
-                        type="secondary",
-                        key="restart_main_nav",
-                        help="Recommencer l'analyse du document actuel"):
+            if st.button("🔄 Réanalyser", use_container_width=True, type="secondary"):
                 st.session_state.uploaded_file = None
                 st.session_state.uploaded_image = None
                 st.session_state.ocr_result = None
@@ -3688,65 +1757,21 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 st.session_state.export_status = None
                 st.session_state.product_matching_scores = {}
                 st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================
-# BOUTON DE DÉCONNEXION (toujours visible)
+# LOGOUT BUTTON
 # ============================================================
 st.markdown("---")
-if st.button("🔒 Déconnexion sécurisée", 
-            use_container_width=True, 
-            type="secondary",
-            key="logout_button_final",
-            help="Fermer la session en toute sécurité"):
+if st.button("🔒 Déconnexion sécurisée", use_container_width=True, type="secondary"):
     logout()
 
 # ============================================================
 # FOOTER
 # ============================================================
 st.markdown("---")
-
-with st.container():
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"<center style='color: #1A1A1A !important;'>🤖</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: #4B5563 !important;'>AI Vision Amélioré</small></center>", unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"<center style='color: #1A1A1A !important;'>⚡</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: #4B5563 !important;'>Fast Processing</small></center>", unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"<center style='color: #1A1A1A !important;'>🔒</center>", unsafe_allow_html=True)
-        st.markdown(f"<center><small style='color: #4B5563 !important;'>Secure Cloud</small></center>", unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <center style='margin: 15px 0;'>
-        <span style='font-weight: 700; color: #27414A !important;'>{BRAND_TITLE}</span>
-        <span style='color: #4B5563 !important;'> • Système IA Amélioré • © {datetime.now().strftime("%Y")}</span>
-    </center>
-    """, unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <center style='font-size: 0.8rem; color: #4B5563 !important;">
-        <span style='color: #10B981 !important;'>●</span> 
-        Système actif • Session : 
-        <strong style='color: #1A1A1A !important;'>{st.session_state.username}</strong>
-        • Améliorations activées • {datetime.now().strftime("%H:%M:%S")}
-    </center>
-    """, unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <center style='font-size: 0.75rem; color: #3B82F6 !important; margin-top: 5px;'>
-        <strong>✨ AMÉLIORATIONS APPLIQUÉES :</strong> Date JJ/MM/AAAA • Adresse DLP corrigée • Standardisation améliorée • DOIT M extraction • Facture: colonnes corrigées
-    </center>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-
-
+st.markdown(f"""
+<center style='margin: 15px 0;'>
+    <span style='font-weight: 700; color: #27414A !important;'>CHAN FOUI ET FILS</span>
+    <span style='color: #4B5563 !important;'> • Système IA Amélioré • © {datetime.now().strftime("%Y")}</span>
+</center>
+""", unsafe_allow_html=True)
