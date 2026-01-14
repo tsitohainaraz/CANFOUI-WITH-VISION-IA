@@ -2652,11 +2652,11 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             value_input_option="USER_ENTERED"
         )
             
-            action_msg = "enregistrée(s)"
-            if duplicate_action == "overwrite":
-                action_msg = "mise(s) à jour"
-            elif duplicate_action == "add_new":
-                action_msg = "ajoutée(s) comme nouvelle(s)"
+        action_msg = "enregistrée(s)"
+        if duplicate_action == "overwrite":
+            action_msg = "mise(s) à jour"
+        elif duplicate_action == "add_new":
+            action_msg = "ajoutée(s) comme nouvelle(s)"
             
             st.success(f"✅ {len(new_rows)} ligne(s) {action_msg} avec succès dans Google Sheets!")
             
@@ -3718,6 +3718,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
