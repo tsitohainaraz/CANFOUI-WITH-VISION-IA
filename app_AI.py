@@ -2619,8 +2619,8 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             try:
                 
                 for row_num in sorted(duplicate_rows, reverse=True): # Modification 
-                ws.delete_rows(row_num) 
-                time.sleep(1)  # ⛔ OBLIGATOIRE POUR LE QUOTA
+                    ws.delete_rows(row_num) 
+                    time.sleep(1)  # ⛔ OBLIGATOIRE POUR LE QUOTA
                 
                 #duplicate_rows.sort(reverse=True)
                 #for row_num in duplicate_rows:
@@ -3718,6 +3718,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
