@@ -2596,35 +2596,8 @@ def get_worksheet(document_type: str):
     except Exception as e:
         st.error(f"❌ Erreur lors de la connexion à Google Sheets: {str(e)}")
         return None
-
-def find_table_range(worksheet, num_columns=8):
-    """Trouve la plage de table dans la feuille avec un nombre de colonnes spécifique"""
-    try:
-        all_data = worksheet.get_all_values()
         
-        if not all_data:
-            return "A1:H1"
-        
-        headers = ["Mois", "Date", "Client", "N* facture", "Magasin", "Désignation", "Quantité", "Editeur"]
-        
-        first_row = all_data[0] if all_data else []
-        header_found = any(header in str(first_row) for header in headers)
-        
-        if header_found:
-            last_row = len(all_data) + 1
-            if len(all_data) <= 1:
-                return "A2:H2"
-            else:
-                return f"A{last_row}:H{last_row}"
-        else:
-            for i, row in enumerate(all_data, start=1):
-                if not any(cell.strip() for cell in row):
-                    return f"A{i}:H{i}"
-            
-            return f"A{len(all_data)+1}:H{len(all_data)+1}"
-            
-    except Exception as e:
-        return "A2:H2"
+""" Nofafaina ny teto 1"""
 
 def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
                          duplicate_action: str = None, duplicate_rows: List[int] = None):
@@ -2644,9 +2617,14 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         
         if duplicate_action == "overwrite" and duplicate_rows:
             try:
-                duplicate_rows.sort(reverse=True)
-                for row_num in duplicate_rows:
-                    ws.delete_rows(row_num)
+                
+                for row_num in sorted(duplicate_rows, reverse=True): # Modification 
+                ws.delete_rows(row_num) 
+                time.sleep(1)  # ⛔ OBLIGATOIRE POUR LE QUOTA
+                
+                #duplicate_rows.sort(reverse=True)
+                #for row_num in duplicate_rows:
+                    # ws.delete_rows(row_num)
                 
                 st.info(f"🗑️ {len(duplicate_rows)} ligne(s) dupliquée(s) supprimée(s)")
                 
@@ -2668,13 +2646,11 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         preview_df = pd.DataFrame(new_rows, columns=columns)
         st.dataframe(preview_df, use_container_width=True)
         
-        table_range = find_table_range(ws, num_columns=8)
-        
-        try:
-            if ":" in table_range and table_range.count(":") == 1:
-                ws.append_rows(new_rows, table_range=table_range)
-            else:
-                ws.append_rows(new_rows)
+        """ Remplacement 1  """
+        ws.append_rows(
+            new_rows,
+            value_input_option="USER_ENTERED"
+        )
             
             action_msg = "enregistrée(s)"
             if duplicate_action == "overwrite":
@@ -2697,12 +2673,7 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             try:
                 st.info("🔄 Tentative alternative d'enregistrement...")
                 
-                all_data = ws.get_all_values()
-                
-                for row in new_rows:
-                    all_data.append(row)
-                
-                ws.update('A1', all_data)
+                """ Supression 2 """
                 
                 st.success(f"✅ {len(new_rows)} ligne(s) enregistrée(s) avec méthode alternative!")
                 return True, f"{len(new_rows)} lignes enregistrées (méthode alternative)"
@@ -3747,5 +3718,6 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
