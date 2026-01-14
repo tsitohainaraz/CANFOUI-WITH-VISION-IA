@@ -2667,8 +2667,8 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.balloons()
             return True, f"{len(new_rows)} lignes {action_msg}"
             
-        except Exception as e:
-            st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
+        #except Exception as e:
+            #st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
             
             try:
                 st.info("🔄 Tentative alternative d'enregistrement...")
@@ -3718,6 +3718,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
