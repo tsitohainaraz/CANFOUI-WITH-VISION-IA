@@ -2657,22 +2657,23 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         if not new_rows:
             st.warning("⚠️ Aucune donnée à enregistrer (toutes les lignes ont une quantité de 0)")
             return False, "Aucune donnée"
-        
-        if duplicate_action == "overwrite" and duplicate_rows:
-            try:
-                duplicate_rows.sort(reverse=True)
-                for row_num in duplicate_rows:
-                    ws.delete_rows(row_num)
+            
+    #=== DÉSACTIVATION TEMPORAIRE DES DOUBLONS ===
+    #    if duplicate_action == "overwrite" and duplicate_rows:
+    #        try:
+    #           duplicate_rows.sort(reverse=True)
+    #            for row_num in duplicate_rows:
+    #                ws.delete_rows(row_num)
+    #           
+    #           st.info(f"🗑️ {len(duplicate_rows)} ligne(s) dupliquée(s) supprimée(s)")
                 
-                st.info(f"🗑️ {len(duplicate_rows)} ligne(s) dupliquée(s) supprimée(s)")
-                
-            except Exception as e:
-                st.error(f"❌ Erreur lors de la suppression des doublons: {str(e)}")
-                return False, str(e)
+    #        except Exception as e:
+    #           st.error(f"❌ Erreur lors de la suppression des doublons: {str(e)}")
+    #            return False, str(e)
         
-        if duplicate_action == "skip":
-            st.warning("⏸️ Import annulé - Document ignoré")
-            return True, "Document ignoré (doublon)"
+    #   if duplicate_action == "skip":
+    #       st.warning("⏸️ Import annulé - Document ignoré")
+    #       return True, "Document ignoré (doublon)"
         
         st.info(f"📋 **Aperçu des données à enregistrer (lignes avec quantité > 0):**")
         
@@ -3477,7 +3478,12 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
-    
+""" Ajoute """
+    if st.session_state.export_triggered and st.session_state.export_status is None:
+        st.session_state.export_status = "no_duplicates"
+        st.rerun()
+
+"""
     # ============================================================
     # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
     # ============================================================
@@ -3506,6 +3512,7 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             else:
                 st.error("❌ Connexion cloud échouée - Vérifiez votre connexion")
                 st.session_state.export_status = "error"
+"""
     
     # ============================================================
     # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
@@ -3756,6 +3763,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
