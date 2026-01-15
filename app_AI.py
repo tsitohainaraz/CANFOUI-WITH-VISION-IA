@@ -2563,10 +2563,6 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
 # ============================================================
 # GOOGLE SHEETS FUNCTIONS
 # ============================================================
-
-# premier fonction ajouter 
-
-    
 def get_worksheet(document_type: str):
     """Récupère la feuille Google Sheets correspondant au type de document"""
     try:
@@ -2630,18 +2626,6 @@ def find_table_range(worksheet, num_columns=8):
     except Exception as e:
         return "A2:H2"
 
-def sanitize_rows(rows):
-    clean_rows = []
-    for row in rows:
-        clean_row = []
-        for cell in row:
-            if cell is None:
-                clean_row.append("")
-            else:
-                clean_row.append(str(cell))
-        clean_rows.append(clean_row)
-    return clean_rows
-
 def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFrame, 
                          duplicate_action: str = None, duplicate_rows: List[int] = None):
     """Sauvegarde les données dans Google Sheets (version production)"""
@@ -2657,23 +2641,22 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         if not new_rows:
             st.warning("⚠️ Aucune donnée à enregistrer (toutes les lignes ont une quantité de 0)")
             return False, "Aucune donnée"
-            
-    #=== DÉSACTIVATION TEMPORAIRE DES DOUBLONS ===
-    #    if duplicate_action == "overwrite" and duplicate_rows:
-    #        try:
-    #           duplicate_rows.sort(reverse=True)
-    #            for row_num in duplicate_rows:
-    #                ws.delete_rows(row_num)
-    #           
-    #           st.info(f"🗑️ {len(duplicate_rows)} ligne(s) dupliquée(s) supprimée(s)")
-                
-    #        except Exception as e:
-    #           st.error(f"❌ Erreur lors de la suppression des doublons: {str(e)}")
-    #            return False, str(e)
         
-    #   if duplicate_action == "skip":
-    #       st.warning("⏸️ Import annulé - Document ignoré")
-    #       return True, "Document ignoré (doublon)"
+        if duplicate_action == "overwrite" and duplicate_rows:
+            try:
+                duplicate_rows.sort(reverse=True)
+                for row_num in duplicate_rows:
+                    ws.delete_rows(row_num)
+                
+                st.info(f"🗑️ {len(duplicate_rows)} ligne(s) dupliquée(s) supprimée(s)")
+                
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la suppression des doublons: {str(e)}")
+                return False, str(e)
+        
+        if duplicate_action == "skip":
+            st.warning("⏸️ Import annulé - Document ignoré")
+            return True, "Document ignoré (doublon)"
         
         st.info(f"📋 **Aperçu des données à enregistrer (lignes avec quantité > 0):**")
         
@@ -2685,18 +2668,13 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         preview_df = pd.DataFrame(new_rows, columns=columns)
         st.dataframe(preview_df, use_container_width=True)
         
-        # MODIFICATION ICI : Suppression de l'appel à find_table_range et utilisation directe de append_rows
-        # Google Sheets sait automatiquement où est la dernière ligne
+        table_range = find_table_range(ws, num_columns=8)
+        
         try:
-            # CORRECTION APPLIQUÉE : utiliser append_rows() sans table_range
-            # ws.append_rows(new_rows) # l encien a changer 
-            # Fonction ajoute 2
-            safe_rows = sanitize_rows(new_rows)
-            ws.append_rows(
-                safe_rows,
-                value_input_option="USER_ENTERED"
-            )
-
+            if ":" in table_range and table_range.count(":") == 1:
+                ws.append_rows(new_rows, table_range=table_range)
+            else:
+                ws.append_rows(new_rows)
             
             action_msg = "enregistrée(s)"
             if duplicate_action == "overwrite":
@@ -2717,9 +2695,21 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
             
             try:
-                pass
-            except:
-                pass
+                st.info("🔄 Tentative alternative d'enregistrement...")
+                
+                all_data = ws.get_all_values()
+                
+                for row in new_rows:
+                    all_data.append(row)
+                
+                ws.update('A1', all_data)
+                
+                st.success(f"✅ {len(new_rows)} ligne(s) enregistrée(s) avec méthode alternative!")
+                return True, f"{len(new_rows)} lignes enregistrées (méthode alternative)"
+                
+            except Exception as e2:
+                st.error(f"❌ Échec de la méthode alternative: {str(e2)}")
+                return False, str(e)
                 
     except Exception as e:
         st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
@@ -3482,10 +3472,31 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
     # ============================================================
     # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
     # ============================================================
-    
     if st.session_state.export_triggered and st.session_state.export_status is None:
-        st.session_state.export_status = "no_duplicates"
-        st.rerun()
+        with st.spinner("🔍 Analyse des doublons en cours ..."):
+            normalized_doc_type = normalize_document_type(doc_type)
+            
+            ws = get_worksheet(normalized_doc_type)
+            
+            if ws:
+                duplicate_found, duplicates = check_for_duplicates(
+                    normalized_doc_type,
+                    st.session_state.data_for_sheets,
+                    ws
+                )
+                
+                if not duplicate_found:
+                    st.session_state.duplicate_found = False
+                    st.session_state.export_status = "no_duplicates"
+                    st.rerun()
+                else:
+                    st.session_state.duplicate_found = True
+                    st.session_state.duplicate_rows = [d['row_number'] for d in duplicates]
+                    st.session_state.export_status = "duplicates_found"
+                    st.rerun()
+            else:
+                st.error("❌ Connexion cloud échouée - Vérifiez votre connexion")
+                st.session_state.export_status = "error"
     
     # ============================================================
     # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
@@ -3568,14 +3579,6 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.session_state.duplicate_action = "add_new"
         
         export_df = st.session_state.edited_standardized_df.copy()
-
-        # 🔒 FILTRAGE AVANT EXPORT (OBLIGATOIRE)
-        export_df = export_df[ 
-            (export_df["Quantité"].notna()) &
-            (export_df["Quantité"] > 0) &
-            (export_df["Produit Standard"].astype(str).str.strip() != "")
-        ]
-
         
         zero_qty_rows = export_df[export_df["Quantité"] == 0]
         if len(zero_qty_rows) > 0:
@@ -3586,8 +3589,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 doc_type,
                 st.session_state.data_for_sheets,
                 export_df,
-                duplicate_action=None,
-                duplicate_rows=None
+                duplicate_action=st.session_state.duplicate_action,
+                duplicate_rows=st.session_state.duplicate_rows if st.session_state.duplicate_action == "overwrite" else None
             )
             
             if success:
@@ -3744,11 +3747,6 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-
-
-
-
 
 
 
