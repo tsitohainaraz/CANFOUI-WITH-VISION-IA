@@ -2700,21 +2700,9 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
             
             try:
-                st.info("🔄 Tentative alternative d'enregistrement...")
-                
-                all_data = ws.get_all_values()
-                
-                for row in new_rows:
-                    all_data.append(row)
-                
-                ws.update('A1', all_data)
-                
-                st.success(f"✅ {len(new_rows)} ligne(s) enregistrée(s) avec méthode alternative!")
-                return True, f"{len(new_rows)} lignes enregistrées (méthode alternative)"
-                
-            except Exception as e2:
-                st.error(f"❌ Échec de la méthode alternative: {str(e2)}")
-                return False, str(e)
+                pass
+            except:
+                pass
                 
     except Exception as e:
         st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
@@ -3766,4 +3754,5 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
