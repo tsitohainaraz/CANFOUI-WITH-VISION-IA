@@ -2563,6 +2563,21 @@ def check_for_duplicates(document_type: str, extracted_data: dict, worksheet) ->
 # ============================================================
 # GOOGLE SHEETS FUNCTIONS
 # ============================================================
+
+# premier fonction ajouter 
+
+def sanitize_rows(rows):
+    clean_rows = []
+    for row in rows:
+        clean_row = []
+        for cell in row:
+            if cell is None:
+                clean_row.append("")
+            else:
+                clean_row.append(str(cell))
+        clean_rows.append(clean_row)
+    return clean_rows
+    
 def get_worksheet(document_type: str):
     """Récupère la feuille Google Sheets correspondant au type de document"""
     try:
@@ -2707,20 +2722,6 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
     except Exception as e:
         st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
         return False, str(e)
-
-# premier fonction ajouter 
-
-def sanitize_rows(rows):
-    clean_rows = []
-    for row in rows:
-        clean_row = []
-        for cell in row:
-            if cell is None:
-                clean_row.append("")
-            else:
-                clean_row.append(str(cell))
-        clean_rows.append(clean_row)
-    return clean_rows
 
 # ============================================================
 # HEADER AVEC LOGO - VERSION TECH AMÉLIORÉE
@@ -3754,6 +3755,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
