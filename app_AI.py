@@ -2668,13 +2668,11 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         preview_df = pd.DataFrame(new_rows, columns=columns)
         st.dataframe(preview_df, use_container_width=True)
         
-        table_range = find_table_range(ws, num_columns=8)
-        
+        # MODIFICATION ICI : Suppression de l'appel à find_table_range et utilisation directe de append_rows
+        # Google Sheets sait automatiquement où est la dernière ligne
         try:
-            if ":" in table_range and table_range.count(":") == 1:
-                ws.append_rows(new_rows, table_range=table_range)
-            else:
-                ws.append_rows(new_rows)
+            # CORRECTION APPLIQUÉE : utiliser append_rows() sans table_range
+            ws.append_rows(new_rows)
             
             action_msg = "enregistrée(s)"
             if duplicate_action == "overwrite":
@@ -3747,6 +3745,3 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-
-
