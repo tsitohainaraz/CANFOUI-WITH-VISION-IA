@@ -3478,41 +3478,14 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
         """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
-""" Ajoute """
-    if st.session_state.export_triggered and st.session_state.export_status is None:
-        st.session_state.export_status = "no_duplicates"
-        st.rerun()
-
-"""
+    
     # ============================================================
     # VÉRIFICATION AUTOMATIQUE DES DOUBLONS APRÈS CLIC SUR EXPORT
     # ============================================================
+    
     if st.session_state.export_triggered and st.session_state.export_status is None:
-        with st.spinner("🔍 Analyse des doublons en cours ..."):
-            normalized_doc_type = normalize_document_type(doc_type)
-            
-            ws = get_worksheet(normalized_doc_type)
-            
-            if ws:
-                duplicate_found, duplicates = check_for_duplicates(
-                    normalized_doc_type,
-                    st.session_state.data_for_sheets,
-                    ws
-                )
-                
-                if not duplicate_found:
-                    st.session_state.duplicate_found = False
-                    st.session_state.export_status = "no_duplicates"
-                    st.rerun()
-                else:
-                    st.session_state.duplicate_found = True
-                    st.session_state.duplicate_rows = [d['row_number'] for d in duplicates]
-                    st.session_state.export_status = "duplicates_found"
-                    st.rerun()
-            else:
-                st.error("❌ Connexion cloud échouée - Vérifiez votre connexion")
-                st.session_state.export_status = "error"
-"""
+        st.session_state.export_status = "no_duplicates"
+        st.rerun()
     
     # ============================================================
     # AFFICHAGE DES OPTIONS EN CAS DE DOUBLONS
@@ -3763,6 +3736,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
