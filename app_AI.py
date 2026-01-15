@@ -2672,7 +2672,14 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
         # Google Sheets sait automatiquement où est la dernière ligne
         try:
             # CORRECTION APPLIQUÉE : utiliser append_rows() sans table_range
-            ws.append_rows(new_rows)
+            # ws.append_rows(new_rows) # l encien a changer 
+            # Fonction ajoute 2
+            safe_rows = sanitize_rows(new_rows)
+                ws.append_rows(
+                    safe_rows,
+                    value_input_option="USER_ENTERED"
+                )
+
             
             action_msg = "enregistrée(s)"
             if duplicate_action == "overwrite":
@@ -2712,6 +2719,20 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
     except Exception as e:
         st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
         return False, str(e)
+
+# premier fonction ajouter 
+
+def sanitize_rows(rows):
+    clean_rows = []
+    for row in rows:
+        clean_row = []
+        for cell in row:
+            if cell is None:
+                clean_row.append("")
+            else:
+                clean_row.append(str(cell))
+        clean_rows.append(clean_row)
+    return clean_rows
 
 # ============================================================
 # HEADER AVEC LOGO - VERSION TECH AMÉLIORÉE
@@ -3745,3 +3766,4 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
