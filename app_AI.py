@@ -2675,10 +2675,10 @@ def save_to_google_sheets(document_type: str, data: dict, articles_df: pd.DataFr
             # ws.append_rows(new_rows) # l encien a changer 
             # Fonction ajoute 2
             safe_rows = sanitize_rows(new_rows)
-                ws.append_rows(
-                    safe_rows,
-                    value_input_option="USER_ENTERED"
-                )
+            ws.append_rows(
+                safe_rows,
+                value_input_option="USER_ENTERED"
+            )
 
             
             action_msg = "enregistrée(s)"
@@ -3754,5 +3754,6 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
