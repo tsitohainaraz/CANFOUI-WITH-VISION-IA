@@ -3568,6 +3568,14 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
             st.session_state.duplicate_action = "add_new"
         
         export_df = st.session_state.edited_standardized_df.copy()
+
+        # 🔒 FILTRAGE AVANT EXPORT (OBLIGATOIRE)
+        export_df = export_df[ 
+            (export_df["Quantité"].notna()) &
+            (export_df["Quantité"] > 0) &
+            (export_df["Produit Standard"].astype(str).str.strip() != "")
+        ]
+
         
         zero_qty_rows = export_df[export_df["Quantité"] == 0]
         if len(zero_qty_rows) > 0:
@@ -3578,8 +3586,8 @@ if st.session_state.show_results and st.session_state.ocr_result and not st.sess
                 doc_type,
                 st.session_state.data_for_sheets,
                 export_df,
-                duplicate_action=st.session_state.duplicate_action,
-                duplicate_rows=st.session_state.duplicate_rows if st.session_state.duplicate_action == "overwrite" else None
+                duplicate_action=None,
+                duplicate_rows=None
             )
             
             if success:
@@ -3736,6 +3744,7 @@ with st.container():
     """, unsafe_allow_html=True)
     
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
 
 
 
